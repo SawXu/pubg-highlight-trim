@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pubg-highlight-trim"
+version = "0.1.0"
+description = "Windows CLI for trimming PUBG NVIDIA Highlights around self knock/elimination moments."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "sawdo" }]
+keywords = ["pubg", "nvidia-highlights", "ffmpeg", "ocr", "video"]
+classifiers = [
+  "Environment :: Console",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video",
+]
+dependencies = []
+
+[project.optional-dependencies]
+ocr = [
+  "opencv-contrib-python>=4.9",
+  "paddleocr==3.7.0",
+  "paddlepaddle==3.2.2",
+]
+build = ["pyinstaller>=6.10"]
+
+[project.scripts]
+pubg-highlight-trim = "pubg_highlight_trim.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pubg_highlight_trim"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+build/
+dist/
+*.spec
+*.log
+
+# Generated media/output
+*.mp4
+*.concat.txt
+*.csv
+summary.json
+
+# Runtime-bundled third-party binaries are fetched in CI.
+vendor/ffmpeg/*
+!vendor/ffmpeg/README.md
