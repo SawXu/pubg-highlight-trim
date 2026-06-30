@@ -70,6 +70,12 @@ The release zip contains `pubg-highlight-trim.exe`, bundled `ffmpeg/ffprobe`, an
 
 GitHub Actions builds the Windows release zip on tag pushes like `v0.1.0` or manual `workflow_dispatch`.
 
+## License
+
+This project is licensed under `GPL-3.0-or-later`.
+
+Release archives bundle FFmpeg/FFprobe and PaddleOCR runtime assets. See `THIRD_PARTY_NOTICES.md` for third-party license details and source links.
+
 ## Test
 
 ```powershell

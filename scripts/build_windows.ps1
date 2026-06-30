@@ -45,6 +45,8 @@ python -m PyInstaller `
     "src\pubg_highlight_trim\__main__.py"
 
 Copy-Item -LiteralPath "README.md" -Destination "dist\pubg-highlight-trim\README.md" -Force
+Copy-Item -LiteralPath "LICENSE" -Destination "dist\pubg-highlight-trim\LICENSE" -Force
+Copy-Item -LiteralPath "THIRD_PARTY_NOTICES.md" -Destination "dist\pubg-highlight-trim\THIRD_PARTY_NOTICES.md" -Force
 @"
 Run examples:
 
@@ -52,6 +54,7 @@ Run examples:
   .\pubg-highlight-trim.exe "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
 
 The bundle includes ffmpeg/ffprobe and PaddleOCR models. No Python install is required.
+License: GPL-3.0-or-later. See LICENSE and THIRD_PARTY_NOTICES.md.
 "@ | Set-Content -LiteralPath "dist\pubg-highlight-trim\RUN_EXAMPLES.txt" -Encoding UTF8
 $zipPath = "dist\pubg-highlight-trim-windows-x64.zip"
 Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
