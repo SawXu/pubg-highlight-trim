@@ -29,6 +29,12 @@ python -m pip install -e ".[ocr]"
 pubg-highlight-trim "C:\Users\you\AppData\Local\Temp\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰"
 ```
 
+You can also pass one mp4 directly:
+
+```powershell
+pubg-highlight-trim "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
+```
+
 Useful options:
 
 ```powershell
@@ -59,6 +65,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
 python -m pip install -e ".[ocr,build]"
 powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
 ```
+
+The release zip contains `pubg-highlight-trim.exe`, bundled `ffmpeg/ffprobe`, and the PaddleOCR models needed by the default OCR-first detector. No Python install is required for users of the zip.
 
 GitHub Actions builds the Windows release zip on tag pushes like `v0.1.0` or manual `workflow_dispatch`.
 

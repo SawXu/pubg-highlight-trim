@@ -16,12 +16,17 @@ Invoke-WebRequest -Uri $Url -OutFile $zipPath
 
 Write-Host "Extracting FFmpeg"
 Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-$binDir = Get-ChildItem -Path $extractPath -Recurse -Directory | Where-Object { Test-Path (Join-Path $_.FullName "ffmpeg.exe") -and Test-Path (Join-Path $_.FullName "ffprobe.exe") } | Select-Object -First 1
+$binDir = Get-ChildItem -Path $extractPath -Recurse -Directory | Where-Object {
+    (Test-Path (Join-Path $_.FullName "ffmpeg.exe")) -and (Test-Path (Join-Path $_.FullName "ffprobe.exe"))
+} | Select-Object -First 1
 if (-not $binDir) {
     throw "Could not find ffmpeg.exe and ffprobe.exe in downloaded archive."
 }
 
-Get-ChildItem -Path $binDir.FullName -File | Copy-Item -Destination $destPath -Force
+$runtimeFiles = Get-ChildItem -Path $binDir.FullName -File | Where-Object {
+    $_.Name -in @("ffmpeg.exe", "ffprobe.exe") -or $_.Extension -ieq ".dll"
+}
+$runtimeFiles | Copy-Item -Destination $destPath -Force
 & (Join-Path $destPath "ffmpeg.exe") -version | Select-Object -First 1
 & (Join-Path $destPath "ffprobe.exe") -version | Select-Object -First 1
 

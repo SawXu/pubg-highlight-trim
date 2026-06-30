@@ -3,25 +3,14 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
-
-def _runtime_roots() -> list[Path]:
-    roots: list[Path] = []
-    frozen_root = getattr(sys, "_MEIPASS", None)
-    if frozen_root:
-        roots.append(Path(frozen_root))
-    if getattr(sys, "frozen", False):
-        roots.append(Path(sys.executable).resolve().parent)
-    roots.append(Path(__file__).resolve().parents[2])
-    roots.append(Path.cwd())
-    return roots
+from .runtime import runtime_roots
 
 
 def _bundled_dirs() -> list[Path]:
     dirs: list[Path] = []
-    for root in _runtime_roots():
+    for root in runtime_roots():
         dirs.extend(
             [
                 root / "vendor" / "ffmpeg",

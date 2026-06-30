@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="pubg-highlight-trim",
         description="Trim PUBG NVIDIA Highlight clips to the player's own knock/elimination moment.",
     )
-    parser.add_argument("folder", nargs="?", type=Path, default=Path("."), help="Folder containing PUBG highlight mp4 files")
+    parser.add_argument("input", nargs="?", type=Path, default=Path("."), help="PUBG highlight folder or a single mp4 file")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--detector", choices=["auto", "ocr", "health"], default="auto", help="auto tries OCR first, then health fallback")
     parser.add_argument("--output-dir", type=Path, default=None, help="Directory for individual trimmed clips")

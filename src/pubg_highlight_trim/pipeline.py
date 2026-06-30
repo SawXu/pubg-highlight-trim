@@ -51,9 +51,13 @@ def read_candidate_csv(path: Path | None) -> dict[str, list[float]]:
     return out
 
 
-def _prepare_output_paths(args: SimpleNamespace, folder: Path) -> tuple[Path, Path]:
-    outdir = args.output_dir or folder / "pubg_highlight_trim_output"
-    final = args.final or folder / "pubg_highlight_trim_montage.mp4"
+def _prepare_output_paths(args: SimpleNamespace, input_path: Path, base_folder: Path, single_file: bool) -> tuple[Path, Path]:
+    if single_file:
+        outdir = args.output_dir or base_folder / f"{input_path.stem}_pubg_trim_clips"
+        final = args.final or base_folder / f"{input_path.stem}_pubg_trim.mp4"
+    else:
+        outdir = args.output_dir or base_folder / "pubg_highlight_trim_output"
+        final = args.final or base_folder / "pubg_highlight_trim_montage.mp4"
 
     if args.overwrite:
         if outdir.exists():
@@ -137,16 +141,25 @@ def _record_skip(idx: int, src: Path, detection: EventDetection, opening_red_rat
 
 
 def run(args: SimpleNamespace) -> int:
-    folder = args.folder.resolve()
-    if not folder.exists() or not folder.is_dir():
-        raise SystemExit(f"Input folder does not exist or is not a directory: {folder}")
+    input_path = args.input.resolve()
+    if not input_path.exists():
+        raise SystemExit(f"Input path does not exist: {input_path}")
 
     ffmpeg, ffprobe = find_ffmpeg_pair(args.ffmpeg, args.ffprobe)
-    files = iter_source_files(folder, args.include_view_replays, args.recursive)
+    single_file = input_path.is_file()
+    base_folder = input_path.parent if single_file else input_path
+    if single_file:
+        if input_path.suffix.lower() != ".mp4":
+            raise SystemExit(f"Single-file input must be an .mp4: {input_path}")
+        files = [input_path]
+    elif input_path.is_dir():
+        files = iter_source_files(input_path, args.include_view_replays, args.recursive)
+    else:
+        raise SystemExit(f"Input path is neither a file nor a directory: {input_path}")
     if not files:
         raise SystemExit("No matching .被击倒.DVR*.mp4 or .淘汰.DVR*.mp4 source files found")
 
-    outdir, final = _prepare_output_paths(args, folder)
+    outdir, final = _prepare_output_paths(args, input_path, base_folder, single_file)
     print(f"windows_only=true", flush=True)
     print(f"sources={len(files)}", flush=True)
     print(f"detector={args.detector}", flush=True)

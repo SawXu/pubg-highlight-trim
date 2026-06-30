@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import EventDetection
+from .runtime import first_existing_runtime_path
 
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
@@ -18,6 +19,14 @@ SELF_FUZZY_RE = re.compile(r"(击倒.{0,2}你|淘.{0,2}了?你|倒了你)")
 
 class OcrUnavailable(RuntimeError):
     pass
+
+
+def configure_paddlex_cache() -> None:
+    if os.environ.get("PADDLE_PDX_CACHE_HOME"):
+        return
+    bundled_cache = first_existing_runtime_path("vendor", "paddlex_cache", "official_models")
+    if bundled_cache:
+        os.environ["PADDLE_PDX_CACHE_HOME"] = str(bundled_cache.parent)
 
 
 @dataclass
@@ -61,6 +70,7 @@ def classify_self_text(text: str) -> str | None:
 
 
 def load_backend() -> tuple[Any, Any]:
+    configure_paddlex_cache()
     try:
         import cv2  # type: ignore
         from paddleocr import PaddleOCR  # type: ignore
