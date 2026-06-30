@@ -42,9 +42,14 @@ pubg-highlight-trim "." --before 4 --after 1 --output-dir ".\trimmed" --final ".
 pubg-highlight-trim "." --detector ocr
 pubg-highlight-trim "." --detector health
 pubg-highlight-trim "." --dry-run
+pubg-highlight-trim "." --profile
 ```
 
 The default detector is `auto`: OCR is tried first and health-bar detection is used when OCR dependencies are missing or no self-event text is found for a clip.
+
+OCR scans the fixed lower-center PUBG self-event text area by default. Coarse scan stays at one frame every 3 seconds, and a coarse hit is refined at 0.5-second intervals to find the first visible self-event text. If a layout differs, override the crop with `--roi x1,y1,x2,y2`.
+
+Use `--profile` to print per-clip timings for ffprobe, opening downed check, OCR predict time, video frame seek/read time, trim encoding time, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
 
 ## ffmpeg
 

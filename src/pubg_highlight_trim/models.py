@@ -13,3 +13,7 @@ class EventDetection:
     scores: str = ""
     ocr_seconds: float = 0.0
     sampled_count: int = 0
+    detect_seconds: float = 0.0
+    ocr_frame_seconds: float = 0.0
+    ocr_coarse_frames: int = 0
+    ocr_refine_frames: int = 0

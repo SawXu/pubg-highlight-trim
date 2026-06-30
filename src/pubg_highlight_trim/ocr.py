@@ -35,6 +35,7 @@ class OcrResult:
     scores: str
     seconds: float
     method: str
+    frame_seconds: float = 0.0
 
 
 @dataclass
@@ -48,10 +49,10 @@ class OcrConfig:
     candidate_step: float = 3.0
     refine_before: float = 6.0
     refine_after: float = 0.4
-    refine_step: float = 0.1
+    refine_step: float = 0.5
     no_full_scan: bool = False
-    roi: tuple[float, float, float, float] = (0.22, 0.62, 0.78, 0.84)
-    ocr_width: int = 1152
+    roi: tuple[float, float, float, float] = (0.30, 0.66, 0.70, 0.75)
+    ocr_width: int = 768
 
 
 def normalize_text(text: str) -> str:
@@ -118,10 +119,11 @@ def build_text_priority_scan_times(duration: float, candidate_times: list[float]
 
 
 def ocr_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -> OcrResult:
+    frame_started = time.time()
     cap.set(cv2_module.CAP_PROP_POS_MSEC, max(0.0, sec) * 1000)
     ok, frame = cap.read()
     if not ok or frame is None:
-        return OcrResult("", "", 0.0, "frame-read-failed")
+        return OcrResult("", "", 0.0, "frame-read-failed", time.time() - frame_started)
 
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = config.roi
@@ -129,6 +131,7 @@ def ocr_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -
     if config.ocr_width > 0 and crop.shape[1] > config.ocr_width:
         scale = config.ocr_width / crop.shape[1]
         crop = cv2_module.resize(crop, (config.ocr_width, max(1, int(crop.shape[0] * scale))), interpolation=cv2_module.INTER_AREA)
+    frame_elapsed = time.time() - frame_started
 
     started = time.time()
     raw = ocr.predict(crop)
@@ -146,59 +149,79 @@ def ocr_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -
                 scores.append(str(score))
     text = normalize_text("".join(texts))
     method = classify_self_text(text) or "paddle-not-self-text"
-    return OcrResult(text, ";".join(scores), elapsed, method)
+    return OcrResult(text, ";".join(scores), elapsed, method, frame_elapsed)
 
 
-def refine_event(cv2_module: Any, cap: Any, ocr: Any, coarse_sec: float, duration: float, config: OcrConfig) -> tuple[float, OcrResult, int]:
+def refine_event(
+    cv2_module: Any,
+    cap: Any,
+    ocr: Any,
+    coarse_sec: float,
+    duration: float,
+    config: OcrConfig,
+    coarse_result: OcrResult | None = None,
+) -> tuple[float, OcrResult, int, float, float]:
     lo = max(0.0, coarse_sec - config.refine_before)
-    hi = min(duration, coarse_sec + config.refine_after)
     sampled = 0
-    best: tuple[float, OcrResult] | None = None
+    total_ocr_seconds = 0.0
+    total_frame_seconds = 0.0
 
-    rough_step = max(config.refine_step, 0.5)
-    rough_hit: tuple[float, OcrResult] | None = None
-    for t in time_range(lo, hi, rough_step):
+    hit: tuple[float, OcrResult] | None = None
+    if coarse_result is not None and classify_self_text(coarse_result.text):
+        hit = (coarse_sec, coarse_result)
+    else:
+        result = ocr_at(cv2_module, cap, ocr, coarse_sec, config)
+        sampled += 1
+        total_ocr_seconds += result.seconds
+        total_frame_seconds += result.frame_seconds
+        if classify_self_text(result.text):
+            hit = (coarse_sec, result)
+
+    if hit is None:
+        return coarse_sec, OcrResult("", "", 0.0, "paddle-refine-missed"), sampled, total_ocr_seconds, total_frame_seconds
+
+    earliest_hit = hit
+    for t in time_range(lo, max(lo, coarse_sec - config.refine_step), config.refine_step)[::-1]:
         sampled += 1
         result = ocr_at(cv2_module, cap, ocr, t, config)
+        total_ocr_seconds += result.seconds
+        total_frame_seconds += result.frame_seconds
         if classify_self_text(result.text):
-            rough_hit = (t, result)
-            break
-        if result.text and best is None:
-            best = (t, result)
-    if rough_hit:
-        fine_lo = max(lo, rough_hit[0] - rough_step)
-        fine_hi = min(hi, rough_hit[0] + config.refine_step)
-        for t in time_range(fine_lo, fine_hi, config.refine_step):
-            sampled += 1
-            result = ocr_at(cv2_module, cap, ocr, t, config)
-            if classify_self_text(result.text):
-                return t, result, sampled
-            if result.text and best is None:
-                best = (t, result)
-        return rough_hit[0], rough_hit[1], sampled
-    if best:
-        return best[0], best[1], sampled
-    return coarse_sec, OcrResult("", "", 0.0, "paddle-refine-missed"), sampled
+            earliest_hit = (t, result)
+            continue
+        break
+
+    return earliest_hit[0], earliest_hit[1], sampled, total_ocr_seconds, total_frame_seconds
 
 
 def detect_event(path: Path, cv2_module: Any, ocr: Any, duration: float, candidate_times: list[float], config: OcrConfig) -> EventDetection:
+    detect_started = time.time()
     cap = cv2_module.VideoCapture(str(path))
     sampled_count = 0
+    coarse_count = 0
+    refine_count = 0
     total_ocr_seconds = 0.0
+    total_frame_seconds = 0.0
     last_text = ""
     last_scores = ""
     last_method = "not-scanned"
     try:
         for sec in build_text_priority_scan_times(duration, candidate_times, config):
             sampled_count += 1
+            coarse_count += 1
             result = ocr_at(cv2_module, cap, ocr, sec, config)
             total_ocr_seconds += result.seconds
+            total_frame_seconds += result.frame_seconds
             if result.text:
                 last_text, last_scores, last_method = result.text, result.scores, result.method
             if classify_self_text(result.text):
-                event_sec, refined, refined_count = refine_event(cv2_module, cap, ocr, sec, duration, config)
+                event_sec, refined, refined_count, refined_seconds, refined_frame_seconds = refine_event(
+                    cv2_module, cap, ocr, sec, duration, config, result
+                )
                 sampled_count += refined_count
-                total_ocr_seconds += refined.seconds
+                refine_count += refined_count
+                total_ocr_seconds += refined_seconds
+                total_frame_seconds += refined_frame_seconds
                 method = classify_self_text(refined.text) or result.method
                 return EventDetection(
                     duration,
@@ -209,6 +232,10 @@ def detect_event(path: Path, cv2_module: Any, ocr: Any, duration: float, candida
                     refined.scores or result.scores,
                     total_ocr_seconds,
                     sampled_count,
+                    time.time() - detect_started,
+                    total_frame_seconds,
+                    coarse_count,
+                    refine_count,
                 )
     finally:
         cap.release()
@@ -222,4 +249,8 @@ def detect_event(path: Path, cv2_module: Any, ocr: Any, duration: float, candida
         last_scores,
         total_ocr_seconds,
         sampled_count,
+        time.time() - detect_started,
+        total_frame_seconds,
+        coarse_count,
+        refine_count,
     )

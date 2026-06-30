@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import shutil
+import time
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
@@ -90,6 +91,14 @@ def _blank_record(idx: int, src: Path, dur: float, status: str, method: str, det
         "OpeningRedRatio": "",
         "OcrSeconds": "0.000",
         "SampledFrames": "0",
+        "DetectSeconds": "0.000",
+        "OcrFrameSeconds": "0.000",
+        "OcrCoarseFrames": "0",
+        "OcrRefineFrames": "0",
+        "ProbeSeconds": "0.000",
+        "OpeningCheckSeconds": "0.000",
+        "TrimSeconds": "0.000",
+        "TotalSeconds": "0.000",
         "Encoder": "",
         "Output": "",
     }
@@ -104,6 +113,10 @@ def _record_detection(
     encoder: str,
     output: str,
     opening_red_ratio: float,
+    probe_seconds: float,
+    opening_seconds: float,
+    trim_seconds: float,
+    total_seconds: float,
 ) -> dict[str, str]:
     return {
         "Index": str(idx),
@@ -121,12 +134,29 @@ def _record_detection(
         "OpeningRedRatio": f"{opening_red_ratio:.3f}",
         "OcrSeconds": f"{detection.ocr_seconds:.3f}",
         "SampledFrames": str(detection.sampled_count),
+        "DetectSeconds": f"{detection.detect_seconds:.3f}",
+        "OcrFrameSeconds": f"{detection.ocr_frame_seconds:.3f}",
+        "OcrCoarseFrames": str(detection.ocr_coarse_frames),
+        "OcrRefineFrames": str(detection.ocr_refine_frames),
+        "ProbeSeconds": f"{probe_seconds:.3f}",
+        "OpeningCheckSeconds": f"{opening_seconds:.3f}",
+        "TrimSeconds": f"{trim_seconds:.3f}",
+        "TotalSeconds": f"{total_seconds:.3f}",
         "Encoder": encoder,
         "Output": output,
     }
 
 
-def _record_skip(idx: int, src: Path, detection: EventDetection, opening_red_ratio: float) -> dict[str, str]:
+def _record_skip(
+    idx: int,
+    src: Path,
+    detection: EventDetection,
+    opening_red_ratio: float,
+    probe_seconds: float = 0.0,
+    opening_seconds: float = 0.0,
+    trim_seconds: float = 0.0,
+    total_seconds: float = 0.0,
+) -> dict[str, str]:
     row = _blank_record(idx, src, detection.duration_sec, "skipped", detection.method, detection.detector)
     row.update(
         {
@@ -135,16 +165,57 @@ def _record_skip(idx: int, src: Path, detection: EventDetection, opening_red_rat
             "OpeningRedRatio": f"{opening_red_ratio:.3f}",
             "OcrSeconds": f"{detection.ocr_seconds:.3f}",
             "SampledFrames": str(detection.sampled_count),
+            "DetectSeconds": f"{detection.detect_seconds:.3f}",
+            "OcrFrameSeconds": f"{detection.ocr_frame_seconds:.3f}",
+            "OcrCoarseFrames": str(detection.ocr_coarse_frames),
+            "OcrRefineFrames": str(detection.ocr_refine_frames),
+            "ProbeSeconds": f"{probe_seconds:.3f}",
+            "OpeningCheckSeconds": f"{opening_seconds:.3f}",
+            "TrimSeconds": f"{trim_seconds:.3f}",
+            "TotalSeconds": f"{total_seconds:.3f}",
         }
     )
     return row
 
 
+def _profile_clip(
+    args: SimpleNamespace,
+    idx: int,
+    total: int,
+    src: Path,
+    status: str,
+    detection: EventDetection,
+    probe_seconds: float,
+    opening_seconds: float,
+    trim_seconds: float,
+    total_seconds: float,
+) -> None:
+    if not getattr(args, "profile", False):
+        return
+    print(
+        "PROFILE "
+        f"[{idx:02d}/{total}] {status} "
+        f"probe={probe_seconds:.3f}s "
+        f"opening={opening_seconds:.3f}s "
+        f"detect={detection.detect_seconds:.3f}s "
+        f"ocr_predict={detection.ocr_seconds:.3f}s "
+        f"ocr_frame={detection.ocr_frame_seconds:.3f}s "
+        f"samples={detection.sampled_count} "
+        f"coarse={detection.ocr_coarse_frames} "
+        f"refine={detection.ocr_refine_frames} "
+        f"trim={trim_seconds:.3f}s "
+        f"total={total_seconds:.3f}s | {src.name}",
+        flush=True,
+    )
+
+
 def run(args: SimpleNamespace) -> int:
+    run_started = time.time()
     input_path = args.input.resolve()
     if not input_path.exists():
         raise SystemExit(f"Input path does not exist: {input_path}")
 
+    setup_started = time.time()
     ffmpeg, ffprobe = find_ffmpeg_pair(args.ffmpeg, args.ffprobe)
     single_file = input_path.is_file()
     base_folder = input_path.parent if single_file else input_path
@@ -160,19 +231,25 @@ def run(args: SimpleNamespace) -> int:
         raise SystemExit("No matching .被击倒.DVR*.mp4 or .淘汰.DVR*.mp4 source files found")
 
     outdir, final = _prepare_output_paths(args, input_path, base_folder, single_file)
+    setup_seconds = time.time() - setup_started
     print(f"windows_only=true", flush=True)
     print(f"sources={len(files)}", flush=True)
     print(f"detector={args.detector}", flush=True)
     print(f"ffmpeg={ffmpeg}", flush=True)
     print(f"output_dir={outdir}", flush=True)
     print(f"final={final}", flush=True)
+    if args.profile:
+        print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
 
     candidates = read_candidate_csv(args.candidate_csv)
     ocr_backend: tuple[object, object] | None = None
     ocr_error = ""
     if args.detector in {"auto", "ocr"}:
         try:
+            ocr_setup_started = time.time()
             ocr_backend = load_backend()
+            if args.profile:
+                print(f"PROFILE ocr_init={time.time() - ocr_setup_started:.3f}s", flush=True)
         except OcrUnavailable as exc:
             ocr_error = str(exc)
             if args.detector == "ocr":
@@ -202,10 +279,15 @@ def run(args: SimpleNamespace) -> int:
     encoders: Counter[str] = Counter()
 
     for idx, src in enumerate(files, 1):
+        clip_started = time.time()
+        probe_started = time.time()
         dur = duration_sec(src, ffprobe)
+        probe_seconds = time.time() - probe_started
         opening_red_ratio = 0.0
         opening_samples = 0
+        opening_seconds = 0.0
         if not args.allow_starts_downed:
+            opening_started = time.time()
             starts_downed, opening_red_ratio, opening_samples = healthbar.opening_already_downed(
                 src,
                 ffmpeg,
@@ -214,6 +296,7 @@ def run(args: SimpleNamespace) -> int:
                 fps=args.opening_check_fps,
                 red_threshold=args.opening_red_threshold,
             )
+            opening_seconds = time.time() - opening_started
             if starts_downed:
                 detection = EventDetection(
                     dur,
@@ -224,30 +307,43 @@ def run(args: SimpleNamespace) -> int:
                 )
                 methods[detection.method] += 1
                 detectors[detection.detector] += 1
+                total_seconds = time.time() - clip_started
                 print(f"[{idx:02d}/{len(files)}] SKIP {detection.method} opening_red={opening_red_ratio:.3f} | {src.name}", flush=True)
-                records.append(_record_skip(idx, src, detection, opening_red_ratio))
+                _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, opening_seconds, 0.0, total_seconds)
+                records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
                 continue
 
         detection: EventDetection | None = None
         if args.detector in {"auto", "ocr"} and ocr_backend is not None:
             cv2_module, ocr_engine = ocr_backend
+            detect_started = time.time()
             detection = detect_ocr_event(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), ocr_config)
+            if detection.detect_seconds == 0.0:
+                detection.detect_seconds = time.time() - detect_started
             if detection.event_sec is None and args.detector == "auto":
                 print(f"[{idx:02d}/{len(files)}] OCR MISS {detection.method}; trying health fallback | {src.name}", flush=True)
+                health_started = time.time()
                 health_detection = healthbar.detect_event(src, ffmpeg, ffprobe)
+                health_detection.detect_seconds = time.time() - health_started
                 if health_detection.event_sec is not None:
                     health_detection.method = f"health-fallback:{health_detection.method}"
                     detection = health_detection
         if detection is None or (detection.event_sec is None and args.detector == "health"):
+            health_started = time.time()
             detection = healthbar.detect_event(src, ffmpeg, ffprobe)
+            detection.detect_seconds = time.time() - health_started
         if detection.event_sec is None and args.detector == "auto" and ocr_backend is None:
+            health_started = time.time()
             detection = healthbar.detect_event(src, ffmpeg, ffprobe)
+            detection.detect_seconds = time.time() - health_started
 
         if detection.event_sec is None:
             methods[detection.method] += 1
             detectors[detection.detector] += 1
+            total_seconds = time.time() - clip_started
             print(f"[{idx:02d}/{len(files)}] SKIP {detection.method} | {src.name} | {detection.text[:80]}", flush=True)
-            records.append(_record_skip(idx, src, detection, opening_red_ratio))
+            _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, opening_seconds, 0.0, total_seconds)
+            records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
             continue
 
         start = max(0.0, detection.event_sec - args.seconds_before)
@@ -257,20 +353,40 @@ def run(args: SimpleNamespace) -> int:
 
         output = ""
         encoder = ""
+        trim_seconds = 0.0
         if not args.dry_run:
             output_path = unique_path(outdir / f"{len(clips) + 1:03d}_{src.name}")
+            trim_started = time.time()
             encoder = trim_clip(src, output_path, start, end - start, ffmpeg)
+            trim_seconds = time.time() - trim_started
             encoders[encoder] += 1
             clips.append(output_path)
             output = str(output_path)
 
         methods[detection.method] += 1
         detectors[detection.detector] += 1
+        total_seconds = time.time() - clip_started
         print(
             f"[{idx:02d}/{len(files)}] INCLUDE {detection.event_sec:.3f}s {start:.3f}-{end:.3f} {detection.method} | {src.name}",
             flush=True,
         )
-        records.append(_record_detection(idx, src, detection, start, end, encoder, output, opening_red_ratio))
+        _profile_clip(args, idx, len(files), src, "INCLUDE", detection, probe_seconds, opening_seconds, trim_seconds, total_seconds)
+        records.append(
+            _record_detection(
+                idx,
+                src,
+                detection,
+                start,
+                end,
+                encoder,
+                output,
+                opening_red_ratio,
+                probe_seconds,
+                opening_seconds,
+                trim_seconds,
+                total_seconds,
+            )
+        )
 
     csv_path = outdir / "检测与裁剪记录.csv"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -282,9 +398,12 @@ def run(args: SimpleNamespace) -> int:
     final_duration = 0.0
     final_size = 0.0
     if clips and not args.no_merge and not args.dry_run:
+        merge_started = time.time()
         concat_list = concat_clips(clips, final, ffmpeg)
         final_duration = duration_sec(final, ffprobe)
         final_size = final.stat().st_size / 1024 / 1024
+        if args.profile:
+            print(f"PROFILE merge={time.time() - merge_started:.3f}s clips={len(clips)}", flush=True)
 
     included_count = sum(1 for row in records if row["Status"] == "included")
     summary = {
@@ -303,6 +422,7 @@ def run(args: SimpleNamespace) -> int:
         "methods": dict(methods),
         "detectors": dict(detectors),
         "encoders": dict(encoders),
+        "profile_total_sec": round(time.time() - run_started, 3),
     }
     summary_path = outdir / "summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
