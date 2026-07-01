@@ -5,13 +5,14 @@ import json
 import shutil
 import time
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 from . import healthbar
 from .ffmpeg_tools import concat_clips, duration_sec, find_ffmpeg_pair, trim_clip
 from .models import EventDetection
-from .ocr import OcrConfig, OcrUnavailable, detect_event as detect_ocr_event, load_backend
+from .ocr import OcrConfig, OcrUnavailable, detect_event as detect_ocr_event, detect_events as detect_ocr_events, load_backend
 from .source_files import iter_source_files
 
 
@@ -78,9 +79,13 @@ def _blank_record(idx: int, src: Path, dur: float, status: str, method: str, det
     return {
         "Index": str(idx),
         "Name": src.name,
+        "Target": "",
         "DurationSec": f"{dur:.3f}",
         "Status": status,
         "EventSec": "",
+        "EventSecs": "",
+        "EventCount": "0",
+        "EventKeys": "",
         "KeepStartSec": "",
         "KeepEndSec": "",
         "KeepDurationSec": "",
@@ -121,9 +126,13 @@ def _record_detection(
     return {
         "Index": str(idx),
         "Name": src.name,
+        "Target": detection.target,
         "DurationSec": f"{detection.duration_sec:.3f}",
         "Status": "included",
         "EventSec": f"{detection.event_sec:.3f}" if detection.event_sec is not None else "",
+        "EventSecs": detection.event_secs or (f"{detection.event_sec:.3f}" if detection.event_sec is not None else ""),
+        "EventCount": detection.event_count,
+        "EventKeys": detection.event_key,
         "KeepStartSec": f"{start:.3f}",
         "KeepEndSec": f"{end:.3f}",
         "KeepDurationSec": f"{end - start:.3f}",
@@ -160,6 +169,11 @@ def _record_skip(
     row = _blank_record(idx, src, detection.duration_sec, "skipped", detection.method, detection.detector)
     row.update(
         {
+            "Target": detection.target,
+            "EventSec": f"{detection.event_sec:.3f}" if detection.event_sec is not None else "",
+            "EventSecs": detection.event_secs,
+            "EventCount": detection.event_count if detection.event_sec is not None else "0",
+            "EventKeys": detection.event_key,
             "PaddleText": detection.text,
             "PaddleScores": detection.scores,
             "OpeningRedRatio": f"{opening_red_ratio:.3f}",
@@ -176,6 +190,31 @@ def _record_skip(
         }
     )
     return row
+
+
+def _min_event_sec(args: SimpleNamespace) -> float:
+    value = getattr(args, "min_event_sec", 2.0)
+    if value is None:
+        return 0.0
+    return max(0.0, float(value))
+
+
+def _early_event_skip(detection: EventDetection) -> EventDetection:
+    return replace(detection, method="skipped-before-min-event-sec")
+
+
+def _partition_too_early_detections(
+    detections: list[EventDetection],
+    min_event_sec: float,
+) -> tuple[list[EventDetection], list[EventDetection]]:
+    kept: list[EventDetection] = []
+    skipped: list[EventDetection] = []
+    for detection in detections:
+        if detection.event_sec is not None and detection.event_sec < min_event_sec:
+            skipped.append(_early_event_skip(detection))
+        else:
+            kept.append(detection)
+    return kept, skipped
 
 
 def _profile_clip(
@@ -195,6 +234,7 @@ def _profile_clip(
     print(
         "PROFILE "
         f"[{idx:02d}/{total}] {status} "
+        f"target={detection.target or '-'} "
         f"probe={probe_seconds:.3f}s "
         f"opening={opening_seconds:.3f}s "
         f"detect={detection.detect_seconds:.3f}s "
@@ -207,6 +247,66 @@ def _profile_clip(
         f"total={total_seconds:.3f}s | {src.name}",
         flush=True,
     )
+
+
+def _merge_detection_group(group: list[EventDetection]) -> EventDetection:
+    first = group[0]
+    last = group[-1]
+    targets = [d.target for d in group if d.target]
+    unique_targets = list(dict.fromkeys(targets))
+    methods = list(dict.fromkeys(d.method for d in group if d.method))
+    texts = list(dict.fromkeys(d.text for d in group if d.text))
+    scores = [d.scores for d in group if d.scores]
+    event_secs = [f"{d.event_sec:.3f}" for d in group if d.event_sec is not None]
+    event_keys = [d.event_key for d in group if d.event_key]
+    return EventDetection(
+        first.duration_sec,
+        first.event_sec,
+        "+".join(methods) if methods else first.method,
+        last.detector,
+        " || ".join(texts),
+        ";".join(scores),
+        last.ocr_seconds,
+        last.sampled_count,
+        last.detect_seconds,
+        last.ocr_frame_seconds,
+        last.ocr_coarse_frames,
+        last.ocr_refine_frames,
+        unique_targets[0] if len(unique_targets) == 1 else "both",
+        ";".join(event_keys),
+        str(len(group)),
+        ";".join(event_secs),
+    )
+
+
+def _merged_clip_plans(detections: list[EventDetection], before: float, after: float) -> list[tuple[EventDetection, float, float]]:
+    valid = sorted((d for d in detections if d.event_sec is not None), key=lambda d: d.event_sec or 0.0)
+    plans: list[tuple[EventDetection, float, float]] = []
+    group: list[EventDetection] = []
+    group_start = 0.0
+    group_end = 0.0
+    for detection in valid:
+        start = max(0.0, (detection.event_sec or 0.0) - before)
+        end = min(detection.duration_sec, (detection.event_sec or 0.0) + after)
+        if end <= start:
+            end = min(detection.duration_sec, start + 0.1)
+        if group and start <= group_end + 1e-6:
+            group.append(detection)
+            group_end = max(group_end, end)
+            continue
+        if group:
+            plans.append((_merge_detection_group(group), group_start, group_end))
+        group = [detection]
+        group_start = start
+        group_end = end
+    if group:
+        plans.append((_merge_detection_group(group), group_start, group_end))
+    return plans
+
+
+def _clip_target_prefix(detection: EventDetection) -> str:
+    suffix = f"x{detection.event_count}" if detection.event_count not in {"", "0", "1"} else ""
+    return f"{detection.target or 'event'}{suffix}"
 
 
 def run(args: SimpleNamespace) -> int:
@@ -224,7 +324,7 @@ def run(args: SimpleNamespace) -> int:
             raise SystemExit(f"Single-file input must be an .mp4: {input_path}")
         files = [input_path]
     elif input_path.is_dir():
-        files = iter_source_files(input_path, args.include_view_replays, args.recursive)
+        files = iter_source_files(input_path, args.include_view_replays, args.recursive, args.target)
     else:
         raise SystemExit(f"Input path is neither a file nor a directory: {input_path}")
     if not files:
@@ -235,11 +335,15 @@ def run(args: SimpleNamespace) -> int:
     print(f"windows_only=true", flush=True)
     print(f"sources={len(files)}", flush=True)
     print(f"detector={args.detector}", flush=True)
+    print(f"target={args.target}", flush=True)
+    print(f"min_event_sec={_min_event_sec(args):.3f}", flush=True)
     print(f"ffmpeg={ffmpeg}", flush=True)
     print(f"output_dir={outdir}", flush=True)
     print(f"final={final}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
+    if args.target in {"own-kill", "both"} and args.detector == "health":
+        raise SystemExit("--target own-kill/both requires OCR; use --detector auto or --detector ocr")
 
     candidates = read_candidate_csv(args.candidate_csv)
     ocr_backend: tuple[object, object] | None = None
@@ -252,11 +356,12 @@ def run(args: SimpleNamespace) -> int:
                 print(f"PROFILE ocr_init={time.time() - ocr_setup_started:.3f}s", flush=True)
         except OcrUnavailable as exc:
             ocr_error = str(exc)
-            if args.detector == "ocr":
+            if args.detector == "ocr" or args.target in {"own-kill", "both"}:
                 raise SystemExit(ocr_error) from exc
             print(f"OCR unavailable; falling back to health detector: {ocr_error}", flush=True)
 
     ocr_config = OcrConfig(
+        target=args.target,
         priority_window=args.priority_window,
         scan_start=args.scan_start,
         scan_end=args.scan_end,
@@ -277,6 +382,7 @@ def run(args: SimpleNamespace) -> int:
     methods: Counter[str] = Counter()
     detectors: Counter[str] = Counter()
     encoders: Counter[str] = Counter()
+    min_event_sec = _min_event_sec(args)
 
     for idx, src in enumerate(files, 1):
         clip_started = time.time()
@@ -286,7 +392,7 @@ def run(args: SimpleNamespace) -> int:
         opening_red_ratio = 0.0
         opening_samples = 0
         opening_seconds = 0.0
-        if not args.allow_starts_downed:
+        if not args.allow_starts_downed and args.target == "self-death":
             opening_started = time.time()
             starts_downed, opening_red_ratio, opening_samples = healthbar.opening_already_downed(
                 src,
@@ -304,6 +410,7 @@ def run(args: SimpleNamespace) -> int:
                     "skipped-starts-already-downed",
                     "opening-health-check",
                     sampled_count=opening_samples,
+                    target="self-death",
                 )
                 methods[detection.method] += 1
                 detectors[detection.detector] += 1
@@ -313,6 +420,103 @@ def run(args: SimpleNamespace) -> int:
                 records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
                 continue
 
+        if ocr_backend is not None and args.detector in {"auto", "ocr"}:
+            cv2_module, ocr_engine = ocr_backend
+            detect_started = time.time()
+            detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), ocr_config)
+            if len(detections) == 1 and detections[0].event_sec is None:
+                detection = detections[0]
+                if detection.detect_seconds == 0.0:
+                    detection.detect_seconds = time.time() - detect_started
+                if args.detector == "auto" and args.target == "self-death":
+                    print(f"[{idx:02d}/{len(files)}] OCR MISS {detection.method}; trying health fallback | {src.name}", flush=True)
+                    health_started = time.time()
+                    health_detection = healthbar.detect_event(src, ffmpeg, ffprobe)
+                    health_detection.detect_seconds = time.time() - health_started
+                    if not health_detection.target:
+                        health_detection.target = "self-death"
+                    if health_detection.event_sec is not None:
+                        health_detection.method = f"health-fallback:{health_detection.method}"
+                        detections = [health_detection]
+                    else:
+                        detection = health_detection
+                        methods[detection.method] += 1
+                        detectors[detection.detector] += 1
+                        total_seconds = time.time() - clip_started
+                        print(f"[{idx:02d}/{len(files)}] SKIP {detection.target} {detection.method} | {src.name} | {detection.text[:80]}", flush=True)
+                        _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, opening_seconds, 0.0, total_seconds)
+                        records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
+                        continue
+                else:
+                    methods[detection.method] += 1
+                    detectors[detection.detector] += 1
+                    total_seconds = time.time() - clip_started
+                    print(f"[{idx:02d}/{len(files)}] SKIP {detection.target} {detection.method} | {src.name} | {detection.text[:80]}", flush=True)
+                    _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, opening_seconds, 0.0, total_seconds)
+                    records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
+                    continue
+
+            detections, early_skips = _partition_too_early_detections(detections, min_event_sec)
+            for detection in early_skips:
+                if detection.detect_seconds == 0.0:
+                    detection.detect_seconds = time.time() - detect_started
+                methods[detection.method] += 1
+                detectors[detection.detector] += 1
+                total_seconds = time.time() - clip_started
+                print(
+                    f"[{idx:02d}/{len(files)}] SKIP {detection.target} "
+                    f"{detection.event_secs or f'{detection.event_sec:.3f}'}s < {min_event_sec:.3f}s "
+                    f"{detection.method} | {src.name}",
+                    flush=True,
+                )
+                _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, opening_seconds, 0.0, total_seconds)
+                records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
+            if not detections:
+                continue
+
+            for detection, start, end in _merged_clip_plans(detections, args.seconds_before, args.seconds_after):
+                if detection.detect_seconds == 0.0:
+                    detection.detect_seconds = time.time() - detect_started
+
+                output = ""
+                encoder = ""
+                trim_seconds = 0.0
+                if not args.dry_run:
+                    output_path = unique_path(outdir / f"{len(clips) + 1:03d}_{_clip_target_prefix(detection)}_{src.name}")
+                    trim_started = time.time()
+                    encoder = trim_clip(src, output_path, start, end - start, ffmpeg)
+                    trim_seconds = time.time() - trim_started
+                    encoders[encoder] += 1
+                    clips.append(output_path)
+                    output = str(output_path)
+
+                methods[detection.method] += 1
+                detectors[detection.detector] += 1
+                total_seconds = time.time() - clip_started
+                print(
+                    f"[{idx:02d}/{len(files)}] INCLUDE {detection.target} {detection.event_secs or f'{detection.event_sec:.3f}'}s "
+                    f"{start:.3f}-{end:.3f} {detection.method} | {src.name}",
+                    flush=True,
+                )
+                _profile_clip(args, idx, len(files), src, "INCLUDE", detection, probe_seconds, opening_seconds, trim_seconds, total_seconds)
+                records.append(
+                    _record_detection(
+                        idx,
+                        src,
+                        detection,
+                        start,
+                        end,
+                        encoder,
+                        output,
+                        opening_red_ratio,
+                        probe_seconds,
+                        opening_seconds,
+                        trim_seconds,
+                        total_seconds,
+                    )
+                )
+            continue
+
         detection: EventDetection | None = None
         if args.detector in {"auto", "ocr"} and ocr_backend is not None:
             cv2_module, ocr_engine = ocr_backend
@@ -320,7 +524,7 @@ def run(args: SimpleNamespace) -> int:
             detection = detect_ocr_event(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), ocr_config)
             if detection.detect_seconds == 0.0:
                 detection.detect_seconds = time.time() - detect_started
-            if detection.event_sec is None and args.detector == "auto":
+            if detection.event_sec is None and args.detector == "auto" and args.target == "self-death":
                 print(f"[{idx:02d}/{len(files)}] OCR MISS {detection.method}; trying health fallback | {src.name}", flush=True)
                 health_started = time.time()
                 health_detection = healthbar.detect_event(src, ffmpeg, ffprobe)
@@ -328,20 +532,37 @@ def run(args: SimpleNamespace) -> int:
                 if health_detection.event_sec is not None:
                     health_detection.method = f"health-fallback:{health_detection.method}"
                     detection = health_detection
-        if detection is None or (detection.event_sec is None and args.detector == "health"):
+        if detection is None or (detection.event_sec is None and args.detector == "health" and args.target == "self-death"):
             health_started = time.time()
             detection = healthbar.detect_event(src, ffmpeg, ffprobe)
             detection.detect_seconds = time.time() - health_started
-        if detection.event_sec is None and args.detector == "auto" and ocr_backend is None:
+        if detection.event_sec is None and args.detector == "auto" and ocr_backend is None and args.target == "self-death":
             health_started = time.time()
             detection = healthbar.detect_event(src, ffmpeg, ffprobe)
             detection.detect_seconds = time.time() - health_started
+
+        if not detection.target:
+            detection.target = args.target
 
         if detection.event_sec is None:
             methods[detection.method] += 1
             detectors[detection.detector] += 1
             total_seconds = time.time() - clip_started
             print(f"[{idx:02d}/{len(files)}] SKIP {detection.method} | {src.name} | {detection.text[:80]}", flush=True)
+            _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, opening_seconds, 0.0, total_seconds)
+            records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
+            continue
+
+        if detection.event_sec < min_event_sec:
+            detection = _early_event_skip(detection)
+            methods[detection.method] += 1
+            detectors[detection.detector] += 1
+            total_seconds = time.time() - clip_started
+            print(
+                f"[{idx:02d}/{len(files)}] SKIP {detection.target} {detection.event_sec:.3f}s < {min_event_sec:.3f}s "
+                f"{detection.method} | {src.name}",
+                flush=True,
+            )
             _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, opening_seconds, 0.0, total_seconds)
             records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
             continue
@@ -412,6 +633,7 @@ def run(args: SimpleNamespace) -> int:
         "skipped_count": sum(1 for row in records if row["Status"] == "skipped"),
         "dry_run": args.dry_run,
         "detector": args.detector,
+        "min_event_sec": min_event_sec,
         "ocr_unavailable_reason": ocr_error,
         "output_dir": str(outdir),
         "final": "" if args.dry_run or args.no_merge or not clips else str(final),

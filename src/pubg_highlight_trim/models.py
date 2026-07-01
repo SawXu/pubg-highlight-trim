@@ -17,3 +17,7 @@ class EventDetection:
     ocr_frame_seconds: float = 0.0
     ocr_coarse_frames: int = 0
     ocr_refine_frames: int = 0
+    target: str = ""
+    event_key: str = ""
+    event_count: str = "1"
+    event_secs: str = ""
