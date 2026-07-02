@@ -100,7 +100,7 @@ class PipelineMergeTests(unittest.TestCase):
             clip_after_sec=1.0,
         )
 
-        row = _record_detection(1, Path("clip.mp4"), detection, 63.5, 74.5, "", "", 0.0, 0.0, 0.0, 0.0, 0.0)
+        row = _record_detection(1, Path("clip.mp4"), detection, 63.5, 74.5, "", "", 0.0, 0.0, 0.0)
 
         self.assertEqual(row["EventWeapon"], "燃烧弹")
         self.assertEqual(row["ContextRule"], "molotov-elim-context")
@@ -130,7 +130,7 @@ class PipelineMergeTests(unittest.TestCase):
             event_secs="1.500",
         )
 
-        row = _record_skip(1, Path("clip.mp4"), detection, opening_red_ratio=0.0)
+        row = _record_skip(1, Path("clip.mp4"), detection)
 
         self.assertEqual(row["EventSec"], "1.500")
         self.assertEqual(row["EventSecs"], "1.500")

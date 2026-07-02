@@ -9,7 +9,6 @@ class CliDefaultsTests(unittest.TestCase):
     def test_defaults_match_common_pubg_trim_workflow(self):
         args = build_parser().parse_args(["video.mp4"])
 
-        self.assertEqual(args.detector, "ocr")
         self.assertEqual(args.target, "both")
         self.assertEqual(args.seconds_before, 5.0)
         self.assertEqual(args.seconds_after, 1.0)
@@ -19,12 +18,18 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertIsNone(args.merge)
         self.assertFalse(args.no_auto_candidate_csv)
 
-    def test_scan_mode_aliases(self):
+    def test_scan_mode_is_the_only_scan_mode_switch(self):
         parser = build_parser()
 
-        self.assertEqual(parser.parse_args([".", "--full-scan"]).scan_mode, "full")
-        self.assertEqual(parser.parse_args([".", "--fast-scan"]).scan_mode, "fast")
-        self.assertEqual(parser.parse_args([".", "--no-full-scan"]).scan_mode, "fast")
+        self.assertEqual(parser.parse_args([".", "--scan-mode", "full"]).scan_mode, "full")
+        self.assertEqual(parser.parse_args([".", "--scan-mode", "fast"]).scan_mode, "fast")
+        with redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--full-scan"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--fast-scan"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--no-full-scan"])
 
     def test_merge_flags(self):
         parser = build_parser()
@@ -40,7 +45,7 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertTrue(args.overwrite)
         self.assertTrue(args.dry_run)
 
-    def test_final_and_montage_flags_are_removed(self):
+    def test_removed_flags_are_not_accepted_or_listed(self):
         parser = build_parser()
 
         with redirect_stderr(StringIO()):
@@ -48,8 +53,29 @@ class CliDefaultsTests(unittest.TestCase):
                 parser.parse_args([".", "--montage", "montage.mp4"])
             with self.assertRaises(SystemExit):
                 parser.parse_args([".", "--final", "legacy.mp4"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--detector", "health"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--include-view-replays"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--allow-starts-downed"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--opening-check-start", "0.5"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--opening-check-end", "3"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--opening-check-fps", "5"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--opening-red-threshold", "0.65"])
         self.assertNotIn("--montage", parser.format_help())
         self.assertNotIn("--final", parser.format_help())
+        self.assertNotIn("--detector", parser.format_help())
+        self.assertNotIn("--include-view-replays", parser.format_help())
+        self.assertNotIn("--allow-starts-downed", parser.format_help())
+        self.assertNotIn("--opening-check-start", parser.format_help())
+        self.assertNotIn("--opening-check-end", parser.format_help())
+        self.assertNotIn("--opening-check-fps", parser.format_help())
+        self.assertNotIn("--opening-red-threshold", parser.format_help())
         self.assertNotIn("FINAL", parser.format_help())
 
 
