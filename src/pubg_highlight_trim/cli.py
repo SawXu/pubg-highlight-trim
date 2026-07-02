@@ -52,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--before", "--seconds-before", dest="seconds_before", type=float, default=4.0, help="Seconds to keep before event")
     parser.add_argument("--after", "--seconds-after", dest="seconds_after", type=float, default=1.0, help="Seconds to keep after event")
     parser.add_argument("--min-event-sec", type=float, default=2.0, help="Skip detected events earlier than this many seconds; use 0 to keep opening events")
+    parser.add_argument("--molotov-elim-before", type=float, default=10.0, help="Seconds to keep before molotov/fire-bomb elimination events; use 0 to disable")
     parser.add_argument("--include-view-replays", action="store_true", help="Also include replay-perspective highlight files")
     parser.add_argument("--recursive", action="store_true", help="Search subdirectories too")
     parser.add_argument("--dry-run", action="store_true", help="Detect and write CSV/summary without trimming or merging")

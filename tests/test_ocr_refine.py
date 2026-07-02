@@ -55,6 +55,16 @@ class OcrRefineTests(unittest.TestCase):
         self.assertEqual([event.subject for event in events], ["EnemyA", "EnemyB"])
         self.assertEqual([event.action for event in events], ["击倒", "击倒"])
 
+    def test_extracts_own_kill_weapon(self):
+        event = extract_text_events("你用燃烧弹淘汰了EnemyA淘汰数", "both")[0]
+        self.assertEqual(event.action, "淘汰")
+        self.assertEqual(event.weapon, "燃烧弹")
+
+    def test_extracts_self_death_weapon(self):
+        event = extract_text_events("EnemyA用燃烧瓶淘汰了你", "both")[0]
+        self.assertEqual(event.action, "淘汰了你")
+        self.assertEqual(event.weapon, "燃烧瓶")
+
     def test_does_not_dedupe_short_prefix_as_same_id(self):
         events = extract_text_events("你用BerylM762击倒了[I7]Nvccp你用BerylM762击倒了[I7]NvccpFREBOBE0", "both")
         self.assertFalse(same_text_event(events[0], events[1]))

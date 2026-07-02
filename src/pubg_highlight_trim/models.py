@@ -21,3 +21,7 @@ class EventDetection:
     event_key: str = ""
     event_count: str = "1"
     event_secs: str = ""
+    event_weapon: str = ""
+    context_rule: str = ""
+    clip_before_sec: float = 0.0
+    clip_after_sec: float = 0.0

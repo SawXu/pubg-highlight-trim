@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from . import healthbar
 from .ffmpeg_tools import concat_clips, duration_sec, find_ffmpeg_pair, trim_clip
 from .models import EventDetection
-from .ocr import OcrConfig, OcrUnavailable, detect_event as detect_ocr_event, detect_events as detect_ocr_events, load_backend
+from .ocr import OcrConfig, OcrUnavailable, detect_event as detect_ocr_event, detect_events as detect_ocr_events, is_molotov_weapon, load_backend
 from .source_files import iter_source_files
 
 
@@ -86,6 +86,10 @@ def _blank_record(idx: int, src: Path, dur: float, status: str, method: str, det
         "EventSecs": "",
         "EventCount": "0",
         "EventKeys": "",
+        "EventWeapon": "",
+        "ContextRule": "",
+        "BeforeSec": "",
+        "AfterSec": "",
         "KeepStartSec": "",
         "KeepEndSec": "",
         "KeepDurationSec": "",
@@ -133,6 +137,10 @@ def _record_detection(
         "EventSecs": detection.event_secs or (f"{detection.event_sec:.3f}" if detection.event_sec is not None else ""),
         "EventCount": detection.event_count,
         "EventKeys": detection.event_key,
+        "EventWeapon": detection.event_weapon,
+        "ContextRule": detection.context_rule,
+        "BeforeSec": f"{_detection_before(detection):.3f}",
+        "AfterSec": f"{_detection_after(detection):.3f}",
         "KeepStartSec": f"{start:.3f}",
         "KeepEndSec": f"{end:.3f}",
         "KeepDurationSec": f"{end - start:.3f}",
@@ -174,6 +182,10 @@ def _record_skip(
             "EventSecs": detection.event_secs,
             "EventCount": detection.event_count if detection.event_sec is not None else "0",
             "EventKeys": detection.event_key,
+            "EventWeapon": detection.event_weapon,
+            "ContextRule": detection.context_rule,
+            "BeforeSec": f"{detection.clip_before_sec:.3f}" if detection.clip_before_sec else "",
+            "AfterSec": f"{detection.clip_after_sec:.3f}" if detection.clip_after_sec else "",
             "PaddleText": detection.text,
             "PaddleScores": detection.scores,
             "OpeningRedRatio": f"{opening_red_ratio:.3f}",
@@ -199,6 +211,13 @@ def _min_event_sec(args: SimpleNamespace) -> float:
     return max(0.0, float(value))
 
 
+def _molotov_elim_before(args: SimpleNamespace) -> float:
+    value = getattr(args, "molotov_elim_before", 10.0)
+    if value is None:
+        return 0.0
+    return max(0.0, float(value))
+
+
 def _early_event_skip(detection: EventDetection) -> EventDetection:
     return replace(detection, method="skipped-before-min-event-sec")
 
@@ -215,6 +234,29 @@ def _partition_too_early_detections(
         else:
             kept.append(detection)
     return kept, skipped
+
+
+def _detection_before(detection: EventDetection) -> float:
+    return max(0.0, detection.clip_before_sec)
+
+
+def _detection_after(detection: EventDetection) -> float:
+    return max(0.0, detection.clip_after_sec)
+
+
+def _is_molotov_elim_detection(detection: EventDetection) -> bool:
+    return detection.event_sec is not None and "淘汰" in detection.event_key and is_molotov_weapon(detection.event_weapon)
+
+
+def _apply_context_rules(detection: EventDetection, args: SimpleNamespace) -> EventDetection:
+    before = max(0.0, float(getattr(args, "seconds_before", 0.0)))
+    after = max(0.0, float(getattr(args, "seconds_after", 0.0)))
+    context_rule = "default"
+    molotov_before = _molotov_elim_before(args)
+    if molotov_before > 0 and _is_molotov_elim_detection(detection):
+        before = max(before, molotov_before)
+        context_rule = "molotov-elim-context"
+    return replace(detection, context_rule=context_rule, clip_before_sec=before, clip_after_sec=after)
 
 
 def _profile_clip(
@@ -259,6 +301,8 @@ def _merge_detection_group(group: list[EventDetection]) -> EventDetection:
     scores = [d.scores for d in group if d.scores]
     event_secs = [f"{d.event_sec:.3f}" for d in group if d.event_sec is not None]
     event_keys = [d.event_key for d in group if d.event_key]
+    weapons = list(dict.fromkeys(d.event_weapon for d in group if d.event_weapon))
+    context_rules = list(dict.fromkeys(d.context_rule for d in group if d.context_rule and d.context_rule != "default"))
     return EventDetection(
         first.duration_sec,
         first.event_sec,
@@ -276,6 +320,10 @@ def _merge_detection_group(group: list[EventDetection]) -> EventDetection:
         ";".join(event_keys),
         str(len(group)),
         ";".join(event_secs),
+        ";".join(weapons),
+        "+".join(context_rules) if context_rules else "default",
+        max((_detection_before(d) for d in group), default=0.0),
+        max((_detection_after(d) for d in group), default=0.0),
     )
 
 
@@ -286,8 +334,10 @@ def _merged_clip_plans(detections: list[EventDetection], before: float, after: f
     group_start = 0.0
     group_end = 0.0
     for detection in valid:
-        start = max(0.0, (detection.event_sec or 0.0) - before)
-        end = min(detection.duration_sec, (detection.event_sec or 0.0) + after)
+        event_before = _detection_before(detection) or before
+        event_after = _detection_after(detection) or after
+        start = max(0.0, (detection.event_sec or 0.0) - event_before)
+        end = min(detection.duration_sec, (detection.event_sec or 0.0) + event_after)
         if end <= start:
             end = min(detection.duration_sec, start + 0.1)
         if group and start <= group_end + 1e-6:
@@ -337,6 +387,7 @@ def run(args: SimpleNamespace) -> int:
     print(f"detector={args.detector}", flush=True)
     print(f"target={args.target}", flush=True)
     print(f"min_event_sec={_min_event_sec(args):.3f}", flush=True)
+    print(f"molotov_elim_before={_molotov_elim_before(args):.3f}", flush=True)
     print(f"ffmpeg={ffmpeg}", flush=True)
     print(f"output_dir={outdir}", flush=True)
     print(f"final={final}", flush=True)
@@ -473,6 +524,7 @@ def run(args: SimpleNamespace) -> int:
                 records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
             if not detections:
                 continue
+            detections = [_apply_context_rules(detection, args) for detection in detections]
 
             for detection, start, end in _merged_clip_plans(detections, args.seconds_before, args.seconds_after):
                 if detection.detect_seconds == 0.0:
@@ -567,8 +619,13 @@ def run(args: SimpleNamespace) -> int:
             records.append(_record_skip(idx, src, detection, opening_red_ratio, probe_seconds, opening_seconds, 0.0, total_seconds))
             continue
 
+        detection = _apply_context_rules(detection, args)
         start = max(0.0, detection.event_sec - args.seconds_before)
+        if _detection_before(detection):
+            start = max(0.0, detection.event_sec - _detection_before(detection))
         end = min(detection.duration_sec, detection.event_sec + args.seconds_after)
+        if _detection_after(detection):
+            end = min(detection.duration_sec, detection.event_sec + _detection_after(detection))
         if end <= start:
             end = min(detection.duration_sec, start + 0.1)
 
@@ -634,6 +691,7 @@ def run(args: SimpleNamespace) -> int:
         "dry_run": args.dry_run,
         "detector": args.detector,
         "min_event_sec": min_event_sec,
+        "molotov_elim_before": _molotov_elim_before(args),
         "ocr_unavailable_reason": ocr_error,
         "output_dir": str(outdir),
         "final": "" if args.dry_run or args.no_merge or not clips else str(final),
