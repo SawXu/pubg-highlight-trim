@@ -432,7 +432,7 @@ def run(args: SimpleNamespace) -> int:
     print(f"molotov_elim_before={_molotov_elim_before(args):.3f}", flush=True)
     print(f"ffmpeg={ffmpeg}", flush=True)
     print(f"output_dir={outdir}", flush=True)
-    print(f"final={final}", flush=True)
+    print(f"montage={final}", flush=True)
     print(f"merge={str(not no_merge).lower()}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
@@ -721,13 +721,13 @@ def run(args: SimpleNamespace) -> int:
         writer.writerows(records)
 
     concat_list = None
-    final_duration = 0.0
-    final_size = 0.0
+    montage_duration = 0.0
+    montage_size = 0.0
     if clips and not no_merge and not args.dry_run:
         merge_started = time.time()
         concat_list = concat_clips(clips, final, ffmpeg)
-        final_duration = duration_sec(final, ffprobe)
-        final_size = final.stat().st_size / 1024 / 1024
+        montage_duration = duration_sec(final, ffprobe)
+        montage_size = final.stat().st_size / 1024 / 1024
         if args.profile:
             print(f"PROFILE merge={time.time() - merge_started:.3f}s clips={len(clips)}", flush=True)
 
@@ -742,6 +742,7 @@ def run(args: SimpleNamespace) -> int:
         "molotov_elim_before": _molotov_elim_before(args),
         "ocr_unavailable_reason": ocr_error,
         "output_dir": str(outdir),
+        "montage": "" if args.dry_run or no_merge or not clips else str(final),
         "final": "" if args.dry_run or no_merge or not clips else str(final),
         "merge": not no_merge,
         "scan_mode": getattr(args, "scan_mode", "auto"),
@@ -749,8 +750,10 @@ def run(args: SimpleNamespace) -> int:
         "candidate_csv": "" if candidate_csv is None else str(candidate_csv),
         "concat_list": "" if concat_list is None else str(concat_list),
         "csv": str(csv_path),
-        "final_duration_sec": round(final_duration, 3),
-        "final_size_mb": round(final_size, 1),
+        "montage_duration_sec": round(montage_duration, 3),
+        "montage_size_mb": round(montage_size, 1),
+        "final_duration_sec": round(montage_duration, 3),
+        "final_size_mb": round(montage_size, 1),
         "methods": dict(methods),
         "detectors": dict(detectors),
         "encoders": dict(encoders),
