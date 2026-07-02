@@ -21,6 +21,9 @@ OWN_KILL_EVENT_RE = re.compile(r"你.{0,24}?(?P<action>击倒|淘汰)了(?P<vict
 OWN_KILL_ASSIST_RE = re.compile(r"(协助次数|协助|助.{0,2}攻)")
 OWN_KILL_DELAYED_ELIM_RE = re.compile(r"你终于淘汰了")
 OWN_KILL_VICTIM_STOP_RE = re.compile(r"(淘汰数?\d*协助次数|淘汰\d+协助次数|淘汰数|协助次数|协助|助.{0,2}攻|你用|击倒了你|淘汰了你)")
+WEAPON_PREFIX_RE = re.compile(r"(?:你)?(?:使用|用)(?P<weapon>.+)$")
+SELF_WEAPON_RE = re.compile(r"(?:使用|用)(?P<weapon>[^用]{1,32})$")
+MOLOTOV_WEAPON_RE = re.compile(r"(燃烧弹|燃燒彈|燃烧瓶|燃燒瓶|molotov)", re.IGNORECASE)
 
 
 class OcrUnavailable(RuntimeError):
@@ -52,6 +55,7 @@ class TextEvent:
     subject: str
     key: str
     text: str
+    weapon: str = ""
 
 
 @dataclass
@@ -105,6 +109,27 @@ def _subject_key(text: str) -> str:
     return key or normalize_text(cleaned).lower()
 
 
+def _clean_weapon(text: str) -> str:
+    text = normalize_text(text)
+    text = text.strip("，。,.、:：;；|/\\()（）[]【】 ")
+    return text[:32]
+
+
+def _own_kill_weapon(raw: str, action: str) -> str:
+    prefix = normalize_text(raw).split(f"{action}了", 1)[0]
+    match = WEAPON_PREFIX_RE.search(prefix)
+    return _clean_weapon(match.group("weapon")) if match else ""
+
+
+def _self_event_weapon(actor_text: str) -> str:
+    match = SELF_WEAPON_RE.search(normalize_text(actor_text))
+    return _clean_weapon(match.group("weapon")) if match else ""
+
+
+def is_molotov_weapon(weapon: str) -> bool:
+    return bool(MOLOTOV_WEAPON_RE.search(normalize_text(weapon)))
+
+
 def extract_own_kill_events(text: str, allow_assist: bool = False) -> list[TextEvent]:
     text = normalize_text(text)
     if not text:
@@ -121,6 +146,7 @@ def extract_own_kill_events(text: str, allow_assist: bool = False) -> list[TextE
         if not subject_key or subject_key in {"你", "ni"}:
             continue
         action = match.group("action")
+        weapon = _own_kill_weapon(raw, action)
         events.append(
             TextEvent(
                 "own-kill",
@@ -129,6 +155,7 @@ def extract_own_kill_events(text: str, allow_assist: bool = False) -> list[TextE
                 subject,
                 f"own-kill:{action}:{subject_key}",
                 raw,
+                weapon,
             )
         )
     return events
@@ -145,7 +172,8 @@ def extract_self_events(text: str) -> list[TextEvent]:
     action = action_match.group(1) if action_match else "self-death"
     actor = text[: action_match.start()] if action_match else text
     actor_key = _subject_key(actor[-32:]) or "unknown"
-    return [TextEvent("self-death", method, action, actor, f"self-death:{action}:{actor_key}", text)]
+    weapon = _self_event_weapon(actor)
+    return [TextEvent("self-death", method, action, actor, f"self-death:{action}:{actor_key}", text, weapon)]
 
 
 def extract_text_events(text: str, target: str) -> list[TextEvent]:
@@ -600,6 +628,7 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                         refined_event.key,
                         "1",
                         f"{event_sec:.3f}",
+                        event_weapon=refined_event.weapon,
                     )
                 )
                 seen_events.append((refined_event, event_sec))
