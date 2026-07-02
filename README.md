@@ -1,14 +1,15 @@
 # pubg-highlight-trim
 
-Windows-only CLI for trimming PUBG NVIDIA Highlight clips to the player self knock/elimination moment.
+Windows-only CLI for trimming PUBG NVIDIA Highlight clips around key OCR events.
 
-Default behavior keeps 4 seconds before and 1 second after the detected event, writes individual clips, and optionally merges them into one montage.
+Default behavior detects both your knocks/eliminations and enemies knocking/eliminating you, keeps 5 seconds before and 1 second after the detected event, skips events in the first 2 seconds, and keeps 10 seconds before molotov/fire-bomb eliminations.
 
 ## Detection priority
 
-1. OCR self-event text: `击倒了你`, `淘汰了你`, `你在安全区外倒地了`.
-2. Health-bar fallback: own bottom-center red downed bar or fixed health bar disappearing.
-3. Clips already downed at the beginning are skipped, because they missed the before-knock context.
+1. OCR text for both directions: `你用...击倒/淘汰了...`, `...击倒/淘汰了你`, `你在安全区外倒地了`.
+2. Assist text (`助攻`/`协助`) and delayed finish text (`你终于淘汰了...`) are skipped.
+3. Health-bar fallback is only for `--target self-death --detector auto`.
+4. Clips already downed at the beginning are skipped for self-death-only mode, because they missed the before-knock context.
 
 ## Install for development
 
@@ -38,16 +39,21 @@ pubg-highlight-trim "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUN
 Useful options:
 
 ```powershell
-pubg-highlight-trim "." --before 4 --after 1 --output-dir ".\trimmed" --final ".\montage.mp4"
-pubg-highlight-trim "." --detector ocr
+pubg-highlight-trim "." -o ".\trimmed" --final ".\montage.mp4" -y
+pubg-highlight-trim "." --scan-only --full-scan --coarse-step 2 -o ".\fullscan_2s" -y
+pubg-highlight-trim "." --full-scan
+pubg-highlight-trim "." --fast-scan
 pubg-highlight-trim "." --detector health
-pubg-highlight-trim "." --dry-run
 pubg-highlight-trim "." --profile
 ```
 
-The default detector is `auto`: OCR is tried first and health-bar detection is used when OCR dependencies are missing or no self-event text is found for a clip.
+The default detector is `ocr`, because own-kill and mixed-event trimming require OCR. Use `--detector auto --target self-death` if you want the old OCR-then-health fallback behavior.
 
-OCR scans the fixed lower-center PUBG self-event text area by default. Coarse scan stays at one frame every 3 seconds, and a coarse hit is refined at 0.5-second intervals to find the first visible self-event text. If a layout differs, override the crop with `--roi x1,y1,x2,y2`.
+Scan mode defaults to `auto`: the CLI looks for the latest `fullscan_*/candidate_events.csv` near the input and uses fast candidate/priority-window scanning when it exists; otherwise it performs a full scan to avoid missing unusual event timings. Use `--full-scan` to force exhaustive scanning or `--fast-scan` to scan only candidate/priority windows. The legacy `--no-full-scan` flag is still accepted as an alias for `--fast-scan`.
+
+OCR scans the fixed lower-center PUBG event text area by default. Coarse scan stays at one frame every 4 seconds, and a coarse hit is refined at 0.5-second intervals to find the first visible event text. If a layout differs, override the crop with `--roi x1,y1,x2,y2`.
+
+Single-file input defaults to no final montage merge. Folder input defaults to merging the individual clips into one final montage. Use `--merge` or `--no-merge` to override this.
 
 Use `--profile` to print per-clip timings for ffprobe, opening downed check, OCR predict time, video frame seek/read time, trim encoding time, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
 

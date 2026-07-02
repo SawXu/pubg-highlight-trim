@@ -53,6 +53,47 @@ def read_candidate_csv(path: Path | None) -> dict[str, list[float]]:
     return out
 
 
+def _discover_candidate_csv(input_path: Path, base_folder: Path) -> Path | None:
+    roots = [base_folder]
+    if input_path.is_dir():
+        roots.append(input_path)
+    roots.append(base_folder.parent)
+
+    candidates: list[Path] = []
+    for root in dict.fromkeys(roots):
+        if not root.exists():
+            continue
+        candidates.extend(path for path in root.glob("fullscan_*/candidate_events.csv") if path.is_file())
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def _candidate_csv_path(args: SimpleNamespace, input_path: Path, base_folder: Path) -> Path | None:
+    explicit = getattr(args, "candidate_csv", None)
+    if explicit:
+        return explicit
+    if getattr(args, "no_auto_candidate_csv", False):
+        return None
+    return _discover_candidate_csv(input_path, base_folder)
+
+
+def _use_fast_scan(args: SimpleNamespace, candidate_csv: Path | None) -> bool:
+    mode = getattr(args, "scan_mode", "auto")
+    if mode == "fast":
+        return True
+    if mode == "full":
+        return False
+    return candidate_csv is not None and candidate_csv.exists()
+
+
+def _effective_no_merge(args: SimpleNamespace, single_file: bool) -> bool:
+    merge = getattr(args, "merge", None)
+    if merge is None:
+        return single_file
+    return not merge
+
+
 def _prepare_output_paths(args: SimpleNamespace, input_path: Path, base_folder: Path, single_file: bool) -> tuple[Path, Path]:
     if single_file:
         outdir = args.output_dir or base_folder / f"{input_path.stem}_pubg_trim_clips"
@@ -381,6 +422,7 @@ def run(args: SimpleNamespace) -> int:
         raise SystemExit("No matching .被击倒.DVR*.mp4 or .淘汰.DVR*.mp4 source files found")
 
     outdir, final = _prepare_output_paths(args, input_path, base_folder, single_file)
+    no_merge = _effective_no_merge(args, single_file)
     setup_seconds = time.time() - setup_started
     print(f"windows_only=true", flush=True)
     print(f"sources={len(files)}", flush=True)
@@ -391,12 +433,18 @@ def run(args: SimpleNamespace) -> int:
     print(f"ffmpeg={ffmpeg}", flush=True)
     print(f"output_dir={outdir}", flush=True)
     print(f"final={final}", flush=True)
+    print(f"merge={str(not no_merge).lower()}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
     if args.target in {"own-kill", "both"} and args.detector == "health":
         raise SystemExit("--target own-kill/both requires OCR; use --detector auto or --detector ocr")
 
-    candidates = read_candidate_csv(args.candidate_csv)
+    candidate_csv = _candidate_csv_path(args, input_path, base_folder)
+    candidates = read_candidate_csv(candidate_csv)
+    no_full_scan = _use_fast_scan(args, candidate_csv)
+    print(f"scan_mode={getattr(args, 'scan_mode', 'auto')}", flush=True)
+    print(f"full_scan={str(not no_full_scan).lower()}", flush=True)
+    print(f"candidate_csv={candidate_csv or ''}", flush=True)
     ocr_backend: tuple[object, object] | None = None
     ocr_error = ""
     if args.detector in {"auto", "ocr"}:
@@ -423,7 +471,7 @@ def run(args: SimpleNamespace) -> int:
         refine_before=args.refine_before,
         refine_after=args.refine_after,
         refine_step=args.refine_step,
-        no_full_scan=args.no_full_scan,
+        no_full_scan=no_full_scan,
         roi=args.roi,
         ocr_width=args.ocr_width,
     )
@@ -675,7 +723,7 @@ def run(args: SimpleNamespace) -> int:
     concat_list = None
     final_duration = 0.0
     final_size = 0.0
-    if clips and not args.no_merge and not args.dry_run:
+    if clips and not no_merge and not args.dry_run:
         merge_started = time.time()
         concat_list = concat_clips(clips, final, ffmpeg)
         final_duration = duration_sec(final, ffprobe)
@@ -694,7 +742,11 @@ def run(args: SimpleNamespace) -> int:
         "molotov_elim_before": _molotov_elim_before(args),
         "ocr_unavailable_reason": ocr_error,
         "output_dir": str(outdir),
-        "final": "" if args.dry_run or args.no_merge or not clips else str(final),
+        "final": "" if args.dry_run or no_merge or not clips else str(final),
+        "merge": not no_merge,
+        "scan_mode": getattr(args, "scan_mode", "auto"),
+        "full_scan": not no_full_scan,
+        "candidate_csv": "" if candidate_csv is None else str(candidate_csv),
         "concat_list": "" if concat_list is None else str(concat_list),
         "csv": str(csv_path),
         "final_duration_sec": round(final_duration, 3),

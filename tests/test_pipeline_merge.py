@@ -1,8 +1,18 @@
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from pubg_highlight_trim.models import EventDetection
-from pubg_highlight_trim.pipeline import _apply_context_rules, _merged_clip_plans, _partition_too_early_detections, _record_detection, _record_skip
+from pubg_highlight_trim.pipeline import (
+    _apply_context_rules,
+    _candidate_csv_path,
+    _effective_no_merge,
+    _merged_clip_plans,
+    _partition_too_early_detections,
+    _record_detection,
+    _record_skip,
+    _use_fast_scan,
+)
 
 
 class PipelineMergeTests(unittest.TestCase):
@@ -124,6 +134,46 @@ class PipelineMergeTests(unittest.TestCase):
         self.assertEqual(row["EventSec"], "1.500")
         self.assertEqual(row["EventSecs"], "1.500")
         self.assertEqual(row["EventCount"], "1")
+
+    def test_scan_mode_auto_uses_fast_only_when_candidates_exist(self):
+        import tempfile
+
+        args = SimpleNamespace(scan_mode="auto")
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp) / "candidate_events.csv"
+            candidate.write_text("Name,EventSec\n", encoding="utf-8")
+            self.assertTrue(_use_fast_scan(args, candidate))
+        self.assertFalse(_use_fast_scan(args, Path("missing_candidate_events.csv")))
+        self.assertFalse(_use_fast_scan(args, None))
+
+    def test_scan_mode_explicit_flags_override_auto(self):
+        self.assertTrue(_use_fast_scan(SimpleNamespace(scan_mode="fast"), None))
+        self.assertFalse(_use_fast_scan(SimpleNamespace(scan_mode="full"), Path("candidate_events.csv")))
+
+    def test_single_file_defaults_to_no_merge(self):
+        self.assertTrue(_effective_no_merge(SimpleNamespace(merge=None), single_file=True))
+        self.assertFalse(_effective_no_merge(SimpleNamespace(merge=None), single_file=False))
+        self.assertFalse(_effective_no_merge(SimpleNamespace(merge=True), single_file=True))
+        self.assertTrue(_effective_no_merge(SimpleNamespace(merge=False), single_file=False))
+
+    def test_auto_discovers_latest_candidate_csv(self):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = root / "fullscan_old" / "candidate_events.csv"
+            new = root / "fullscan_new" / "candidate_events.csv"
+            old.parent.mkdir()
+            new.parent.mkdir()
+            old.write_text("Name,EventSec\n", encoding="utf-8")
+            new.write_text("Name,EventSec\n", encoding="utf-8")
+            os.utime(old, (1_700_000_000, 1_700_000_000))
+            os.utime(new, (1_800_000_000, 1_800_000_000))
+
+            path = _candidate_csv_path(SimpleNamespace(candidate_csv=None, no_auto_candidate_csv=False), root, root)
+
+        self.assertEqual(path, new)
 
 
 if __name__ == "__main__":
