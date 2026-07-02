@@ -39,7 +39,7 @@ pubg-highlight-trim "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUN
 Useful options:
 
 ```powershell
-pubg-highlight-trim "." -o ".\trimmed" --montage ".\montage.mp4" -y
+pubg-highlight-trim "." -o ".\trimmed" --merge ".\merged.mp4" -y
 pubg-highlight-trim "." --scan-only --full-scan --coarse-step 2 -o ".\fullscan_2s" -y
 pubg-highlight-trim "." --full-scan
 pubg-highlight-trim "." --fast-scan
@@ -53,7 +53,7 @@ Scan mode defaults to `auto`: the CLI looks for the latest `fullscan_*/candidate
 
 OCR scans the fixed lower-center PUBG event text area by default. Coarse scan stays at one frame every 4 seconds, and a coarse hit is refined at 0.5-second intervals to find the first visible event text. If a layout differs, override the crop with `--roi x1,y1,x2,y2`.
 
-Single-file input defaults to no final montage merge. Folder input defaults to merging the individual clips into one montage. Use `--montage` to choose that merged output path, or `--merge` / `--no-merge` to override whether merging happens. The old `--final` flag is still accepted as a compatibility alias.
+Single-file input defaults to no merged mp4. Folder input defaults to merging the individual clips. Use `--merge` without a value to force merging, `--merge ".\merged.mp4"` to choose the merged output path, or `--no-merge` to keep only individual clips.
 
 Use `--profile` to print per-clip timings for ffprobe, opening downed check, OCR predict time, video frame seek/read time, trim encoding time, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
 

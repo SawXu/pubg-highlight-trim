@@ -91,29 +91,37 @@ def _effective_no_merge(args: SimpleNamespace, single_file: bool) -> bool:
     merge = getattr(args, "merge", None)
     if merge is None:
         return single_file
-    return not merge
+    return merge is False
+
+
+def _merge_output_override(args: SimpleNamespace) -> Path | None:
+    merge = getattr(args, "merge", None)
+    if isinstance(merge, (str, Path)):
+        return Path(merge)
+    return None
 
 
 def _prepare_output_paths(args: SimpleNamespace, input_path: Path, base_folder: Path, single_file: bool) -> tuple[Path, Path]:
+    merge_output_override = _merge_output_override(args)
     if single_file:
         outdir = args.output_dir or base_folder / f"{input_path.stem}_pubg_trim_clips"
-        final = args.final or base_folder / f"{input_path.stem}_pubg_trim.mp4"
+        merged = merge_output_override or base_folder / f"{input_path.stem}_pubg_trim.mp4"
     else:
         outdir = args.output_dir or base_folder / "pubg_highlight_trim_output"
-        final = args.final or base_folder / "pubg_highlight_trim_montage.mp4"
+        merged = merge_output_override or base_folder / "pubg_highlight_trim_merged.mp4"
 
     if args.overwrite:
         if outdir.exists():
             shutil.rmtree(outdir)
-        if final.exists():
-            final.unlink()
+        if merged.exists():
+            merged.unlink()
     else:
         outdir = unique_dir(outdir)
-        final = unique_path(final)
+        merged = unique_path(merged)
 
     outdir.mkdir(parents=True, exist_ok=True)
-    final.parent.mkdir(parents=True, exist_ok=True)
-    return outdir, final
+    merged.parent.mkdir(parents=True, exist_ok=True)
+    return outdir, merged
 
 
 def _blank_record(idx: int, src: Path, dur: float, status: str, method: str, detector: str) -> dict[str, str]:
@@ -421,7 +429,7 @@ def run(args: SimpleNamespace) -> int:
     if not files:
         raise SystemExit("No matching .被击倒.DVR*.mp4 or .淘汰.DVR*.mp4 source files found")
 
-    outdir, final = _prepare_output_paths(args, input_path, base_folder, single_file)
+    outdir, merged = _prepare_output_paths(args, input_path, base_folder, single_file)
     no_merge = _effective_no_merge(args, single_file)
     setup_seconds = time.time() - setup_started
     print(f"windows_only=true", flush=True)
@@ -432,7 +440,7 @@ def run(args: SimpleNamespace) -> int:
     print(f"molotov_elim_before={_molotov_elim_before(args):.3f}", flush=True)
     print(f"ffmpeg={ffmpeg}", flush=True)
     print(f"output_dir={outdir}", flush=True)
-    print(f"montage={final}", flush=True)
+    print(f"merge_output={merged}", flush=True)
     print(f"merge={str(not no_merge).lower()}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
@@ -721,13 +729,13 @@ def run(args: SimpleNamespace) -> int:
         writer.writerows(records)
 
     concat_list = None
-    montage_duration = 0.0
-    montage_size = 0.0
+    merge_duration = 0.0
+    merge_size = 0.0
     if clips and not no_merge and not args.dry_run:
         merge_started = time.time()
-        concat_list = concat_clips(clips, final, ffmpeg)
-        montage_duration = duration_sec(final, ffprobe)
-        montage_size = final.stat().st_size / 1024 / 1024
+        concat_list = concat_clips(clips, merged, ffmpeg)
+        merge_duration = duration_sec(merged, ffprobe)
+        merge_size = merged.stat().st_size / 1024 / 1024
         if args.profile:
             print(f"PROFILE merge={time.time() - merge_started:.3f}s clips={len(clips)}", flush=True)
 
@@ -742,18 +750,15 @@ def run(args: SimpleNamespace) -> int:
         "molotov_elim_before": _molotov_elim_before(args),
         "ocr_unavailable_reason": ocr_error,
         "output_dir": str(outdir),
-        "montage": "" if args.dry_run or no_merge or not clips else str(final),
-        "final": "" if args.dry_run or no_merge or not clips else str(final),
         "merge": not no_merge,
+        "merge_output": "" if args.dry_run or no_merge or not clips else str(merged),
         "scan_mode": getattr(args, "scan_mode", "auto"),
         "full_scan": not no_full_scan,
         "candidate_csv": "" if candidate_csv is None else str(candidate_csv),
         "concat_list": "" if concat_list is None else str(concat_list),
         "csv": str(csv_path),
-        "montage_duration_sec": round(montage_duration, 3),
-        "montage_size_mb": round(montage_size, 1),
-        "final_duration_sec": round(montage_duration, 3),
-        "final_size_mb": round(montage_size, 1),
+        "merge_duration_sec": round(merge_duration, 3),
+        "merge_size_mb": round(merge_size, 1),
         "methods": dict(methods),
         "detectors": dict(detectors),
         "encoders": dict(encoders),

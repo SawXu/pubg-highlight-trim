@@ -7,6 +7,7 @@ from pubg_highlight_trim.pipeline import (
     _apply_context_rules,
     _candidate_csv_path,
     _effective_no_merge,
+    _merge_output_override,
     _merged_clip_plans,
     _partition_too_early_detections,
     _record_detection,
@@ -154,7 +155,14 @@ class PipelineMergeTests(unittest.TestCase):
         self.assertTrue(_effective_no_merge(SimpleNamespace(merge=None), single_file=True))
         self.assertFalse(_effective_no_merge(SimpleNamespace(merge=None), single_file=False))
         self.assertFalse(_effective_no_merge(SimpleNamespace(merge=True), single_file=True))
+        self.assertFalse(_effective_no_merge(SimpleNamespace(merge="merged.mp4"), single_file=True))
         self.assertTrue(_effective_no_merge(SimpleNamespace(merge=False), single_file=False))
+
+    def test_merge_output_override_uses_path_value_only(self):
+        self.assertEqual(_merge_output_override(SimpleNamespace(merge="merged.mp4")), Path("merged.mp4"))
+        self.assertIsNone(_merge_output_override(SimpleNamespace(merge=True)))
+        self.assertIsNone(_merge_output_override(SimpleNamespace(merge=False)))
+        self.assertIsNone(_merge_output_override(SimpleNamespace(merge=None)))
 
     def test_auto_discovers_latest_candidate_csv(self):
         import os
