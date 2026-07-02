@@ -21,16 +21,6 @@ class SourceFilesTests(unittest.TestCase):
 
             self.assertEqual(iter_source_files(root), [own_elim, own_knock])
 
-    def test_iter_source_files_can_include_view_replays(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            own_elim = root / "a.淘汰.DVR.mp4"
-            replay = root / "b.淘汰画面.DVR.mp4"
-            for path in [own_elim, replay]:
-                self.touch(path)
-
-            self.assertEqual(iter_source_files(root, include_view_replays=True), [own_elim, replay])
-
     def test_iter_source_files_can_select_own_kill_highlights(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

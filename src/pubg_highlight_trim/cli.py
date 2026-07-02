@@ -46,12 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Common examples:\n"
             '  pubg-highlight-trim "video.mp4" -o ".\\clip" -y\n'
             '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" -o ".\\clip" --merge ".\\merged.mp4" -y\n'
-            '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" --scan-only --full-scan --coarse-step 2 -o ".\\fullscan_2s" -y\n'
+            '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" --scan-only --scan-mode full --coarse-step 2 -o ".\\fullscan_2s" -y\n'
         ),
     )
     parser.add_argument("input", nargs="?", type=Path, default=Path("."), help="PUBG highlight folder or a single mp4 file")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--detector", choices=["auto", "ocr", "health"], default="ocr", help="default ocr; auto can fall back to health for self-death only")
     parser.add_argument(
         "--target",
         choices=["self-death", "own-kill", "both"],
@@ -63,7 +62,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--after", "--seconds-after", dest="seconds_after", type=float, default=1.0, help="Seconds to keep after event")
     parser.add_argument("--min-event-sec", type=float, default=2.0, help="Skip detected events earlier than this many seconds; use 0 to keep opening events")
     parser.add_argument("--molotov-elim-before", type=float, default=10.0, help="Seconds to keep before molotov/fire-bomb elimination events; use 0 to disable")
-    parser.add_argument("--include-view-replays", action="store_true", help="Also include replay-perspective highlight files")
     parser.add_argument("--recursive", action="store_true", help="Search subdirectories too")
     parser.add_argument("--dry-run", "--scan-only", dest="dry_run", action="store_true", help="Detect and write CSV/summary without trimming or merging")
     merge = parser.add_mutually_exclusive_group()
@@ -78,8 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     merge.add_argument("--no-merge", dest="merge", action="store_false", default=None, help="Skip merged mp4 output; default for single-file input")
     parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/merged file instead of creating unique names")
-    parser.add_argument("--profile", action="store_true", help="Print per-clip timing breakdown for OCR, frame reads, health checks, and trimming")
-    parser.add_argument("--allow-starts-downed", action="store_true", help="Do not skip clips whose opening already has a red downed health bar")
+    parser.add_argument("--profile", action="store_true", help="Print per-clip timing breakdown for OCR, frame reads, and trimming")
     parser.add_argument("--ffmpeg", default=None, help="Explicit ffmpeg.exe path")
     parser.add_argument("--ffprobe", default=None, help="Explicit ffprobe.exe path")
 
@@ -87,8 +84,6 @@ def build_parser() -> argparse.ArgumentParser:
     ocr.add_argument("--candidate-csv", type=Path, default=None, help="Optional prior CSV; EventSec values are used as scan hints. If omitted, latest fullscan_*/candidate_events.csv is auto-detected.")
     ocr.add_argument("--no-auto-candidate-csv", action="store_true", help="Disable automatic candidate_events.csv discovery")
     ocr.add_argument("--scan-mode", choices=["auto", "fast", "full"], default="auto", help="auto uses fast scan when candidates exist, otherwise full scan")
-    ocr.add_argument("--full-scan", dest="scan_mode", action="store_const", const="full", help="Scan the full video timeline; slower but safest")
-    ocr.add_argument("--fast-scan", "--no-full-scan", dest="scan_mode", action="store_const", const="fast", help="Scan candidate and priority windows only; fastest")
     ocr.add_argument("--priority-window", type=parse_window, action="append", default=[(31.0, 43.0), (45.0, 53.0)], help="Scan this OCR window first; repeatable; default 31:43 and 45:53")
     ocr.add_argument("--scan-start", type=float, default=0.0)
     ocr.add_argument("--scan-end", type=float, default=None)
@@ -101,12 +96,6 @@ def build_parser() -> argparse.ArgumentParser:
     ocr.add_argument("--refine-step", type=float, default=0.5)
     ocr.add_argument("--roi", type=parse_roi, default=(0.30, 0.66, 0.70, 0.75), help="OCR crop ratios x1,y1,x2,y2")
     ocr.add_argument("--ocr-width", type=int, default=768, help="Downscale OCR ROI to this width; 0 disables")
-
-    opening = parser.add_argument_group("opening downed check")
-    opening.add_argument("--opening-check-start", type=float, default=0.5)
-    opening.add_argument("--opening-check-end", type=float, default=3.0)
-    opening.add_argument("--opening-check-fps", type=float, default=5.0)
-    opening.add_argument("--opening-red-threshold", type=float, default=0.65)
     return parser
 
 
