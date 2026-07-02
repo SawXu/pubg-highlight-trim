@@ -1,4 +1,6 @@
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 
 from pubg_highlight_trim.cli import build_parser
 
@@ -28,6 +30,7 @@ class CliDefaultsTests(unittest.TestCase):
         parser = build_parser()
 
         self.assertTrue(parser.parse_args([".", "--merge"]).merge)
+        self.assertEqual(parser.parse_args([".", "--merge", "merged.mp4"]).merge, "merged.mp4")
         self.assertFalse(parser.parse_args([".", "--no-merge"]).merge)
 
     def test_short_aliases_for_common_flags(self):
@@ -37,11 +40,15 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertTrue(args.overwrite)
         self.assertTrue(args.dry_run)
 
-    def test_montage_replaces_final_flag_name(self):
+    def test_final_and_montage_flags_are_removed(self):
         parser = build_parser()
 
-        self.assertEqual(str(parser.parse_args([".", "--montage", "montage.mp4"]).final), "montage.mp4")
-        self.assertEqual(str(parser.parse_args([".", "--final", "legacy.mp4"]).final), "legacy.mp4")
+        with redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--montage", "montage.mp4"])
+            with self.assertRaises(SystemExit):
+                parser.parse_args([".", "--final", "legacy.mp4"])
+        self.assertNotIn("--montage", parser.format_help())
         self.assertNotIn("--final", parser.format_help())
         self.assertNotIn("FINAL", parser.format_help())
 
