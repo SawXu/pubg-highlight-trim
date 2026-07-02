@@ -45,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Common examples:\n"
             '  pubg-highlight-trim "video.mp4" -o ".\\clip" -y\n'
-            '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" -o ".\\clip" --final ".\\montage.mp4" -y\n'
+            '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" -o ".\\clip" --montage ".\\montage.mp4" -y\n'
             '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" --scan-only --full-scan --coarse-step 2 -o ".\\fullscan_2s" -y\n'
         ),
     )
@@ -59,7 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Text event to detect: self-death for enemies knocking/eliminating you, own-kill for you knocking/eliminating others, both for both kinds",
     )
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Directory for individual trimmed clips")
-    parser.add_argument("--final", type=Path, default=None, help="Merged montage mp4 path")
+    parser.add_argument("--montage", dest="final", metavar="MONTAGE", type=Path, default=None, help="Merged montage mp4 output path")
+    parser.add_argument("--final", dest="final", metavar="MONTAGE", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--before", "--seconds-before", dest="seconds_before", type=float, default=5.0, help="Seconds to keep before event")
     parser.add_argument("--after", "--seconds-after", dest="seconds_after", type=float, default=1.0, help="Seconds to keep after event")
     parser.add_argument("--min-event-sec", type=float, default=2.0, help="Skip detected events earlier than this many seconds; use 0 to keep opening events")
@@ -68,9 +69,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--recursive", action="store_true", help="Search subdirectories too")
     parser.add_argument("--dry-run", "--scan-only", dest="dry_run", action="store_true", help="Detect and write CSV/summary without trimming or merging")
     merge = parser.add_mutually_exclusive_group()
-    merge.add_argument("--merge", dest="merge", action="store_true", default=None, help="Create final montage; default for folder input")
-    merge.add_argument("--no-merge", dest="merge", action="store_false", default=None, help="Skip final montage; default for single-file input")
-    parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/final file instead of creating unique names")
+    merge.add_argument("--merge", dest="merge", action="store_true", default=None, help="Create merged montage; default for folder input")
+    merge.add_argument("--no-merge", dest="merge", action="store_false", default=None, help="Skip montage merge; default for single-file input")
+    parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/montage file instead of creating unique names")
     parser.add_argument("--profile", action="store_true", help="Print per-clip timing breakdown for OCR, frame reads, health checks, and trimming")
     parser.add_argument("--allow-starts-downed", action="store_true", help="Do not skip clips whose opening already has a red downed health bar")
     parser.add_argument("--ffmpeg", default=None, help="Explicit ffmpeg.exe path")

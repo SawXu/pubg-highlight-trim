@@ -37,6 +37,14 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertTrue(args.overwrite)
         self.assertTrue(args.dry_run)
 
+    def test_montage_replaces_final_flag_name(self):
+        parser = build_parser()
+
+        self.assertEqual(str(parser.parse_args([".", "--montage", "montage.mp4"]).final), "montage.mp4")
+        self.assertEqual(str(parser.parse_args([".", "--final", "legacy.mp4"]).final), "legacy.mp4")
+        self.assertNotIn("--final", parser.format_help())
+        self.assertNotIn("FINAL", parser.format_help())
+
 
 if __name__ == "__main__":
     unittest.main()
