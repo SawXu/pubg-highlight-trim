@@ -185,6 +185,78 @@ class OcrRefineTests(unittest.TestCase):
         self.assertEqual([d.event_key for d in detections], ["own-kill:knock:enemya", "own-kill:knock:enemyb"])
         self.assertEqual([d.event_sec for d in detections], [30.0, 32.0])
 
+    def test_detect_events_suppresses_own_kill_elimination_after_knock(self):
+        class FakeCap:
+            def release(self):
+                pass
+
+        class FakeCv2:
+            def VideoCapture(self, _path):
+                return FakeCap()
+
+        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+            if sec >= 34.0:
+                text = "你用M416淘汰了EnemyA"
+            elif sec >= 30.0:
+                text = "你用M416击倒了EnemyA"
+            else:
+                text = ""
+            method = "paddle-own-kill-text" if text else "paddle-not-target-text"
+            return OcrResult(text, "", 0.01, method)
+
+        config = OcrConfig(
+            target="both",
+            priority_window=[(30.0, 34.0)],
+            no_full_scan=True,
+            candidate_step=4.0,
+            refine_before=0.0,
+            refine_search_step=2.0,
+            refine_step=0.5,
+        )
+        with patch("pubg_highlight_trim.ocr.ocr_at", fake_ocr_at), patch(
+            "pubg_highlight_trim.ocr.detect_assist_nearby", return_value=(None, 0, 0.0, 0.0)
+        ):
+            detections = detect_events("dummy.mp4", FakeCv2(), None, 60.0, [], config)
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(detections[0].event_key, "own-kill:knock:enemya")
+        self.assertEqual(detections[0].event_sec, 30.0)
+
+    def test_detect_events_suppresses_self_elimination_after_knock_by_same_id(self):
+        class FakeCap:
+            def release(self):
+                pass
+
+        class FakeCv2:
+            def VideoCapture(self, _path):
+                return FakeCap()
+
+        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+            if sec >= 34.0:
+                text = "EnemyA用AKM淘汰了你"
+            elif sec >= 30.0:
+                text = "EnemyA用M416击倒了你"
+            else:
+                text = ""
+            method = "paddle-strict-self-text" if text else "paddle-not-target-text"
+            return OcrResult(text, "", 0.01, method)
+
+        config = OcrConfig(
+            target="both",
+            priority_window=[(30.0, 34.0)],
+            no_full_scan=True,
+            candidate_step=4.0,
+            refine_before=0.0,
+            refine_search_step=2.0,
+            refine_step=0.5,
+        )
+        with patch("pubg_highlight_trim.ocr.ocr_at", fake_ocr_at):
+            detections = detect_events("dummy.mp4", FakeCv2(), None, 60.0, [], config)
+
+        self.assertEqual(len(detections), 1)
+        self.assertTrue(detections[0].event_key.startswith("self-death:knock:"))
+        self.assertEqual(detections[0].event_sec, 30.0)
+
     def test_detect_events_dedupes_nearby_ocr_suffix_noise(self):
         class FakeCap:
             def release(self):
