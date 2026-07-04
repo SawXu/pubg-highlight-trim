@@ -123,6 +123,16 @@ def _self_event_weapon(actor_text: str, profile: GameLanguageProfile | None = No
     return _clean_weapon(match.group("weapon")) if match else ""
 
 
+def _self_actor_subject(actor_text: str, profile: GameLanguageProfile | None = None) -> str:
+    profile = _language(profile)
+    text = normalize_text(actor_text)
+    weapon_match = profile.self_weapon_re.search(text)
+    if weapon_match:
+        text = text[: weapon_match.start()]
+    text = text.strip("，。,.、:：;；|/\\()（）[]【】 ")
+    return text[:48]
+
+
 def is_molotov_weapon(weapon: str, profile: GameLanguageProfile | None = None) -> bool:
     profile = _language(profile)
     return bool(profile.molotov_weapon_re.search(normalize_text(weapon)))
@@ -205,6 +215,10 @@ def same_text_event(left: TextEvent, right: TextEvent) -> bool:
         return True
     _, _, left_subject = _split_event_key(left)
     _, _, right_subject = _split_event_key(right)
+    return _same_stable_subject(left_subject, right_subject)
+
+
+def _same_stable_subject(left_subject: str, right_subject: str) -> bool:
     if not left_subject or not right_subject:
         return False
     length_ratio = min(len(left_subject), len(right_subject)) / max(len(left_subject), len(right_subject))
@@ -218,16 +232,12 @@ def same_text_event(left: TextEvent, right: TextEvent) -> bool:
     return length_ratio >= 0.75 and SequenceMatcher(None, left_subject, right_subject).ratio() >= 0.86
 
 
-def same_noisy_close_event(left: TextEvent, right: TextEvent) -> bool:
-    if same_text_event(left, right):
+def _same_noisy_subject(left_subject: str, right_subject: str, target: str) -> bool:
+    if _same_stable_subject(left_subject, right_subject):
         return True
-    if left.target != right.target or left.action != right.action:
-        return False
-    _, _, left_subject = _split_event_key(left)
-    _, _, right_subject = _split_event_key(right)
     if not left_subject or not right_subject:
         return False
-    if left.target == "self-death":
+    if target == "self-death":
         left_anchor = _self_death_actor_anchor(left_subject)
         right_anchor = _self_death_actor_anchor(right_subject)
         if left_anchor and left_anchor == right_anchor:
@@ -248,6 +258,48 @@ def same_noisy_close_event(left: TextEvent, right: TextEvent) -> bool:
         common += 1
     has_digit = any(ch.isdigit() for ch in left_key + right_key)
     return has_digit and common >= 6 and common / len(shorter) >= 0.75
+
+
+def same_noisy_close_event(left: TextEvent, right: TextEvent) -> bool:
+    if same_text_event(left, right):
+        return True
+    if left.target != right.target or left.action != right.action:
+        return False
+    _, _, left_subject = _split_event_key(left)
+    _, _, right_subject = _split_event_key(right)
+    return _same_noisy_subject(left_subject, right_subject, left.target)
+
+
+def _followup_subject(event: TextEvent, profile: GameLanguageProfile | None = None) -> str:
+    if event.target == "self-death":
+        subject = _self_actor_subject(event.subject, profile)
+        return _subject_key(subject, profile)
+    _, _, subject = _split_event_key(event)
+    return subject
+
+
+def _same_followup_subject(
+    left: TextEvent,
+    right: TextEvent,
+    profile: GameLanguageProfile | None = None,
+) -> bool:
+    if left.target != right.target:
+        return False
+    return _same_noisy_subject(
+        _followup_subject(left, profile),
+        _followup_subject(right, profile),
+        left.target,
+    )
+
+
+def _is_followup_elimination(
+    event: TextEvent,
+    seen_events: list[tuple[TextEvent, float]],
+    profile: GameLanguageProfile | None = None,
+) -> bool:
+    return event.action == "eliminate" and any(
+        seen.action == "knock" and _same_followup_subject(event, seen, profile) for seen, _seen_sec in seen_events
+    )
 
 
 def _self_death_actor_anchor(subject: str) -> str:
@@ -617,6 +669,12 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                     and same_noisy_close_event(refined_event, seen)
                     for seen, seen_sec in seen_events
                 ):
+                    continue
+                if _is_followup_elimination(refined_event, seen_events, config.language):
+                    last_text = refined.text or result.text
+                    last_scores = refined.scores or result.scores
+                    last_method = "paddle-followup-elimination-skipped"
+                    seen_events.append((refined_event, event_sec))
                     continue
                 method = refined_event.method
                 if event.target == "own-kill":
