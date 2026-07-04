@@ -109,6 +109,8 @@ def _clean_weapon(text: str) -> str:
     text = normalize_text(text)
     stripped = re.sub(r"(?<!\d)\d{1,2}KILLS?$", "", text, flags=re.IGNORECASE)
     text = stripped if stripped != text else re.sub(r"\dKILLS?$", "", text, flags=re.IGNORECASE)
+    stripped = re.sub(r"(?<!\d)\d{1,2}ASSISTS?$", "", text, flags=re.IGNORECASE)
+    text = stripped if stripped != text else text
     text = re.sub(r"ASSISTS?$", "", text, flags=re.IGNORECASE)
     text = text.strip("，。,.、:：;；|/\\()（）[]【】 ")
     return text[:32]
@@ -155,7 +157,10 @@ def extract_own_kill_events(
         raw = normalize_text(match.group(0))
         if is_delayed_own_elim_text(raw, profile):
             continue
-        if not allow_assist and is_assist_own_kill_text(raw, profile):
+        assist_probe = text[match.start() : min(len(text), match.end() + 24)]
+        if not allow_assist and (
+            is_assist_own_kill_text(raw, profile) or is_assist_own_kill_text(assist_probe, profile)
+        ):
             continue
         subject = _clean_subject(match.group("victim"), profile)
         subject_key = _subject_key(subject, profile)
