@@ -55,6 +55,14 @@ class GameLanguageTests(unittest.TestCase):
 
         self.assertEqual([event.subject for event in events], ["EnemyA"])
 
+    def test_en_skips_assist_text(self):
+        profile = get_game_language_profile("en")
+
+        text = "YOU KILLED [LOC]Anna_1149852110 with M16A4 1 ASSIST"
+
+        self.assertTrue(is_assist_own_kill_text(text, profile))
+        self.assertEqual(extract_text_events(text, "both", profile), [])
+
     def test_zh_hant_extracts_own_kill_and_self_death_events(self):
         profile = get_game_language_profile("zh-Hant")
 

@@ -136,7 +136,7 @@ EN_PROFILE = GameLanguageProfile(
         re.IGNORECASE,
     ),
     own_kill_scoreboard_assist_re=re.compile(r"\d+KILLS?\d*ASSISTS?", re.IGNORECASE),
-    own_kill_count_re=re.compile(r"(?:\d+\s*)?KILLS?", re.IGNORECASE),
+    own_kill_count_re=re.compile(r"(?:\d+\s*)?KILLS?\b", re.IGNORECASE),
     weapon_prefix_re=re.compile(r"(?:WITH|USING)(?P<weapon>.+)$", re.IGNORECASE),
     self_weapon_re=re.compile(r"(?:WITH|USING)(?P<weapon>.+)$", re.IGNORECASE),
     molotov_weapon_re=re.compile(r"(molotov|fire\s*-?\s*bomb|gas\s*can|c4)", re.IGNORECASE),
