@@ -24,6 +24,7 @@ class CliDefaultsTests(unittest.TestCase):
 
         self.assertEqual(parser.parse_args([".", "--scan-mode", "full"]).scan_mode, "full")
         self.assertEqual(parser.parse_args([".", "--scan-mode", "fast"]).scan_mode, "fast")
+        self.assertEqual(parser.parse_args([".", "--game-lang", "zh-Hant"]).game_lang, "zh-Hant")
         with redirect_stderr(StringIO()):
             with self.assertRaises(SystemExit):
                 parser.parse_args([".", "--full-scan"])

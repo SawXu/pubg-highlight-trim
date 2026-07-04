@@ -69,7 +69,43 @@ ZH_HANS_PROFILE = GameLanguageProfile(
 )
 
 
-GAME_LANGUAGE_PROFILES = {ZH_HANS_PROFILE.code: ZH_HANS_PROFILE}
+ZH_HANT_PROFILE = GameLanguageProfile(
+    code="zh-Hant",
+    paddle_lang="ch",
+    self_strict_re=re.compile(r"(擊倒您|擊殺您|撃殺您|擎殺您|淘汰您|击倒了你|淘汰了你)"),
+    self_zone_downed_re=re.compile(r"(您.{0,4}(?:安全區|遊戲區域)外(?:倒地|死亡)|您在安全区外倒地了)"),
+    self_fuzzy_re=re.compile(r"(擊倒.{0,2}您|击倒.{0,2}你|[擊撃擎]?殺.{0,2}您|淘.{0,2}您|倒了你)"),
+    own_kill_strict_re=re.compile(r"(?:^|[，。:：])?您.{0,24}(?:擊倒|击倒|擊殺|撃殺|擎殺|淘汰)(?!您)"),
+    own_kill_event_re=re.compile(
+        r"您.{0,24}?(?P<action>擊倒|击倒|擊殺|撃殺|擎殺|淘汰)(?P<victim>.+?)"
+        r"(?=您.{0,24}?(?:擊倒|击倒|擊殺|撃殺|擎殺|淘汰)|$)"
+    ),
+    own_kill_assist_re=re.compile(r"(協助次數|協助|助.{0,2}攻|助.{0,2}殺)"),
+    own_kill_delayed_elim_re=re.compile(r"您終於.{0,4}(?:擊殺|撃殺|擎殺|淘汰)"),
+    own_kill_victim_stop_re=re.compile(
+        r"(\(\d+\s*[mM]\)|（\d+\s*[mM]）|(?:\d+\s*)?(?:擊殺[數数]|撃殺[數数]|击杀数|擊殺|撃殺|击杀)|"
+        r"協助次數|協助|助.{0,2}攻|助.{0,2}殺|"
+        r"您以|擊倒您|擊殺您|撃殺您|擎殺您|淘汰您)"
+    ),
+    own_kill_scoreboard_assist_re=re.compile(r"(?:擊殺[數数]|撃殺[數数]|擊殺\d*協助次數|撃殺\d*協助次數)"),
+    own_kill_count_re=re.compile(r"(擊殺[數数]|撃殺[數数])"),
+    weapon_prefix_re=re.compile(r"(?:您)?(?:以|使用|用)(?P<weapon>.+)$"),
+    self_weapon_re=re.compile(r"(?:以|使用|用)(?P<weapon>[^以用]{1,32})$"),
+    molotov_weapon_re=re.compile(r"(燃燒彈|汽油彈|molotov)", re.IGNORECASE),
+    own_source_re=re.compile(r"\.(?:被擊倒|死亡|淘汰)\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    own_kill_source_re=re.compile(r"\.(?:單次擊殺|雙殺|多殺|擊倒)\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    match_end_source_re=re.compile(r"\.對戰結束\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    view_replay_re=re.compile(r"(?:死亡畫面|淘汰畫面|擊倒畫面)"),
+    source_file_hint=".被擊倒.DVR*.mp4, .死亡.DVR*.mp4, .淘汰.DVR*.mp4, .單次擊殺.DVR*.mp4, .雙殺.DVR*.mp4, .擊倒.DVR*.mp4",
+    self_subject_keys=frozenset({"您", "你", "ni"}),
+    canonical_action_patterns=(
+        ("eliminate", re.compile(r"擊殺|撃殺|擎殺|淘汰|殺")),
+        ("knock", re.compile(r"擊倒|击倒|倒了你")),
+    ),
+)
+
+
+GAME_LANGUAGE_PROFILES = {profile.code: profile for profile in (ZH_HANS_PROFILE, ZH_HANT_PROFILE)}
 
 
 def game_language_choices() -> list[str]:
