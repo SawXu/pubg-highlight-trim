@@ -105,7 +105,58 @@ ZH_HANT_PROFILE = GameLanguageProfile(
 )
 
 
-GAME_LANGUAGE_PROFILES = {profile.code: profile for profile in (ZH_HANS_PROFILE, ZH_HANT_PROFILE)}
+EN_PROFILE = GameLanguageProfile(
+    code="en",
+    paddle_lang="en",
+    self_strict_re=re.compile(
+        r"(?P<action>KNOCKEDYOU(?:OUT)?|KILLEDYOU|KILLSYOU|ELIMINATEDYOU)(?:WITH(?P<weapon>.+?))?"
+        r"(?=YOU(?:FINALLY)?(?:KNOCKEDOUT|KILLED|ELIMINATED)|\d+KILLS?|ASSISTS?|$)",
+        re.IGNORECASE,
+    ),
+    self_zone_downed_re=re.compile(
+        r"(OUTSIDETHEPLAYZONE|OUTSIDETHEBLUEZONE|YOU(?:WERE)?(?:KNOCKEDOUT|KILLED|DIED).{0,18}(?:PLAYZONE|BLUEZONE|ZONE))",
+        re.IGNORECASE,
+    ),
+    self_fuzzy_re=re.compile(
+        r"(KNOCKED.{0,8}YOU|KILL(?:ED|S).{0,4}YOU|ELIMINAT(?:ED)?.{0,4}YOU)",
+        re.IGNORECASE,
+    ),
+    own_kill_strict_re=re.compile(r"(?:^|[，。,.、:：])?YOU(?:FINALLY)?(?:KNOCKEDOUT|KILLED|ELIMINATED)(?!YOU)", re.IGNORECASE),
+    own_kill_event_re=re.compile(
+        r"YOU(?:FINALLY)?(?P<action>KNOCKEDOUT|KILLED|ELIMINATED)(?P<victim>.+?)"
+        r"(?:WITH(?P<weapon>.+?))?"
+        r"(?=YOU(?:FINALLY)?(?:KNOCKEDOUT|KILLED|ELIMINATED)|ASSISTS?|$)",
+        re.IGNORECASE,
+    ),
+    own_kill_assist_re=re.compile(r"ASSISTS?", re.IGNORECASE),
+    own_kill_delayed_elim_re=re.compile(r"YOUFINALLY(?:KILLED|ELIMINATED)", re.IGNORECASE),
+    own_kill_victim_stop_re=re.compile(
+        r"(\(\d+\s*[mM]\)|（\d+\s*[mM]）|WITH|(?:\d+\s*)?KILLS?|ASSISTS?|"
+        r"YOU(?:FINALLY)?(?:KNOCKEDOUT|KILLED|ELIMINATED)|KNOCKEDYOU|KILLEDYOU|KILLSYOU|ELIMINATEDYOU)",
+        re.IGNORECASE,
+    ),
+    own_kill_scoreboard_assist_re=re.compile(r"\d+KILLS?\d*ASSISTS?", re.IGNORECASE),
+    own_kill_count_re=re.compile(r"(?:\d+\s*)?KILLS?", re.IGNORECASE),
+    weapon_prefix_re=re.compile(r"(?:WITH|USING)(?P<weapon>.+)$", re.IGNORECASE),
+    self_weapon_re=re.compile(r"(?:WITH|USING)(?P<weapon>.+)$", re.IGNORECASE),
+    molotov_weapon_re=re.compile(r"(molotov|fire\s*-?\s*bomb|gas\s*can|c4)", re.IGNORECASE),
+    own_source_re=re.compile(r"\.(?:Knockouted|Death)\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    own_kill_source_re=re.compile(
+        r"\.(?:Knockout|Single kill|Double kill|Triple kill|Multi kill|Multiple kill)\.DVR(?:_\d+)?\.mp4$",
+        re.IGNORECASE,
+    ),
+    match_end_source_re=re.compile(r"\.(?:Match end|Match ended|Match complete|Game over)\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    view_replay_re=re.compile(r"(?:Death\s*cam|Kill\s*cam|Replay)", re.IGNORECASE),
+    source_file_hint=".Knockouted.DVR*.mp4, .Death.DVR*.mp4, .Knockout.DVR*.mp4, .Single kill.DVR*.mp4, .Double kill.DVR*.mp4",
+    self_subject_keys=frozenset({"you"}),
+    canonical_action_patterns=(
+        ("eliminate", re.compile(r"KILL|ELIMINAT", re.IGNORECASE)),
+        ("knock", re.compile(r"KNOCK", re.IGNORECASE)),
+    ),
+)
+
+
+GAME_LANGUAGE_PROFILES = {profile.code: profile for profile in (ZH_HANS_PROFILE, ZH_HANT_PROFILE, EN_PROFILE)}
 
 
 def game_language_choices() -> list[str]:

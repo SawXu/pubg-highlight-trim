@@ -107,6 +107,9 @@ def _subject_key(text: str, profile: GameLanguageProfile | None = None) -> str:
 
 def _clean_weapon(text: str) -> str:
     text = normalize_text(text)
+    stripped = re.sub(r"(?<!\d)\d{1,2}KILLS?$", "", text, flags=re.IGNORECASE)
+    text = stripped if stripped != text else re.sub(r"\dKILLS?$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"ASSISTS?$", "", text, flags=re.IGNORECASE)
     text = text.strip("，。,.、:：;；|/\\()（）[]【】 ")
     return text[:32]
 
@@ -161,6 +164,8 @@ def extract_own_kill_events(
         action = profile.canonical_action(match.group("action"))
         prefix_end = match.start("action") - match.start()
         weapon = _own_kill_weapon(raw[:prefix_end], profile)
+        if not weapon and "weapon" in match.groupdict():
+            weapon = _clean_weapon(match.group("weapon") or "")
         events.append(
             TextEvent(
                 "own-kill",
@@ -188,6 +193,8 @@ def extract_self_events(text: str, profile: GameLanguageProfile | None = None) -
     actor = text[: action_match.start()] if action_match else text
     actor_key = _subject_key(actor[-32:], profile) or "unknown"
     weapon = _self_event_weapon(actor, profile)
+    if not weapon and action_match and "weapon" in action_match.groupdict():
+        weapon = _clean_weapon(action_match.group("weapon") or "")
     return [TextEvent("self-death", method, action, actor, f"self-death:{action}:{actor_key}", text, weapon)]
 
 
