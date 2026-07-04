@@ -53,16 +53,16 @@ class OcrRefineTests(unittest.TestCase):
     def test_extracts_multiple_own_kill_events(self):
         events = extract_text_events("你用BerylM762击倒了EnemyA你用BerylM762击倒了EnemyB", "both")
         self.assertEqual([event.subject for event in events], ["EnemyA", "EnemyB"])
-        self.assertEqual([event.action for event in events], ["击倒", "击倒"])
+        self.assertEqual([event.action for event in events], ["knock", "knock"])
 
     def test_extracts_own_kill_weapon(self):
         event = extract_text_events("你用燃烧弹淘汰了EnemyA淘汰数", "both")[0]
-        self.assertEqual(event.action, "淘汰")
+        self.assertEqual(event.action, "eliminate")
         self.assertEqual(event.weapon, "燃烧弹")
 
     def test_extracts_self_death_weapon(self):
         event = extract_text_events("EnemyA用燃烧瓶淘汰了你", "both")[0]
-        self.assertEqual(event.action, "淘汰了你")
+        self.assertEqual(event.action, "eliminate")
         self.assertEqual(event.weapon, "燃烧瓶")
 
     def test_does_not_dedupe_short_prefix_as_same_id(self):
@@ -182,7 +182,7 @@ class OcrRefineTests(unittest.TestCase):
             detections = detect_events("dummy.mp4", FakeCv2(), None, 60.0, [], config)
 
         self.assertEqual(len(detections), 2)
-        self.assertEqual([d.event_key for d in detections], ["own-kill:击倒:enemya", "own-kill:击倒:enemyb"])
+        self.assertEqual([d.event_key for d in detections], ["own-kill:knock:enemya", "own-kill:knock:enemyb"])
         self.assertEqual([d.event_sec for d in detections], [30.0, 32.0])
 
     def test_detect_events_dedupes_nearby_ocr_suffix_noise(self):
@@ -219,7 +219,7 @@ class OcrRefineTests(unittest.TestCase):
             detections = detect_events("dummy.mp4", FakeCv2(), None, 60.0, [], config)
 
         self.assertEqual(len(detections), 1)
-        self.assertEqual(detections[0].event_key, "own-kill:击倒:askkzm")
+        self.assertEqual(detections[0].event_key, "own-kill:knock:askkzm")
 
 
 if __name__ == "__main__":

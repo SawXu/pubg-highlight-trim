@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Pattern
+
+
+@dataclass(frozen=True)
+class GameLanguageProfile:
+    code: str
+    paddle_lang: str
+    self_strict_re: Pattern[str]
+    self_zone_downed_re: Pattern[str]
+    self_fuzzy_re: Pattern[str]
+    own_kill_strict_re: Pattern[str]
+    own_kill_event_re: Pattern[str]
+    own_kill_assist_re: Pattern[str]
+    own_kill_delayed_elim_re: Pattern[str]
+    own_kill_victim_stop_re: Pattern[str]
+    own_kill_scoreboard_assist_re: Pattern[str]
+    own_kill_count_re: Pattern[str]
+    weapon_prefix_re: Pattern[str]
+    self_weapon_re: Pattern[str]
+    molotov_weapon_re: Pattern[str]
+    own_source_re: Pattern[str]
+    own_kill_source_re: Pattern[str]
+    match_end_source_re: Pattern[str]
+    view_replay_re: Pattern[str]
+    source_file_hint: str
+    self_subject_keys: frozenset[str]
+    canonical_action_patterns: tuple[tuple[str, Pattern[str]], ...]
+
+    def canonical_action(self, text: str) -> str:
+        for action, pattern in self.canonical_action_patterns:
+            if pattern.search(text or ""):
+                return action
+        return text
+
+
+DEFAULT_GAME_LANGUAGE = "zh-Hans"
+
+
+ZH_HANS_PROFILE = GameLanguageProfile(
+    code="zh-Hans",
+    paddle_lang="ch",
+    self_strict_re=re.compile(r"(击倒了你|淘汰了你)"),
+    self_zone_downed_re=re.compile(r"(你在安全区外倒地了|安全区外倒地了|安全区外倒地)"),
+    self_fuzzy_re=re.compile(r"(击倒.{0,2}你|淘.{0,2}了?你|倒了你)"),
+    own_kill_strict_re=re.compile(r"(?:^|[，。:：])?你.{0,24}(?:击倒|淘汰)了(?!你)"),
+    own_kill_event_re=re.compile(r"你.{0,24}?(?P<action>击倒|淘汰)了(?P<victim>.+?)(?=你.{0,24}?(?:击倒|淘汰)了|$)"),
+    own_kill_assist_re=re.compile(r"(协助次数|协助|助.{0,2}攻)"),
+    own_kill_delayed_elim_re=re.compile(r"你终于淘汰了"),
+    own_kill_victim_stop_re=re.compile(r"(淘汰数?\d*协助次数|淘汰\d+协助次数|淘汰数|协助次数|协助|助.{0,2}攻|你用|击倒了你|淘汰了你)"),
+    own_kill_scoreboard_assist_re=re.compile(r"淘汰数?\d*协助次数|淘汰\d+协助次数"),
+    own_kill_count_re=re.compile(r"淘汰数"),
+    weapon_prefix_re=re.compile(r"(?:你)?(?:使用|用)(?P<weapon>.+)$"),
+    self_weapon_re=re.compile(r"(?:使用|用)(?P<weapon>[^用]{1,32})$"),
+    molotov_weapon_re=re.compile(r"(燃烧弹|燃燒彈|燃烧瓶|燃燒瓶|molotov)", re.IGNORECASE),
+    own_source_re=re.compile(r"\.(?:被击倒|淘汰)\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    own_kill_source_re=re.compile(r"\.(?:单次淘汰|双次淘汰|多杀)\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    match_end_source_re=re.compile(r"\.比赛结束\.DVR(?:_\d+)?\.mp4$", re.IGNORECASE),
+    view_replay_re=re.compile(r"(?:淘汰画面|击倒画面)"),
+    source_file_hint=".被击倒.DVR*.mp4, .淘汰.DVR*.mp4, .单次淘汰.DVR*.mp4, .双次淘汰.DVR*.mp4, .多杀.DVR*.mp4",
+    self_subject_keys=frozenset({"你", "ni"}),
+    canonical_action_patterns=(
+        ("eliminate", re.compile(r"淘")),
+        ("knock", re.compile(r"击倒|倒了你")),
+    ),
+)
+
+
+GAME_LANGUAGE_PROFILES = {ZH_HANS_PROFILE.code: ZH_HANS_PROFILE}
+
+
+def game_language_choices() -> list[str]:
+    return sorted(GAME_LANGUAGE_PROFILES)
+
+
+def default_game_language_profile() -> GameLanguageProfile:
+    return GAME_LANGUAGE_PROFILES[DEFAULT_GAME_LANGUAGE]
+
+
+def get_game_language_profile(code: str | None) -> GameLanguageProfile:
+    key = code or DEFAULT_GAME_LANGUAGE
+    try:
+        return GAME_LANGUAGE_PROFILES[key]
+    except KeyError as exc:
+        choices = ", ".join(game_language_choices())
+        raise ValueError(f"Unsupported PUBG game language: {key}. Supported: {choices}") from exc

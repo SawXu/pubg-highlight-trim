@@ -14,6 +14,7 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertEqual(args.seconds_after, 1.0)
         self.assertEqual(args.min_event_sec, 2.0)
         self.assertEqual(args.molotov_elim_before, 10.0)
+        self.assertEqual(args.game_lang, "zh-Hans")
         self.assertEqual(args.scan_mode, "auto")
         self.assertIsNone(args.merge)
         self.assertFalse(args.no_auto_candidate_csv)

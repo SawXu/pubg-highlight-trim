@@ -19,8 +19,8 @@ from pubg_highlight_trim.pipeline import (
 class PipelineMergeTests(unittest.TestCase):
     def test_merges_overlapping_events_into_one_clip(self):
         detections = [
-            EventDetection(60.0, 30.5, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:击倒:a"),
-            EventDetection(60.0, 32.0, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:击倒:b"),
+            EventDetection(60.0, 30.5, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:knock:a"),
+            EventDetection(60.0, 32.0, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:knock:b"),
         ]
 
         plans = _merged_clip_plans(detections, before=4.0, after=1.0)
@@ -29,7 +29,7 @@ class PipelineMergeTests(unittest.TestCase):
         detection, start, end = plans[0]
         self.assertEqual(detection.event_count, "2")
         self.assertEqual(detection.event_secs, "30.500;32.000")
-        self.assertEqual(detection.event_key, "own-kill:击倒:a;own-kill:击倒:b")
+        self.assertEqual(detection.event_key, "own-kill:knock:a;own-kill:knock:b")
         self.assertAlmostEqual(start, 26.5)
         self.assertAlmostEqual(end, 33.0)
 
@@ -47,7 +47,7 @@ class PipelineMergeTests(unittest.TestCase):
                     "paddle-own-kill-text",
                     "ocr",
                     target="own-kill",
-                    event_key="own-kill:淘汰:enemya",
+                    event_key="own-kill:eliminate:enemya",
                     event_weapon="燃烧弹",
                 ),
                 Args(),
@@ -76,7 +76,7 @@ class PipelineMergeTests(unittest.TestCase):
                 "paddle-own-kill-text",
                 "ocr",
                 target="own-kill",
-                event_key="own-kill:击倒:enemya",
+                event_key="own-kill:knock:enemya",
                 event_weapon="燃烧弹",
             ),
             Args(),
@@ -92,7 +92,7 @@ class PipelineMergeTests(unittest.TestCase):
             "paddle-own-kill-text",
             "ocr",
             target="own-kill",
-            event_key="own-kill:淘汰:enemya",
+            event_key="own-kill:eliminate:enemya",
             event_secs="73.500",
             event_weapon="燃烧弹",
             context_rule="molotov-elim-context",
@@ -109,8 +109,8 @@ class PipelineMergeTests(unittest.TestCase):
 
     def test_partitions_events_before_min_event_sec(self):
         detections = [
-            EventDetection(60.0, 0.0, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:击倒:a"),
-            EventDetection(60.0, 30.5, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:击倒:b"),
+            EventDetection(60.0, 0.0, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:knock:a"),
+            EventDetection(60.0, 30.5, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:knock:b"),
         ]
 
         kept, skipped = _partition_too_early_detections(detections, min_event_sec=2.0)
@@ -126,7 +126,7 @@ class PipelineMergeTests(unittest.TestCase):
             "skipped-before-min-event-sec",
             "ocr",
             target="own-kill",
-            event_key="own-kill:击倒:a",
+            event_key="own-kill:knock:a",
             event_secs="1.500",
         )
 

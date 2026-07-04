@@ -5,6 +5,7 @@ import platform
 from pathlib import Path
 
 from . import __version__
+from .game_languages import DEFAULT_GAME_LANGUAGE, game_language_choices
 from .pipeline import run
 
 
@@ -56,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["self-death", "own-kill", "both"],
         default="both",
         help="Text event to detect: self-death for enemies knocking/eliminating you, own-kill for you knocking/eliminating others, both for both kinds",
+    )
+    parser.add_argument(
+        "--game-lang",
+        choices=game_language_choices(),
+        default=DEFAULT_GAME_LANGUAGE,
+        help="PUBG game language profile used for OCR text and NVIDIA Highlight filename matching",
     )
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Directory for individual trimmed clips")
     parser.add_argument("--before", "--seconds-before", dest="seconds_before", type=float, default=5.0, help="Seconds to keep before event")

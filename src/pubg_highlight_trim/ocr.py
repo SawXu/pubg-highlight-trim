@@ -8,22 +8,11 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Callable
 
+from .game_languages import GameLanguageProfile, default_game_language_profile
 from .models import EventDetection
 from .runtime import first_existing_runtime_path
 
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-
-SELF_STRICT_RE = re.compile(r"(击倒了你|淘汰了你)")
-SELF_ZONE_DOWNED_RE = re.compile(r"(你在安全区外倒地了|安全区外倒地了|安全区外倒地)")
-SELF_FUZZY_RE = re.compile(r"(击倒.{0,2}你|淘.{0,2}了?你|倒了你)")
-OWN_KILL_STRICT_RE = re.compile(r"(?:^|[，。:：])?你.{0,24}(?:击倒|淘汰)了(?!你)")
-OWN_KILL_EVENT_RE = re.compile(r"你.{0,24}?(?P<action>击倒|淘汰)了(?P<victim>.+?)(?=你.{0,24}?(?:击倒|淘汰)了|$)")
-OWN_KILL_ASSIST_RE = re.compile(r"(协助次数|协助|助.{0,2}攻)")
-OWN_KILL_DELAYED_ELIM_RE = re.compile(r"你终于淘汰了")
-OWN_KILL_VICTIM_STOP_RE = re.compile(r"(淘汰数?\d*协助次数|淘汰\d+协助次数|淘汰数|协助次数|协助|助.{0,2}攻|你用|击倒了你|淘汰了你)")
-WEAPON_PREFIX_RE = re.compile(r"(?:你)?(?:使用|用)(?P<weapon>.+)$")
-SELF_WEAPON_RE = re.compile(r"(?:使用|用)(?P<weapon>[^用]{1,32})$")
-MOLOTOV_WEAPON_RE = re.compile(r"(燃烧弹|燃燒彈|燃烧瓶|燃燒瓶|molotov)", re.IGNORECASE)
 
 
 class OcrUnavailable(RuntimeError):
@@ -61,6 +50,7 @@ class TextEvent:
 @dataclass
 class OcrConfig:
     target: str = "self-death"
+    language: GameLanguageProfile = field(default_factory=default_game_language_profile)
     priority_window: list[tuple[float, float]] = field(default_factory=lambda: [(31.0, 43.0), (45.0, 53.0)])
     scan_start: float = 0.0
     scan_end: float | None = None
@@ -85,26 +75,32 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", "", text or "")
 
 
-def classify_self_text(text: str) -> str | None:
+def _language(profile: GameLanguageProfile | None = None) -> GameLanguageProfile:
+    return profile or default_game_language_profile()
+
+
+def classify_self_text(text: str, profile: GameLanguageProfile | None = None) -> str | None:
+    profile = _language(profile)
     text = normalize_text(text)
-    if SELF_STRICT_RE.search(text):
+    if profile.self_strict_re.search(text):
         return "paddle-strict-self-text"
-    if SELF_ZONE_DOWNED_RE.search(text):
+    if profile.self_zone_downed_re.search(text):
         return "paddle-zone-self-downed-text"
-    if SELF_FUZZY_RE.search(text):
+    if profile.self_fuzzy_re.search(text):
         return "paddle-fuzzy-self-text"
     return None
 
 
-def _clean_subject(text: str) -> str:
+def _clean_subject(text: str, profile: GameLanguageProfile | None = None) -> str:
+    profile = _language(profile)
     text = normalize_text(text)
-    text = OWN_KILL_VICTIM_STOP_RE.split(text, maxsplit=1)[0]
+    text = profile.own_kill_victim_stop_re.split(text, maxsplit=1)[0]
     text = text.strip("，。,.、:：;；|/\\()（）[]【】 ")
     return text[:48]
 
 
-def _subject_key(text: str) -> str:
-    cleaned = _clean_subject(text)
+def _subject_key(text: str, profile: GameLanguageProfile | None = None) -> str:
+    cleaned = _clean_subject(text, profile)
     key = "".join(ch.lower() for ch in cleaned if ch.isalnum() or ch in "_-[]")
     return key or normalize_text(cleaned).lower()
 
@@ -115,38 +111,46 @@ def _clean_weapon(text: str) -> str:
     return text[:32]
 
 
-def _own_kill_weapon(raw: str, action: str) -> str:
-    prefix = normalize_text(raw).split(f"{action}了", 1)[0]
-    match = WEAPON_PREFIX_RE.search(prefix)
+def _own_kill_weapon(prefix: str, profile: GameLanguageProfile | None = None) -> str:
+    profile = _language(profile)
+    match = profile.weapon_prefix_re.search(normalize_text(prefix))
     return _clean_weapon(match.group("weapon")) if match else ""
 
 
-def _self_event_weapon(actor_text: str) -> str:
-    match = SELF_WEAPON_RE.search(normalize_text(actor_text))
+def _self_event_weapon(actor_text: str, profile: GameLanguageProfile | None = None) -> str:
+    profile = _language(profile)
+    match = profile.self_weapon_re.search(normalize_text(actor_text))
     return _clean_weapon(match.group("weapon")) if match else ""
 
 
-def is_molotov_weapon(weapon: str) -> bool:
-    return bool(MOLOTOV_WEAPON_RE.search(normalize_text(weapon)))
+def is_molotov_weapon(weapon: str, profile: GameLanguageProfile | None = None) -> bool:
+    profile = _language(profile)
+    return bool(profile.molotov_weapon_re.search(normalize_text(weapon)))
 
 
-def extract_own_kill_events(text: str, allow_assist: bool = False) -> list[TextEvent]:
+def extract_own_kill_events(
+    text: str,
+    allow_assist: bool = False,
+    profile: GameLanguageProfile | None = None,
+) -> list[TextEvent]:
+    profile = _language(profile)
     text = normalize_text(text)
     if not text:
         return []
     events: list[TextEvent] = []
-    for match in OWN_KILL_EVENT_RE.finditer(text):
+    for match in profile.own_kill_event_re.finditer(text):
         raw = normalize_text(match.group(0))
-        if is_delayed_own_elim_text(raw):
+        if is_delayed_own_elim_text(raw, profile):
             continue
-        if not allow_assist and is_assist_own_kill_text(raw):
+        if not allow_assist and is_assist_own_kill_text(raw, profile):
             continue
-        subject = _clean_subject(match.group("victim"))
-        subject_key = _subject_key(subject)
-        if not subject_key or subject_key in {"你", "ni"}:
+        subject = _clean_subject(match.group("victim"), profile)
+        subject_key = _subject_key(subject, profile)
+        if not subject_key or subject_key in profile.self_subject_keys:
             continue
-        action = match.group("action")
-        weapon = _own_kill_weapon(raw, action)
+        action = profile.canonical_action(match.group("action"))
+        prefix_end = match.start("action") - match.start()
+        weapon = _own_kill_weapon(raw[:prefix_end], profile)
         events.append(
             TextEvent(
                 "own-kill",
@@ -161,27 +165,29 @@ def extract_own_kill_events(text: str, allow_assist: bool = False) -> list[TextE
     return events
 
 
-def extract_self_events(text: str) -> list[TextEvent]:
+def extract_self_events(text: str, profile: GameLanguageProfile | None = None) -> list[TextEvent]:
+    profile = _language(profile)
     text = normalize_text(text)
-    method = classify_self_text(text)
+    method = classify_self_text(text, profile)
     if not method:
         return []
-    if SELF_ZONE_DOWNED_RE.search(text):
+    if profile.self_zone_downed_re.search(text):
         return [TextEvent("self-death", method, "zone-downed", "zone", "self-death:zone", text)]
-    action_match = SELF_STRICT_RE.search(text) or SELF_FUZZY_RE.search(text)
-    action = action_match.group(1) if action_match else "self-death"
+    action_match = profile.self_strict_re.search(text) or profile.self_fuzzy_re.search(text)
+    action = profile.canonical_action(action_match.group(1)) if action_match else "self-death"
     actor = text[: action_match.start()] if action_match else text
-    actor_key = _subject_key(actor[-32:]) or "unknown"
-    weapon = _self_event_weapon(actor)
+    actor_key = _subject_key(actor[-32:], profile) or "unknown"
+    weapon = _self_event_weapon(actor, profile)
     return [TextEvent("self-death", method, action, actor, f"self-death:{action}:{actor_key}", text, weapon)]
 
 
-def extract_text_events(text: str, target: str) -> list[TextEvent]:
+def extract_text_events(text: str, target: str, profile: GameLanguageProfile | None = None) -> list[TextEvent]:
+    profile = _language(profile)
     events: list[TextEvent] = []
     if target in {"self-death", "both"}:
-        events.extend(extract_self_events(text))
+        events.extend(extract_self_events(text, profile))
     if target in {"own-kill", "both"}:
-        events.extend(extract_own_kill_events(text))
+        events.extend(extract_own_kill_events(text, profile=profile))
     return events
 
 
@@ -258,45 +264,50 @@ def _compact_latin_subject_key(subject: str) -> str:
     return "".join(ch.lower() for ch in subject if ch.isascii() and ch.isalnum())
 
 
-def classify_own_kill_text(text: str) -> str | None:
-    events = extract_own_kill_events(text)
+def classify_own_kill_text(text: str, profile: GameLanguageProfile | None = None) -> str | None:
+    events = extract_own_kill_events(text, profile=profile)
     return events[0].method if events else None
 
 
-def has_assist_text(text: str) -> bool:
-    return bool(OWN_KILL_ASSIST_RE.search(normalize_text(text)))
+def has_assist_text(text: str, profile: GameLanguageProfile | None = None) -> bool:
+    profile = _language(profile)
+    return bool(profile.own_kill_assist_re.search(normalize_text(text)))
 
 
-def is_delayed_own_elim_text(text: str) -> bool:
-    return bool(OWN_KILL_DELAYED_ELIM_RE.search(normalize_text(text)))
+def is_delayed_own_elim_text(text: str, profile: GameLanguageProfile | None = None) -> bool:
+    profile = _language(profile)
+    return bool(profile.own_kill_delayed_elim_re.search(normalize_text(text)))
 
 
-def is_assist_own_kill_text(text: str) -> bool:
+def is_assist_own_kill_text(text: str, profile: GameLanguageProfile | None = None) -> bool:
+    profile = _language(profile)
     text = normalize_text(text)
-    assist = OWN_KILL_ASSIST_RE.search(text)
+    assist = profile.own_kill_assist_re.search(text)
     if not assist:
         return False
-    if re.search(r"淘汰数?\d*协助次数|淘汰\d+协助次数", text):
+    if profile.own_kill_scoreboard_assist_re.search(text):
         return False
-    kill_count = re.search(r"淘汰数", text)
+    kill_count = profile.own_kill_count_re.search(text)
     return not kill_count or assist.start() < kill_count.start()
 
 
-def has_own_kill_candidate(text: str) -> bool:
-    return bool(OWN_KILL_STRICT_RE.search(normalize_text(text)))
+def has_own_kill_candidate(text: str, profile: GameLanguageProfile | None = None) -> bool:
+    profile = _language(profile)
+    return bool(profile.own_kill_strict_re.search(normalize_text(text)))
 
 
-def classify_target_kind(text: str, target: str) -> tuple[str, str] | None:
-    events = extract_text_events(text, target)
+def classify_target_kind(text: str, target: str, profile: GameLanguageProfile | None = None) -> tuple[str, str] | None:
+    events = extract_text_events(text, target, profile)
     return (events[0].method, events[0].target) if events else None
 
 
-def classify_target_text(text: str, target: str) -> str | None:
-    classified = classify_target_kind(text, target)
+def classify_target_text(text: str, target: str, profile: GameLanguageProfile | None = None) -> str | None:
+    classified = classify_target_kind(text, target, profile)
     return classified[0] if classified else None
 
 
-def load_backend() -> tuple[Any, Any]:
+def load_backend(profile: GameLanguageProfile | None = None) -> tuple[Any, Any]:
+    profile = _language(profile)
     configure_paddlex_cache()
     try:
         import cv2  # type: ignore
@@ -306,8 +317,13 @@ def load_backend() -> tuple[Any, Any]:
             "OCR dependencies are missing. Install with: python -m pip install -e .[ocr]"
         ) from exc
     started = time.time()
-    ocr = PaddleOCR(lang="ch", use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)
-    print(f"PaddleOCR initialized in {time.time() - started:.1f}s", flush=True)
+    ocr = PaddleOCR(
+        lang=profile.paddle_lang,
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+    )
+    print(f"PaddleOCR initialized lang={profile.paddle_lang} in {time.time() - started:.1f}s", flush=True)
     return cv2, ocr
 
 
@@ -383,15 +399,15 @@ def ocr_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -
     frame_elapsed = time.time() - frame_started
 
     text, scores, elapsed = _predict_text(ocr, crop)
-    if config.target in {"own-kill", "both"} and has_own_kill_candidate(text):
-        if is_delayed_own_elim_text(text) and not extract_own_kill_events(text):
+    if config.target in {"own-kill", "both"} and has_own_kill_candidate(text, config.language):
+        if is_delayed_own_elim_text(text, config.language) and not extract_own_kill_events(text, profile=config.language):
             method = "paddle-own-kill-delayed-elim-skipped"
             return OcrResult(text, scores, elapsed, method, frame_elapsed)
-        if is_assist_own_kill_text(text) and not extract_own_kill_events(text):
+        if is_assist_own_kill_text(text, config.language) and not extract_own_kill_events(text, profile=config.language):
             method = "paddle-own-kill-assist-skipped"
             return OcrResult(text, scores, elapsed, method, frame_elapsed)
 
-    method = classify_target_text(text, config.target) or "paddle-not-target-text"
+    method = classify_target_text(text, config.target, config.language) or "paddle-not-target-text"
     return OcrResult(text, scores, elapsed, method, frame_elapsed)
 
 
@@ -405,7 +421,7 @@ def ocr_assist_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrCo
     crop = _crop_frame(cv2_module, frame, config.assist_roi, config.ocr_width)
     frame_elapsed = time.time() - frame_started
     text, scores, elapsed = _predict_text(ocr, crop)
-    method = "paddle-own-kill-assist-skipped" if has_assist_text(text) else "paddle-not-assist-text"
+    method = "paddle-own-kill-assist-skipped" if has_assist_text(text, config.language) else "paddle-not-assist-text"
     return OcrResult(text, scores, elapsed, method, frame_elapsed)
 
 
@@ -427,8 +443,9 @@ def detect_assist_nearby(
         result = ocr_assist_at(cv2_module, cap, ocr, sec, config)
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
-        if is_assist_own_kill_text(result.text) and any(
-            same_text_event(candidate, event) for candidate in extract_own_kill_events(result.text, allow_assist=True)
+        if is_assist_own_kill_text(result.text, config.language) and any(
+            same_text_event(candidate, event)
+            for candidate in extract_own_kill_events(result.text, allow_assist=True, profile=config.language)
         ):
             return result, sampled, total_ocr_seconds, total_frame_seconds
     return None, sampled, total_ocr_seconds, total_frame_seconds
@@ -515,7 +532,7 @@ def refine_event(
         coarse_sec,
         duration,
         config,
-        lambda result: bool(classify_target_text(result.text, config.target)),
+        lambda result: bool(classify_target_text(result.text, config.target, config.language)),
         coarse_result,
     )
 
@@ -537,7 +554,10 @@ def refine_text_event(
         coarse_sec,
         duration,
         config,
-        lambda result: any(same_text_event(candidate, event) for candidate in extract_text_events(result.text, event.target)),
+        lambda result: any(
+            same_text_event(candidate, event)
+            for candidate in extract_text_events(result.text, event.target, config.language)
+        ),
         coarse_result,
     )
 
@@ -568,7 +588,7 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
             total_frame_seconds += result.frame_seconds
             if result.text:
                 last_text, last_scores, last_method = result.text, result.scores, result.method
-            for event in extract_text_events(result.text, config.target):
+            for event in extract_text_events(result.text, config.target, config.language):
                 if any(
                     same_text_event(event, seen)
                     or (
@@ -587,7 +607,9 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                 total_ocr_seconds += refined_seconds
                 total_frame_seconds += refined_frame_seconds
                 refined_events = [
-                    candidate for candidate in extract_text_events(refined.text, event.target) if same_text_event(candidate, event)
+                    candidate
+                    for candidate in extract_text_events(refined.text, event.target, config.language)
+                    if same_text_event(candidate, event)
                 ]
                 refined_event = refined_events[0] if refined_events else event
                 if any(
