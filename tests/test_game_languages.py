@@ -2,7 +2,8 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from pubg_highlight_trim.game_languages import LANGUAGE_REGEX_TABLES, game_language_choices, get_game_language_profile
+from pubg_highlight_trim.game_language_tables import LANGUAGE_REGEX_TABLES
+from pubg_highlight_trim.game_languages import game_language_choices, get_game_language_profile
 from pubg_highlight_trim.ocr import (
     extract_text_events,
     is_assist_own_kill_text,
