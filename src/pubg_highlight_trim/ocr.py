@@ -313,14 +313,31 @@ def _same_followup_subject(
     )
 
 
-def _is_followup_elimination(
+def _is_prior_event(seen_sec: float, event_sec: float | None) -> bool:
+    return event_sec is None or seen_sec <= event_sec + 1e-6
+
+
+def _followup_elimination_skip_method(
     event: TextEvent,
     seen_events: list[tuple[TextEvent, float]],
     profile: GameLanguageProfile | None = None,
-) -> bool:
-    return event.action == "eliminate" and any(
-        seen.action == "knock" and _same_followup_subject(event, seen, profile) for seen, _seen_sec in seen_events
-    )
+    event_sec: float | None = None,
+) -> str | None:
+    if event.action != "eliminate":
+        return None
+    if event.target == "self-death" and any(
+        seen.target == "self-death" and seen.action == "knock" and _is_prior_event(seen_sec, event_sec)
+        for seen, seen_sec in seen_events
+    ):
+        return "paddle-followup-self-elimination-skipped-after-knock"
+    if any(
+        seen.action == "knock"
+        and _is_prior_event(seen_sec, event_sec)
+        and _same_followup_subject(event, seen, profile)
+        for seen, seen_sec in seen_events
+    ):
+        return "paddle-followup-elimination-skipped"
+    return None
 
 
 def _self_death_actor_anchor(subject: str) -> str:
@@ -691,10 +708,16 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                     for seen, seen_sec in seen_events
                 ):
                     continue
-                if _is_followup_elimination(refined_event, seen_events, config.language):
+                followup_skip_method = _followup_elimination_skip_method(
+                    refined_event,
+                    seen_events,
+                    config.language,
+                    event_sec,
+                )
+                if followup_skip_method:
                     last_text = refined.text or result.text
                     last_scores = refined.scores or result.scores
-                    last_method = "paddle-followup-elimination-skipped"
+                    last_method = followup_skip_method
                     seen_events.append((refined_event, event_sec))
                     continue
                 method = refined_event.method
