@@ -9,8 +9,9 @@ Default behavior detects both your knocks/eliminations and enemies knocking/elim
 Current game-language support is `zh-Hans`, `zh-Hant`, and `en`. The matching rules for PUBG OCR text and NVIDIA Highlight filenames live in language profiles so more game languages can be added later from real samples. Use `--game-lang zh-Hans`, `--game-lang zh-Hant`, or `--game-lang en` to select the PUBG game language profile.
 
 1. OCR text for both directions: `你用...击倒/淘汰了...`, `...击倒/淘汰了你`, `你在安全区外倒地了`, `YOU KNOCKED OUT/KILLED ...`, `... KNOCKED/KILLS YOU ...`.
-2. Assist text (`助攻`/`协助`) and delayed finish text (`你终于淘汰了...`) are skipped.
-3. Replay-perspective files such as `淘汰画面` / `击倒画面` are not supported.
+2. If the same source video first shows you being knocked and later shows you being eliminated, only the knock clip is kept.
+3. Assist text (`助攻`/`协助`) and delayed finish text (`你终于淘汰了...`) are skipped.
+4. Replay-perspective files such as `淘汰画面` / `击倒画面` are not supported.
 
 ## Install for development
 
