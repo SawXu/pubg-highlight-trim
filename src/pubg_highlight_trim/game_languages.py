@@ -25,6 +25,7 @@ class GameLanguageProfile:
     weapon_prefix_re: Pattern[str]
     self_weapon_re: Pattern[str]
     weapon_suffix_noise_re: Pattern[str]
+    subject_suffix_noise_re: Pattern[str]
     molotov_weapon_re: Pattern[str]
     own_source_re: Pattern[str]
     own_kill_source_re: Pattern[str]
@@ -142,6 +143,12 @@ def _build_weapon_suffix_noise_re(table: LanguageRegexTable) -> Pattern[str]:
     return re.compile(fr"(?:{_alt(table.weapon_suffix_noise_terms)})+$", table.flags)
 
 
+def _build_subject_suffix_noise_re(table: LanguageRegexTable) -> Pattern[str]:
+    if not table.subject_suffix_noise_terms:
+        return re.compile(r"(?!x)x")
+    return re.compile(fr"(?:{_alt(table.subject_suffix_noise_terms)})+$", table.flags)
+
+
 def _build_source_re(names: tuple[str, ...]) -> Pattern[str]:
     return re.compile(fr"\.(?:{'|'.join(names)}){_DVR_MP4_SUFFIX_RE}", re.IGNORECASE)
 
@@ -165,6 +172,7 @@ def _build_profile(table: LanguageRegexTable) -> GameLanguageProfile:
         weapon_prefix_re=re.compile(fr"(?:{table.self_subject_re})?(?:{weapon_marker})(?P<weapon>.+)$", table.flags),
         self_weapon_re=re.compile(fr"(?:{weapon_marker})(?P<weapon>.+)$", table.flags),
         weapon_suffix_noise_re=_build_weapon_suffix_noise_re(table),
+        subject_suffix_noise_re=_build_subject_suffix_noise_re(table),
         molotov_weapon_re=_compile_alt(table.molotov_terms, table.flags),
         own_source_re=_build_source_re(table.own_source_terms),
         own_kill_source_re=_build_source_re(table.own_kill_source_terms),

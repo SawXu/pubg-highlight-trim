@@ -96,6 +96,8 @@ def _clean_subject(text: str, profile: GameLanguageProfile | None = None) -> str
     text = normalize_text(text)
     text = profile.own_kill_victim_stop_re.split(text, maxsplit=1)[0]
     text = text.strip("，。,.、:：;；|/\\()（）[]【】 ")
+    text = profile.subject_suffix_noise_re.sub("", text)
+    text = text.strip("，。,.、:：;；|/\\()（）[]【】 ")
     return text[:48]
 
 

@@ -40,6 +40,7 @@ class LanguageRegexTable:
     own_weapon_position: Literal["before_action", "after_victim"] = "before_action"
     self_weapon_position: Literal["before_action", "after_action"] = "before_action"
     flags: int = 0
+    subject_suffix_noise_terms: tuple[str, ...] = ()
 
 
 LANGUAGE_REGEX_TABLES = (
@@ -141,5 +142,6 @@ LANGUAGE_REGEX_TABLES = (
         own_weapon_position="after_victim",
         self_weapon_position="after_action",
         flags=re.IGNORECASE,
+        subject_suffix_noise_terms=(r"BYHEADSHOT",),
     ),
 )
