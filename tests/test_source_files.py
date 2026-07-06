@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pubg_highlight_trim.source_files import iter_source_files
+from pubg_highlight_trim.source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files
 
 
 class SourceFilesTests(unittest.TestCase):
@@ -43,6 +43,50 @@ class SourceFilesTests(unittest.TestCase):
                 self.touch(path)
 
             self.assertEqual(iter_source_files(root, target="both"), [own_elim, own_kill, match_end])
+
+    def test_iter_source_file_languages_detects_mixed_profiles(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            zh_hans = root / "a.单次淘汰.DVR.mp4"
+            zh_hant = root / "b.單次擊殺.DVR.mp4"
+            english = root / "c.Single kill.DVR.mp4"
+            replay = root / "d.DeathCam.DVR.mp4"
+            for path in [zh_hans, zh_hant, english, replay]:
+                self.touch(path)
+
+            selections = iter_source_file_languages(root, target="both")
+
+        self.assertEqual(
+            [(path.name, profile.code) for path, profile in selections],
+            [
+                ("a.单次淘汰.DVR.mp4", "zh-Hans"),
+                ("b.單次擊殺.DVR.mp4", "zh-Hant"),
+                ("c.Single kill.DVR.mp4", "en"),
+            ],
+        )
+
+    def test_auto_language_detection_uses_context_for_ambiguous_names(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            explicit_hant = root / "a.單次擊殺.DVR.mp4"
+            ambiguous = root / "b.淘汰.DVR.mp4"
+            for path in [explicit_hant, ambiguous]:
+                self.touch(path)
+
+            selections = infer_source_file_languages([explicit_hant, ambiguous], target="both")
+
+        self.assertEqual(selections[explicit_hant].code, "zh-Hant")
+        self.assertEqual(selections[ambiguous].code, "zh-Hant")
+
+    def test_auto_language_detection_defaults_ambiguous_names_to_zh_hans(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            ambiguous = root / "a.淘汰.DVR.mp4"
+            self.touch(ambiguous)
+
+            selections = infer_source_file_languages([ambiguous], target="both")
+
+        self.assertEqual(selections[ambiguous].code, "zh-Hans")
 
 
 if __name__ == "__main__":

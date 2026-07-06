@@ -10,10 +10,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .ffmpeg_tools import concat_clips, duration_sec, find_ffmpeg_pair, trim_clip
-from .game_languages import DEFAULT_GAME_LANGUAGE, GameLanguageProfile, get_game_language_profile
+from .game_languages import (
+    AUTO_GAME_LANGUAGE,
+    DEFAULT_GAME_LANGUAGE,
+    GameLanguageProfile,
+    default_game_language_profile,
+    game_language_choices,
+    get_game_language_profile,
+)
 from .models import EventDetection
 from .ocr import OcrConfig, OcrUnavailable, detect_events as detect_ocr_events, is_molotov_weapon, load_backend
-from .source_files import iter_source_files
+from .source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files
 
 
 def unique_path(path: Path) -> Path:
@@ -109,6 +116,39 @@ def _merge_output_override(args: SimpleNamespace) -> Path | None:
     if isinstance(merge, (str, Path)):
         return Path(merge)
     return None
+
+
+def _requested_game_language(args: SimpleNamespace) -> str:
+    return getattr(args, "game_lang", AUTO_GAME_LANGUAGE)
+
+
+def _is_auto_game_language(args: SimpleNamespace) -> bool:
+    return _requested_game_language(args) == AUTO_GAME_LANGUAGE
+
+
+def _format_language_counts(file_profiles: dict[Path, GameLanguageProfile]) -> str:
+    counts = Counter(profile.code for profile in file_profiles.values())
+    return ",".join(f"{code}:{counts[code]}" for code in sorted(counts))
+
+
+def _select_input_files(
+    input_path: Path,
+    args: SimpleNamespace,
+    single_file: bool,
+) -> tuple[list[Path], dict[Path, GameLanguageProfile]]:
+    target = getattr(args, "target", "self-death")
+    if _is_auto_game_language(args):
+        if single_file:
+            profile = infer_source_file_languages([input_path], target).get(input_path, default_game_language_profile())
+            return [input_path], {input_path: profile}
+        selections = iter_source_file_languages(input_path, recursive=args.recursive, target=target)
+        return [path for path, _ in selections], dict(selections)
+
+    profile = get_game_language_profile(_requested_game_language(args) or DEFAULT_GAME_LANGUAGE)
+    if single_file:
+        return [input_path], {input_path: profile}
+    files = iter_source_files(input_path, recursive=args.recursive, target=target, language=profile)
+    return files, {path: profile for path in files}
 
 
 def _prepare_output_paths(args: SimpleNamespace, input_path: Path, base_folder: Path, single_file: bool) -> tuple[Path, Path]:
@@ -309,12 +349,19 @@ def _is_molotov_elim_detection(detection: EventDetection, profile: GameLanguageP
     )
 
 
-def _apply_context_rules(detection: EventDetection, args: SimpleNamespace) -> EventDetection:
+def _apply_context_rules(
+    detection: EventDetection,
+    args: SimpleNamespace,
+    profile: GameLanguageProfile | None = None,
+) -> EventDetection:
     before = max(0.0, float(getattr(args, "seconds_before", 0.0)))
     after = max(0.0, float(getattr(args, "seconds_after", 0.0)))
     context_rule = "default"
     molotov_before = _molotov_elim_before(args)
-    profile = get_game_language_profile(getattr(args, "game_lang", DEFAULT_GAME_LANGUAGE))
+    language_code = getattr(args, "game_lang", DEFAULT_GAME_LANGUAGE)
+    if language_code == AUTO_GAME_LANGUAGE:
+        language_code = DEFAULT_GAME_LANGUAGE
+    profile = profile or get_game_language_profile(language_code)
     if molotov_before > 0 and _is_molotov_elim_detection(detection, profile):
         before = max(before, molotov_before)
         context_rule = "molotov-elim-context"
@@ -427,18 +474,20 @@ def run(args: SimpleNamespace) -> int:
 
     setup_started = time.time()
     ffmpeg, ffprobe = find_ffmpeg_pair(args.ffmpeg, args.ffprobe)
-    language_profile = get_game_language_profile(getattr(args, "game_lang", DEFAULT_GAME_LANGUAGE))
     single_file = input_path.is_file()
     base_folder = input_path.parent if single_file else input_path
     if single_file:
         if input_path.suffix.lower() != ".mp4":
             raise SystemExit(f"Single-file input must be an .mp4: {input_path}")
-        files = [input_path]
-    elif input_path.is_dir():
-        files = iter_source_files(input_path, recursive=args.recursive, target=args.target, language=language_profile)
-    else:
+    elif not input_path.is_dir():
         raise SystemExit(f"Input path is neither a file nor a directory: {input_path}")
+
+    files, file_profiles = _select_input_files(input_path, args, single_file)
     if not files:
+        if _is_auto_game_language(args):
+            hints = "; ".join(get_game_language_profile(code).source_file_hint for code in game_language_choices())
+            raise SystemExit(f"No matching PUBG highlight source files found with automatic language detection. Tried: {hints}")
+        language_profile = get_game_language_profile(_requested_game_language(args) or DEFAULT_GAME_LANGUAGE)
         raise SystemExit(
             f"No matching PUBG highlight source files found for game_lang={language_profile.code}: "
             f"{language_profile.source_file_hint}"
@@ -450,7 +499,8 @@ def run(args: SimpleNamespace) -> int:
     print(f"windows_only=true", flush=True)
     print(f"sources={len(files)}", flush=True)
     print("detector=ocr", flush=True)
-    print(f"game_lang={language_profile.code}", flush=True)
+    print(f"game_lang={_requested_game_language(args)}", flush=True)
+    print(f"detected_game_langs={_format_language_counts(file_profiles)}", flush=True)
     print(f"target={args.target}", flush=True)
     print(f"min_event_sec={_min_event_sec(args):.3f}", flush=True)
     print(f"molotov_elim_before={_molotov_elim_before(args):.3f}", flush=True)
@@ -467,32 +517,44 @@ def run(args: SimpleNamespace) -> int:
     print(f"full_scan={str(not no_full_scan).lower()}", flush=True)
     print(f"candidate_csv={candidate_csv or ''}", flush=True)
     ocr_error = ""
-    try:
-        ocr_setup_started = time.time()
-        cv2_module, ocr_engine = load_backend(language_profile)
-        if args.profile:
-            print(f"PROFILE ocr_init={time.time() - ocr_setup_started:.3f}s", flush=True)
-    except OcrUnavailable as exc:
-        ocr_error = str(exc)
-        raise SystemExit(ocr_error) from exc
+    ocr_backends: dict[str, tuple[object, object]] = {}
 
-    ocr_config = OcrConfig(
-        target=args.target,
-        language=language_profile,
-        priority_window=args.priority_window,
-        scan_start=args.scan_start,
-        scan_end=args.scan_end,
-        coarse_step=args.coarse_step,
-        candidate_lookback=args.candidate_lookback,
-        candidate_lookahead=args.candidate_lookahead,
-        candidate_step=args.candidate_step,
-        refine_before=args.refine_before,
-        refine_after=args.refine_after,
-        refine_step=args.refine_step,
-        no_full_scan=no_full_scan,
-        roi=args.roi,
-        ocr_width=args.ocr_width,
-    )
+    def backend_for(profile: GameLanguageProfile) -> tuple[object, object]:
+        nonlocal ocr_error
+        if profile.paddle_lang in ocr_backends:
+            return ocr_backends[profile.paddle_lang]
+        try:
+            ocr_setup_started = time.time()
+            backend = load_backend(profile)
+            if args.profile:
+                print(
+                    f"PROFILE ocr_init={time.time() - ocr_setup_started:.3f}s lang={profile.paddle_lang}",
+                    flush=True,
+                )
+        except OcrUnavailable as exc:
+            ocr_error = str(exc)
+            raise SystemExit(ocr_error) from exc
+        ocr_backends[profile.paddle_lang] = backend
+        return backend
+
+    def ocr_config_for(profile: GameLanguageProfile) -> OcrConfig:
+        return OcrConfig(
+            target=args.target,
+            language=profile,
+            priority_window=args.priority_window,
+            scan_start=args.scan_start,
+            scan_end=args.scan_end,
+            coarse_step=args.coarse_step,
+            candidate_lookback=args.candidate_lookback,
+            candidate_lookahead=args.candidate_lookahead,
+            candidate_step=args.candidate_step,
+            refine_before=args.refine_before,
+            refine_after=args.refine_after,
+            refine_step=args.refine_step,
+            no_full_scan=no_full_scan,
+            roi=args.roi,
+            ocr_width=args.ocr_width,
+        )
 
     records: list[dict[str, str]] = []
     clips: list[Path] = []
@@ -502,6 +564,9 @@ def run(args: SimpleNamespace) -> int:
     min_event_sec = _min_event_sec(args)
 
     for idx, src in enumerate(files, 1):
+        language_profile = file_profiles[src]
+        cv2_module, ocr_engine = backend_for(language_profile)
+        ocr_config = ocr_config_for(language_profile)
         clip_started = time.time()
         probe_started = time.time()
         dur = duration_sec(src, ffprobe)
@@ -518,7 +583,11 @@ def run(args: SimpleNamespace) -> int:
             methods[detection.method] += 1
             detectors[detection.detector] += 1
             total_seconds = time.time() - clip_started
-            print(f"[{idx:02d}/{len(files)}] SKIP {detection.target} {detection.method} | {src.name} | {detection.text[:80]}", flush=True)
+            print(
+                f"[{idx:02d}/{len(files)}] SKIP {detection.target} {detection.method} "
+                f"lang={language_profile.code} | {src.name} | {detection.text[:80]}",
+                flush=True,
+            )
             _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, 0.0, total_seconds)
             records.append(_record_skip(idx, src, detection, probe_seconds, 0.0, total_seconds))
             continue
@@ -533,14 +602,14 @@ def run(args: SimpleNamespace) -> int:
             print(
                 f"[{idx:02d}/{len(files)}] SKIP {detection.target} "
                 f"{detection.event_secs or f'{detection.event_sec:.3f}'}s < {min_event_sec:.3f}s "
-                f"{detection.method} | {src.name}",
+                f"{detection.method} lang={language_profile.code} | {src.name}",
                 flush=True,
             )
             _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, 0.0, total_seconds)
             records.append(_record_skip(idx, src, detection, probe_seconds, 0.0, total_seconds))
         if not detections:
             continue
-        detections = [_apply_context_rules(detection, args) for detection in detections]
+        detections = [_apply_context_rules(detection, args, language_profile) for detection in detections]
 
         for detection, start, end in _merged_clip_plans(detections, args.seconds_before, args.seconds_after):
             if detection.detect_seconds == 0.0:
@@ -563,7 +632,7 @@ def run(args: SimpleNamespace) -> int:
             total_seconds = time.time() - clip_started
             print(
                 f"[{idx:02d}/{len(files)}] INCLUDE {detection.target} {detection.event_secs or f'{detection.event_sec:.3f}'}s "
-                f"{start:.3f}-{end:.3f} {detection.method} | {src.name}",
+                f"{start:.3f}-{end:.3f} {detection.method} lang={language_profile.code} | {src.name}",
                 flush=True,
             )
             _profile_clip(args, idx, len(files), src, "INCLUDE", detection, probe_seconds, trim_seconds, total_seconds)
@@ -606,7 +675,8 @@ def run(args: SimpleNamespace) -> int:
         "skipped_count": sum(1 for row in records if row["Status"] == "skipped"),
         "dry_run": args.dry_run,
         "detector": "ocr",
-        "game_lang": language_profile.code,
+        "game_lang": _requested_game_language(args),
+        "detected_game_langs": dict(Counter(profile.code for profile in file_profiles.values())),
         "min_event_sec": min_event_sec,
         "molotov_elim_before": _molotov_elim_before(args),
         "ocr_unavailable_reason": ocr_error,

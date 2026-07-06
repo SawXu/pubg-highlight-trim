@@ -14,7 +14,7 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertEqual(args.seconds_after, 1.0)
         self.assertEqual(args.min_event_sec, 2.0)
         self.assertEqual(args.molotov_elim_before, 10.0)
-        self.assertEqual(args.game_lang, "zh-Hans")
+        self.assertEqual(args.game_lang, "auto")
         self.assertEqual(args.scan_mode, "auto")
         self.assertIsNone(args.merge)
         self.assertFalse(args.no_auto_candidate_csv)
@@ -24,6 +24,7 @@ class CliDefaultsTests(unittest.TestCase):
 
         self.assertEqual(parser.parse_args([".", "--scan-mode", "full"]).scan_mode, "full")
         self.assertEqual(parser.parse_args([".", "--scan-mode", "fast"]).scan_mode, "fast")
+        self.assertEqual(parser.parse_args([".", "--game-lang", "auto"]).game_lang, "auto")
         self.assertEqual(parser.parse_args([".", "--game-lang", "zh-Hant"]).game_lang, "zh-Hant")
         with redirect_stderr(StringIO()):
             with self.assertRaises(SystemExit):
