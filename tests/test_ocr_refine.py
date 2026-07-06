@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from pubg_highlight_trim.game_languages import get_game_language_profile
 from pubg_highlight_trim.ocr import (
     OcrConfig,
     OcrResult,
@@ -220,6 +221,56 @@ class OcrRefineTests(unittest.TestCase):
 
         self.assertEqual(len(detections), 1)
         self.assertEqual(detections[0].event_key, "own-kill:knock:enemya")
+        self.assertEqual(detections[0].event_sec, 30.0)
+
+    def test_strips_english_headshot_suffix_from_own_kill_subject(self):
+        language = get_game_language_profile("en")
+        event = extract_text_events(
+            "YOU KNOCKED OUT TerminatorwIfx by headshot with Beryl M762",
+            "both",
+            language,
+        )[0]
+
+        self.assertEqual(event.subject, "TerminatorwIfx")
+        self.assertEqual(event.key, "own-kill:knock:terminatorwifx")
+        self.assertEqual(event.weapon, "BerylM762")
+
+    def test_detect_events_suppresses_english_headshot_suffix_followup_elimination(self):
+        class FakeCap:
+            def release(self):
+                pass
+
+        class FakeCv2:
+            def VideoCapture(self, _path):
+                return FakeCap()
+
+        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+            if sec >= 34.0:
+                text = "YOU KILLED Terminatorwlfx with Dragunov 1 KILL"
+            elif sec >= 30.0:
+                text = "YOU KNOCKED OUT TerminatorwIfx by headshot with Beryl M762"
+            else:
+                text = ""
+            method = "paddle-own-kill-text" if text else "paddle-not-target-text"
+            return OcrResult(text, "", 0.01, method)
+
+        config = OcrConfig(
+            target="both",
+            language=get_game_language_profile("en"),
+            priority_window=[(30.0, 34.0)],
+            no_full_scan=True,
+            candidate_step=4.0,
+            refine_before=0.0,
+            refine_search_step=2.0,
+            refine_step=0.5,
+        )
+        with patch("pubg_highlight_trim.ocr.ocr_at", fake_ocr_at), patch(
+            "pubg_highlight_trim.ocr.detect_assist_nearby", return_value=(None, 0, 0.0, 0.0)
+        ):
+            detections = detect_events("dummy.mp4", FakeCv2(), None, 60.0, [], config)
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(detections[0].event_key, "own-kill:knock:terminatorwifx")
         self.assertEqual(detections[0].event_sec, 30.0)
 
     def test_detect_events_suppresses_self_elimination_after_knock_by_same_id(self):
