@@ -141,16 +141,19 @@ class GameLanguageTests(unittest.TestCase):
             own_kill = root / "d.Single kill.DVR.mp4"
             multi_kill = root / "e.Double kill.DVR.mp4"
             match_end = root / "f.Match end.DVR.mp4"
-            replay = root / "g.Death cam.DVR.mp4"
-            for path in [self_knock, self_death, own_knock, own_kill, multi_kill, match_end, replay]:
+            end_of_match = root / "g.End of match.DVR.mp4"
+            replay = root / "h.Death cam.DVR.mp4"
+            for path in [self_knock, self_death, own_knock, own_kill, multi_kill, match_end, end_of_match, replay]:
                 self.touch(path)
 
             self.assertEqual(iter_source_files(root, target="self-death", language=profile), [self_knock, self_death])
             self.assertEqual(iter_source_files(root, target="own-kill", language=profile), [own_knock, own_kill, multi_kill])
             self.assertEqual(
                 iter_source_files(root, target="both", language=profile),
-                [self_knock, self_death, own_knock, own_kill, multi_kill, match_end],
+                [self_knock, self_death, own_knock, own_kill, multi_kill, match_end, end_of_match],
             )
+            self.assertFalse(profile.multi_kill_source_re.search(own_kill.name))
+            self.assertTrue(profile.multi_kill_source_re.search(multi_kill.name))
 
     def test_zh_hant_molotov_aliases(self):
         profile = get_game_language_profile("zh-Hant")

@@ -28,6 +28,7 @@ class GameLanguageProfile:
     molotov_weapon_re: Pattern[str]
     own_source_re: Pattern[str]
     own_kill_source_re: Pattern[str]
+    multi_kill_source_re: Pattern[str]
     match_end_source_re: Pattern[str]
     view_replay_re: Pattern[str]
     source_file_hint: str
@@ -167,6 +168,7 @@ def _build_profile(table: LanguageRegexTable) -> GameLanguageProfile:
         molotov_weapon_re=_compile_alt(table.molotov_terms, table.flags),
         own_source_re=_build_source_re(table.own_source_terms),
         own_kill_source_re=_build_source_re(table.own_kill_source_terms),
+        multi_kill_source_re=_build_source_re(table.multi_kill_source_terms),
         match_end_source_re=_build_source_re(table.match_end_source_terms),
         view_replay_re=_compile_alt(table.view_replay_terms, table.flags),
         source_file_hint=table.source_file_hint,

@@ -90,7 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     ocr = parser.add_argument_group("OCR options")
     ocr.add_argument("--candidate-csv", type=Path, default=None, help="Optional prior CSV; EventSec values are used as scan hints. If omitted, latest fullscan_*/candidate_events.csv is auto-detected.")
     ocr.add_argument("--no-auto-candidate-csv", action="store_true", help="Disable automatic candidate_events.csv discovery")
-    ocr.add_argument("--scan-mode", choices=["auto", "fast", "full"], default="auto", help="auto uses fast scan when candidates exist, otherwise full scan")
+    ocr.add_argument(
+        "--scan-mode",
+        choices=["auto", "fast", "full"],
+        default="auto",
+        help="auto uses fast scan when candidates exist, otherwise full scan; multi-kill source files always full scan",
+    )
     ocr.add_argument("--priority-window", type=parse_window, action="append", default=[(31.0, 43.0), (45.0, 53.0)], help="Scan this OCR window first; repeatable; default 31:43 and 45:53")
     ocr.add_argument("--scan-start", type=float, default=0.0)
     ocr.add_argument("--scan-end", type=float, default=None)

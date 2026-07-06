@@ -30,6 +30,7 @@ class LanguageRegexTable:
     weapon_suffix_noise_terms: tuple[str, ...]
     own_source_terms: tuple[str, ...]
     own_kill_source_terms: tuple[str, ...]
+    multi_kill_source_terms: tuple[str, ...]
     match_end_source_terms: tuple[str, ...]
     view_replay_terms: tuple[str, ...]
     source_file_hint: str
@@ -60,6 +61,7 @@ LANGUAGE_REGEX_TABLES = (
         weapon_suffix_noise_terms=(r"淘汰数?\d*", r"淘汰\d+", r"协助次数", r"协助", r"助.{0,2}攻"),
         own_source_terms=(r"被击倒", r"淘汰"),
         own_kill_source_terms=(r"单次淘汰", r"双次淘汰", r"多杀"),
+        multi_kill_source_terms=(r"双次淘汰", r"多杀"),
         match_end_source_terms=(r"比赛结束",),
         view_replay_terms=(r"淘汰画面", r"击倒画面"),
         source_file_hint=".被击倒.DVR*.mp4, .淘汰.DVR*.mp4, .单次淘汰.DVR*.mp4, .双次淘汰.DVR*.mp4, .多杀.DVR*.mp4",
@@ -93,6 +95,7 @@ LANGUAGE_REGEX_TABLES = (
         weapon_suffix_noise_terms=(r"(?:\d+\s*)?擊殺[數数]\d*", r"(?:\d+\s*)?撃殺[數数]\d*", r"協助次數", r"協助", r"助.{0,2}攻", r"助.{0,2}殺"),
         own_source_terms=(r"被擊倒", r"死亡", r"淘汰"),
         own_kill_source_terms=(r"單次擊殺", r"雙殺", r"多殺", r"擊倒"),
+        multi_kill_source_terms=(r"雙殺", r"多殺"),
         match_end_source_terms=(r"對戰結束",),
         view_replay_terms=(r"死亡畫面", r"淘汰畫面", r"擊倒畫面"),
         source_file_hint=".被擊倒.DVR*.mp4, .死亡.DVR*.mp4, .淘汰.DVR*.mp4, .單次擊殺.DVR*.mp4, .雙殺.DVR*.mp4, .擊倒.DVR*.mp4",
@@ -129,9 +132,10 @@ LANGUAGE_REGEX_TABLES = (
         weapon_suffix_noise_terms=(r"\d(?:KILLS?|ASSISTS?)", r"ASSISTS?"),
         own_source_terms=(r"Knockouted", r"Death"),
         own_kill_source_terms=(r"Knockout", r"Single kill", r"Double kill", r"Triple kill", r"Multi kill", r"Multiple kill"),
-        match_end_source_terms=(r"Match end", r"Match ended", r"Match complete", r"Game over"),
+        multi_kill_source_terms=(r"Double kill", r"Triple kill", r"Multi kill", r"Multiple kill"),
+        match_end_source_terms=(r"Match end", r"End of match", r"Match ended", r"Match complete", r"Game over"),
         view_replay_terms=(r"Death\s*cam", r"Kill\s*cam", r"Replay"),
-        source_file_hint=".Knockouted.DVR*.mp4, .Death.DVR*.mp4, .Knockout.DVR*.mp4, .Single kill.DVR*.mp4, .Double kill.DVR*.mp4",
+        source_file_hint=".Knockouted.DVR*.mp4, .Death.DVR*.mp4, .Knockout.DVR*.mp4, .Single kill.DVR*.mp4, .Double kill.DVR*.mp4, .End of match.DVR*.mp4",
         self_subject_keys=frozenset({"you"}),
         own_action_gap_re="",
         own_weapon_position="after_victim",

@@ -3,12 +3,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from pubg_highlight_trim.models import EventDetection
+from pubg_highlight_trim.game_languages import get_game_language_profile
+from pubg_highlight_trim.ocr import OcrConfig
 from pubg_highlight_trim.pipeline import (
     _apply_context_rules,
     _candidate_csv_path,
     _effective_no_merge,
     _merge_output_override,
     _merged_clip_plans,
+    _ocr_config_for_source,
     _partition_too_early_detections,
     _record_detection,
     _record_skip,
@@ -150,6 +153,22 @@ class PipelineMergeTests(unittest.TestCase):
     def test_scan_mode_explicit_flags_override_auto(self):
         self.assertTrue(_use_fast_scan(SimpleNamespace(scan_mode="fast"), None))
         self.assertFalse(_use_fast_scan(SimpleNamespace(scan_mode="full"), Path("candidate_events.csv")))
+
+    def test_multi_kill_sources_force_full_scan_even_in_fast_mode(self):
+        profile = get_game_language_profile("en")
+        config = OcrConfig(no_full_scan=True, language=profile)
+
+        effective = _ocr_config_for_source(config, Path("a.Multi kill.DVR.mp4"), profile)
+
+        self.assertFalse(effective.no_full_scan)
+
+    def test_single_kill_sources_keep_fast_scan(self):
+        profile = get_game_language_profile("en")
+        config = OcrConfig(no_full_scan=True, language=profile)
+
+        effective = _ocr_config_for_source(config, Path("a.Single kill.DVR.mp4"), profile)
+
+        self.assertTrue(effective.no_full_scan)
 
     def test_single_file_defaults_to_no_merge(self):
         self.assertTrue(_effective_no_merge(SimpleNamespace(merge=None), single_file=True))

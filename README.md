@@ -50,7 +50,7 @@ pubg-highlight-trim "." --profile
 
 Detection is OCR-only because own-kill and mixed-event trimming require OCR.
 
-Scan mode defaults to `auto`: the CLI looks for the latest `fullscan_*/candidate_events.csv` near the input and uses fast candidate/priority-window scanning when it exists; otherwise it performs a full scan to avoid missing unusual event timings. Use `--scan-mode full` to force exhaustive scanning or `--scan-mode fast` to scan only candidate/priority windows.
+Scan mode defaults to `auto`: the CLI looks for the latest `fullscan_*/candidate_events.csv` near the input and uses fast candidate/priority-window scanning when it exists; otherwise it performs a full scan to avoid missing unusual event timings. Use `--scan-mode full` to force exhaustive scanning or `--scan-mode fast` to scan only candidate/priority windows. Multi-kill source files such as `Double kill`, `Multi kill`, `雙殺`, and `多殺` always use full OCR scanning so later kills are not missed.
 
 OCR scans the fixed lower-center PUBG event text area by default. Coarse scan stays at one frame every 4 seconds, and a coarse hit is refined at 0.5-second intervals to find the first visible event text. If a layout differs, override the crop with `--roi x1,y1,x2,y2`.
 
