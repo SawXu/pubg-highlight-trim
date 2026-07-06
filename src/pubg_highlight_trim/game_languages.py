@@ -43,6 +43,7 @@ class GameLanguageProfile:
         return text
 
 
+AUTO_GAME_LANGUAGE = "auto"
 DEFAULT_GAME_LANGUAGE = "zh-Hans"
 _EVENT_PREFIX_PUNCT_RE = r"[，。,.、:：]"
 _DISTANCE_RE = r"\(\d+\s*[mM]\)|（\d+\s*[mM]）"
@@ -190,6 +191,10 @@ GAME_LANGUAGE_PROFILES = {table.code: _build_profile(table) for table in LANGUAG
 
 def game_language_choices() -> list[str]:
     return sorted(GAME_LANGUAGE_PROFILES)
+
+
+def game_language_cli_choices() -> list[str]:
+    return [AUTO_GAME_LANGUAGE, *game_language_choices()]
 
 
 def default_game_language_profile() -> GameLanguageProfile:

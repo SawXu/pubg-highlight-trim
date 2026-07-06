@@ -12,10 +12,13 @@ if (-not (Test-Path "vendor\ffmpeg\ffmpeg.exe") -or -not (Test-Path "vendor\ffmp
 
 if (-not $SkipInstall) {
     python -m pip install --upgrade pip
+    if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed with exit code $LASTEXITCODE" }
     python -m pip install -e ".[ocr,build]"
+    if ($LASTEXITCODE -ne 0) { throw "dependency install failed with exit code $LASTEXITCODE" }
 }
 
 python scripts\prefetch_ocr_models.py --cache-dir vendor\paddlex_cache
+if ($LASTEXITCODE -ne 0) { throw "OCR model prefetch failed with exit code $LASTEXITCODE" }
 
 Remove-Item -LiteralPath "build", "dist" -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -43,6 +46,7 @@ python -m PyInstaller `
     --add-data $ffmpegData `
     --add-data $modelData `
     "src\pubg_highlight_trim\__main__.py"
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
 
 Copy-Item -LiteralPath "README.md" -Destination "dist\pubg-highlight-trim\README.md" -Force
 Copy-Item -LiteralPath "LICENSE" -Destination "dist\pubg-highlight-trim\LICENSE" -Force
@@ -50,13 +54,13 @@ Copy-Item -LiteralPath "THIRD_PARTY_NOTICES.md" -Destination "dist\pubg-highligh
 @"
 Run examples:
 
-  .\pubg-highlight-trim.exe "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰"
-  .\pubg-highlight-trim.exe "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
+  .\pubg-highlight-trim.exe "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS"
+  .\pubg-highlight-trim.exe "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
 
 The bundle includes ffmpeg/ffprobe and PaddleOCR models. No Python install is required.
 License: GPL-3.0-or-later. See LICENSE and THIRD_PARTY_NOTICES.md.
 "@ | Set-Content -LiteralPath "dist\pubg-highlight-trim\RUN_EXAMPLES.txt" -Encoding UTF8
 $zipPath = "dist\pubg-highlight-trim-windows-x64.zip"
 Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
-Compress-Archive -Path "dist\pubg-highlight-trim\*" -DestinationPath $zipPath -Force
+Compress-Archive -Path "dist\pubg-highlight-trim\*" -DestinationPath $zipPath -CompressionLevel Fastest -Force
 Write-Host "Built $zipPath"

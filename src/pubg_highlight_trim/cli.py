@@ -5,7 +5,7 @@ import platform
 from pathlib import Path
 
 from . import __version__
-from .game_languages import DEFAULT_GAME_LANGUAGE, game_language_choices
+from .game_languages import AUTO_GAME_LANGUAGE, game_language_cli_choices
 from .pipeline import run
 
 
@@ -60,9 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--game-lang",
-        choices=game_language_choices(),
-        default=DEFAULT_GAME_LANGUAGE,
-        help="PUBG game language profile used for OCR text and NVIDIA Highlight filename matching",
+        choices=game_language_cli_choices(),
+        default=AUTO_GAME_LANGUAGE,
+        help="PUBG game language profile; auto detects from NVIDIA Highlight filenames",
     )
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Directory for individual trimmed clips")
     parser.add_argument("--before", "--seconds-before", dest="seconds_before", type=float, default=5.0, help="Seconds to keep before event")

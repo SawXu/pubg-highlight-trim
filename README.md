@@ -6,7 +6,7 @@ Default behavior detects both your knocks/eliminations and enemies knocking/elim
 
 ## Detection priority
 
-Current game-language support is `zh-Hans`, `zh-Hant`, and `en`. The matching rules for PUBG OCR text and NVIDIA Highlight filenames live in language profiles so more game languages can be added later from real samples. Use `--game-lang zh-Hans`, `--game-lang zh-Hant`, or `--game-lang en` to select the PUBG game language profile.
+Current game-language support is `zh-Hans`, `zh-Hant`, and `en`. The default `--game-lang auto` mode detects the PUBG game language from NVIDIA Highlight filenames, including mixed folders where files have different language labels. The matching rules for PUBG OCR text and NVIDIA Highlight filenames live in language profiles so more game languages can be added later from real samples. Use `--game-lang zh-Hans`, `--game-lang zh-Hant`, or `--game-lang en` only when you want to force one profile.
 
 1. OCR text for both directions: `你用...击倒/淘汰了...`, `...击倒/淘汰了你`, `你在安全区外倒地了`, `YOU KNOCKED OUT/KILLED ...`, `... KNOCKED/KILLS YOU ...`.
 2. If the same source video first shows you being knocked and later shows you being eliminated, only the knock clip is kept.
@@ -42,6 +42,7 @@ Useful options:
 
 ```powershell
 pubg-highlight-trim "." -o ".\trimmed" --merge ".\merged.mp4" -y
+pubg-highlight-trim "F:\NVIDIA\TEMP\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS" -o ".\trimmed_auto" --merge ".\merged_auto.mp4" -y
 pubg-highlight-trim "F:\NVIDIA\TEMP\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS" --game-lang en -o ".\trimmed_en" --merge ".\merged_en.mp4" -y
 pubg-highlight-trim "." --scan-only --scan-mode full --coarse-step 2 -o ".\fullscan_2s" -y
 pubg-highlight-trim "." --scan-mode fast
