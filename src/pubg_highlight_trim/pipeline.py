@@ -87,6 +87,16 @@ def _use_fast_scan(args: SimpleNamespace, candidate_csv: Path | None) -> bool:
     return candidate_csv is not None and candidate_csv.exists()
 
 
+def _source_forces_full_scan(src: Path, language: GameLanguageProfile) -> bool:
+    return language.multi_kill_source_re.search(src.name) is not None
+
+
+def _ocr_config_for_source(config: OcrConfig, src: Path, language: GameLanguageProfile) -> OcrConfig:
+    if config.no_full_scan and _source_forces_full_scan(src, language):
+        return replace(config, no_full_scan=False)
+    return config
+
+
 def _effective_no_merge(args: SimpleNamespace, single_file: bool) -> bool:
     merge = getattr(args, "merge", None)
     if merge is None:
@@ -497,7 +507,10 @@ def run(args: SimpleNamespace) -> int:
         dur = duration_sec(src, ffprobe)
         probe_seconds = time.time() - probe_started
         detect_started = time.time()
-        detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), ocr_config)
+        source_ocr_config = _ocr_config_for_source(ocr_config, src, language_profile)
+        if source_ocr_config.no_full_scan != ocr_config.no_full_scan:
+            print(f"[{idx:02d}/{len(files)}] full_scan=true multi-kill-source | {src.name}", flush=True)
+        detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
         if len(detections) == 1 and detections[0].event_sec is None:
             detection = detections[0]
             if detection.detect_seconds == 0.0:
