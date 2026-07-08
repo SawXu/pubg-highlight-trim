@@ -95,7 +95,10 @@ def _use_fast_scan(args: SimpleNamespace, candidate_csv: Path | None) -> bool:
 
 
 def _source_forces_full_scan(src: Path, language: GameLanguageProfile) -> bool:
-    return language.multi_kill_source_re.search(src.name) is not None
+    return (
+        language.multi_kill_source_re.search(src.name) is not None
+        or language.match_end_source_re.search(src.name) is not None
+    )
 
 
 def _ocr_config_for_source(config: OcrConfig, src: Path, language: GameLanguageProfile) -> OcrConfig:

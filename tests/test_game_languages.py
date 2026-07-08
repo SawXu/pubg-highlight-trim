@@ -128,7 +128,7 @@ class GameLanguageTests(unittest.TestCase):
                 self.touch(path)
 
             self.assertEqual(iter_source_files(root, target="self-death", language=profile), [self_death])
-            self.assertEqual(iter_source_files(root, target="own-kill", language=profile), [own_knock, own_kill])
+            self.assertEqual(iter_source_files(root, target="own-kill", language=profile), [own_knock, own_kill, match_end])
             self.assertEqual(iter_source_files(root, target="both", language=profile), [self_death, own_knock, own_kill, match_end])
 
     def test_en_source_filename_profile(self):
@@ -147,7 +147,10 @@ class GameLanguageTests(unittest.TestCase):
                 self.touch(path)
 
             self.assertEqual(iter_source_files(root, target="self-death", language=profile), [self_knock, self_death])
-            self.assertEqual(iter_source_files(root, target="own-kill", language=profile), [own_knock, own_kill, multi_kill])
+            self.assertEqual(
+                iter_source_files(root, target="own-kill", language=profile),
+                [own_knock, own_kill, multi_kill, match_end, end_of_match],
+            )
             self.assertEqual(
                 iter_source_files(root, target="both", language=profile),
                 [self_knock, self_death, own_knock, own_kill, multi_kill, match_end, end_of_match],
