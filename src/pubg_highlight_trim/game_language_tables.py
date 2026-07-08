@@ -65,7 +65,7 @@ LANGUAGE_REGEX_TABLES = (
         multi_kill_source_terms=(r"双次淘汰", r"多杀"),
         match_end_source_terms=(r"比赛结束",),
         view_replay_terms=(r"淘汰画面", r"击倒画面"),
-        source_file_hint=".被击倒.DVR*.mp4, .淘汰.DVR*.mp4, .单次淘汰.DVR*.mp4, .双次淘汰.DVR*.mp4, .多杀.DVR*.mp4",
+        source_file_hint=".被击倒.DVR*.mp4, .淘汰.DVR*.mp4, .单次淘汰.DVR*.mp4, .双次淘汰.DVR*.mp4, .多杀.DVR*.mp4, .比赛结束.DVR*.mp4",
         self_subject_keys=frozenset({"你", "ni"}),
         own_victim_prefix_re=r"了",
     ),
@@ -99,7 +99,7 @@ LANGUAGE_REGEX_TABLES = (
         multi_kill_source_terms=(r"雙殺", r"多殺"),
         match_end_source_terms=(r"對戰結束",),
         view_replay_terms=(r"死亡畫面", r"淘汰畫面", r"擊倒畫面"),
-        source_file_hint=".被擊倒.DVR*.mp4, .死亡.DVR*.mp4, .淘汰.DVR*.mp4, .單次擊殺.DVR*.mp4, .雙殺.DVR*.mp4, .擊倒.DVR*.mp4",
+        source_file_hint=".被擊倒.DVR*.mp4, .死亡.DVR*.mp4, .淘汰.DVR*.mp4, .單次擊殺.DVR*.mp4, .雙殺.DVR*.mp4, .擊倒.DVR*.mp4, .對戰結束.DVR*.mp4",
         self_subject_keys=frozenset({"您", "你", "ni"}),
     ),
     LanguageRegexTable(

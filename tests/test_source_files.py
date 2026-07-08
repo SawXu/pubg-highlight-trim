@@ -27,10 +27,11 @@ class SourceFilesTests(unittest.TestCase):
             own_kill = root / "a.单次淘汰.DVR.mp4"
             multi_kill = root / "b.双次淘汰.DVR.mp4"
             self_death = root / "c.淘汰.DVR.mp4"
-            for path in [own_kill, multi_kill, self_death]:
+            match_end = root / "d.比赛结束.DVR.mp4"
+            for path in [own_kill, multi_kill, self_death, match_end]:
                 self.touch(path)
 
-            self.assertEqual(iter_source_files(root, target="own-kill"), [own_kill, multi_kill])
+            self.assertEqual(iter_source_files(root, target="own-kill"), [own_kill, multi_kill, match_end])
 
     def test_iter_source_files_can_select_both_highlight_types(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -87,6 +88,16 @@ class SourceFilesTests(unittest.TestCase):
             selections = infer_source_file_languages([ambiguous], target="both")
 
         self.assertEqual(selections[ambiguous].code, "zh-Hans")
+
+    def test_auto_language_detection_uses_match_end_for_own_kill(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            end_of_match = root / "a.End of match.DVR.mp4"
+            self.touch(end_of_match)
+
+            selections = infer_source_file_languages([end_of_match], target="own-kill")
+
+        self.assertEqual(selections[end_of_match].code, "en")
 
 
 if __name__ == "__main__":

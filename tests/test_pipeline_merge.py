@@ -162,6 +162,14 @@ class PipelineMergeTests(unittest.TestCase):
 
         self.assertFalse(effective.no_full_scan)
 
+    def test_match_end_sources_force_full_scan_even_in_fast_mode(self):
+        profile = get_game_language_profile("en")
+        config = OcrConfig(no_full_scan=True, language=profile)
+
+        effective = _ocr_config_for_source(config, Path("a.End of match.DVR.mp4"), profile)
+
+        self.assertFalse(effective.no_full_scan)
+
     def test_single_kill_sources_keep_fast_scan(self):
         profile = get_game_language_profile("en")
         config = OcrConfig(no_full_scan=True, language=profile)

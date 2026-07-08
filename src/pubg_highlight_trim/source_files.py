@@ -17,7 +17,10 @@ def _iter_mp4_files(folder: Path, recursive: bool) -> list[Path]:
 
 def _source_file_matches_profile(name: str, target: str, profile: GameLanguageProfile) -> bool:
     if target == "own-kill":
-        return bool(profile.own_kill_source_re.search(name))
+        return bool(
+            (profile.own_kill_source_re.search(name) or profile.match_end_source_re.search(name))
+            and not profile.view_replay_re.search(name)
+        )
     if target == "both":
         return bool(
             (
@@ -33,7 +36,7 @@ def _source_file_matches_profile(name: str, target: str, profile: GameLanguagePr
 def _source_terms(profile: GameLanguageProfile, target: str) -> tuple[str, ...]:
     table = profile.regex_table
     if target == "own-kill":
-        return table.own_kill_source_terms
+        return table.own_kill_source_terms + table.match_end_source_terms
     if target == "both":
         return table.own_source_terms + table.own_kill_source_terms + table.match_end_source_terms
     return table.own_source_terms
