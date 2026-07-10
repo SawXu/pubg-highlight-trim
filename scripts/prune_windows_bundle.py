@@ -65,11 +65,21 @@ def prune_duplicate_ffmpeg_dlls(bundle: Path, dry_run: bool, pruned: list[Pruned
 def prune_development_files(bundle: Path, dry_run: bool, pruned: list[PrunedItem]) -> None:
     internal = bundle / "_internal"
     remove_path(internal / "paddle" / "include", bundle, "Paddle C/C++ headers are not used at runtime", dry_run, pruned)
+    remove_path(
+        internal / "hf_xet",
+        bundle,
+        "bundled OCR models do not use the optional Hugging Face Xet client",
+        dry_run,
+        pruned,
+    )
+    remove_path(internal / "shapely" / "tests", bundle, "Shapely tests are not used at runtime", dry_run, pruned)
 
     for pattern, reason in [
         ("paddle/**/*.lib", "Windows import libraries are not used at runtime"),
         ("**/*.pyi", "type stubs are not loaded at runtime"),
         ("cv2/data/haarcascade*.xml", "OpenCV cascade samples are not used by the CLI"),
+        ("PIL/_avif*.pyd", "AVIF decoding is not used by the CLI"),
+        ("PIL/_imagingtk*.pyd", "Pillow Tk integration is not used by the CLI"),
     ]:
         for path in sorted(internal.glob(pattern)):
             remove_path(path, bundle, reason, dry_run, pruned)
