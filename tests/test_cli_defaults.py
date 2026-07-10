@@ -48,6 +48,12 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertTrue(args.overwrite)
         self.assertTrue(args.dry_run)
 
+    def test_verbose_is_opt_in(self):
+        parser = build_parser()
+
+        self.assertFalse(parser.parse_args(["."]).verbose)
+        self.assertTrue(parser.parse_args([".", "--verbose"]).verbose)
+
     def test_removed_flags_are_not_accepted_or_listed(self):
         parser = build_parser()
 

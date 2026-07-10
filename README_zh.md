@@ -64,6 +64,7 @@ pubg-highlight-trim "." --profile
 | `--merge [MERGED_MP4]` | 文件夹默认开 | 生成合并 mp4；可指定输出路径 |
 | `--no-merge` | 单文件默认关 | 不生成合并 mp4 |
 | `-y`, `--overwrite` | 关 | 覆盖输出目录 / 合并文件，而非生成唯一名称 |
+| `--verbose` | 关 | 打印启动配置和第三方 OCR 诊断；默认输出会抑制依赖库噪声 |
 | `--profile` | 关 | 打印每个片段的耗时明细（ffprobe、OCR、读帧、裁剪） |
 | `--ffmpeg` / `--ffprobe` | 自动 | 显式指定 ffmpeg.exe / ffprobe.exe 路径 |
 

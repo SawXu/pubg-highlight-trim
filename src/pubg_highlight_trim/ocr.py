@@ -398,7 +398,7 @@ def classify_target_text(text: str, target: str, profile: GameLanguageProfile | 
     return classified[0] if classified else None
 
 
-def load_backend(profile: GameLanguageProfile | None = None) -> tuple[Any, Any]:
+def load_backend(profile: GameLanguageProfile | None = None, *, verbose: bool = False) -> tuple[Any, Any]:
     profile = _language(profile)
     configure_paddlex_cache()
     try:
@@ -415,7 +415,8 @@ def load_backend(profile: GameLanguageProfile | None = None) -> tuple[Any, Any]:
         use_doc_unwarping=False,
         use_textline_orientation=False,
     )
-    print(f"PaddleOCR initialized lang={profile.paddle_lang} in {time.time() - started:.1f}s", flush=True)
+    if verbose:
+        print(f"PaddleOCR initialized lang={profile.paddle_lang} in {time.time() - started:.1f}s", flush=True)
     return cv2, ocr
 
 

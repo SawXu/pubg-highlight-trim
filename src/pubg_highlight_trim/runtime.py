@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import contextlib
+import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 
@@ -30,3 +33,36 @@ def first_existing_runtime_path(*parts: str) -> Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+@contextlib.contextmanager
+def suppress_process_output(enabled: bool = True) -> Iterator[None]:
+    if not enabled:
+        yield
+        return
+
+    try:
+        stdout_fd = sys.stdout.fileno()
+        stderr_fd = sys.stderr.fileno()
+    except (AttributeError, OSError):
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                yield
+        return
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    saved_stdout = os.dup(stdout_fd)
+    saved_stderr = os.dup(stderr_fd)
+    try:
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), stdout_fd)
+            os.dup2(devnull.fileno(), stderr_fd)
+            yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(saved_stdout, stdout_fd)
+        os.dup2(saved_stderr, stderr_fd)
+        os.close(saved_stdout)
+        os.close(saved_stderr)

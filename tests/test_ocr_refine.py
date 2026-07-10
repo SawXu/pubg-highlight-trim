@@ -1,4 +1,7 @@
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
+from types import ModuleType
 from unittest.mock import patch
 
 from pubg_highlight_trim.game_languages import get_game_language_profile
@@ -13,6 +16,7 @@ from pubg_highlight_trim.ocr import (
     has_assist_text,
     is_assist_own_kill_text,
     is_delayed_own_elim_text,
+    load_backend,
     refine_event,
     same_noisy_close_event,
     same_text_event,
@@ -414,6 +418,28 @@ class OcrRefineTests(unittest.TestCase):
 
         self.assertEqual(len(detections), 1)
         self.assertEqual(detections[0].event_key, "own-kill:knock:askkzm")
+
+    def test_load_backend_prints_initialization_only_when_verbose(self):
+        class FakePaddleOCR:
+            def __init__(self, **kwargs):
+                pass
+
+        fake_cv2 = ModuleType("cv2")
+        fake_paddleocr = ModuleType("paddleocr")
+        fake_paddleocr.PaddleOCR = FakePaddleOCR
+
+        with patch("pubg_highlight_trim.ocr.configure_paddlex_cache"), patch.dict(
+            "sys.modules", {"cv2": fake_cv2, "paddleocr": fake_paddleocr}
+        ):
+            quiet_output = StringIO()
+            with redirect_stdout(quiet_output):
+                load_backend(verbose=False)
+            verbose_output = StringIO()
+            with redirect_stdout(verbose_output):
+                load_backend(verbose=True)
+
+        self.assertEqual(quiet_output.getvalue(), "")
+        self.assertIn("PaddleOCR initialized lang=ch in ", verbose_output.getvalue())
 
 
 if __name__ == "__main__":
