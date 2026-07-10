@@ -20,6 +20,7 @@ from .game_languages import (
 )
 from .models import EventDetection
 from .ocr import OcrConfig, OcrUnavailable, detect_events as detect_ocr_events, is_molotov_weapon, load_backend
+from .runtime import suppress_process_output
 from .source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files
 
 
@@ -531,26 +532,29 @@ def run(args: SimpleNamespace) -> int:
     outdir, merged = _prepare_output_paths(args, input_path, files, base_folder, single_file)
     no_merge = _effective_no_merge(args, single_file)
     setup_seconds = time.time() - setup_started
-    print(f"windows_only=true", flush=True)
-    print(f"sources={len(files)}", flush=True)
-    print("detector=ocr", flush=True)
-    print(f"game_lang={_requested_game_language(args)}", flush=True)
-    print(f"detected_game_langs={_format_language_counts(file_profiles)}", flush=True)
-    print(f"target={args.target}", flush=True)
-    print(f"min_event_sec={_min_event_sec(args):.3f}", flush=True)
-    print(f"molotov_elim_before={_molotov_elim_before(args):.3f}", flush=True)
-    print(f"ffmpeg={ffmpeg}", flush=True)
-    print(f"output_dir={outdir}", flush=True)
-    print(f"merge_output={merged}", flush=True)
-    print(f"merge={str(not no_merge).lower()}", flush=True)
+    verbose = getattr(args, "verbose", False)
+    if verbose or args.profile:
+        print(f"windows_only=true", flush=True)
+        print(f"sources={len(files)}", flush=True)
+        print("detector=ocr", flush=True)
+        print(f"game_lang={_requested_game_language(args)}", flush=True)
+        print(f"detected_game_langs={_format_language_counts(file_profiles)}", flush=True)
+        print(f"target={args.target}", flush=True)
+        print(f"min_event_sec={_min_event_sec(args):.3f}", flush=True)
+        print(f"molotov_elim_before={_molotov_elim_before(args):.3f}", flush=True)
+        print(f"ffmpeg={ffmpeg}", flush=True)
+        print(f"output_dir={outdir}", flush=True)
+        print(f"merge_output={merged}", flush=True)
+        print(f"merge={str(not no_merge).lower()}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
     candidate_csv = _candidate_csv_path(args, input_path, base_folder)
     candidates = read_candidate_csv(candidate_csv)
     no_full_scan = _use_fast_scan(args, candidate_csv)
-    print(f"scan_mode={getattr(args, 'scan_mode', 'auto')}", flush=True)
-    print(f"full_scan={str(not no_full_scan).lower()}", flush=True)
-    print(f"candidate_csv={candidate_csv or ''}", flush=True)
+    if verbose or args.profile:
+        print(f"scan_mode={getattr(args, 'scan_mode', 'auto')}", flush=True)
+        print(f"full_scan={str(not no_full_scan).lower()}", flush=True)
+        print(f"candidate_csv={candidate_csv or ''}", flush=True)
     ocr_error = ""
     ocr_backends: dict[str, tuple[object, object]] = {}
 
@@ -560,7 +564,8 @@ def run(args: SimpleNamespace) -> int:
             return ocr_backends[profile.paddle_lang]
         try:
             ocr_setup_started = time.time()
-            backend = load_backend(profile)
+            with suppress_process_output(not verbose):
+                backend = load_backend(profile, verbose=verbose)
             if args.profile:
                 print(
                     f"PROFILE ocr_init={time.time() - ocr_setup_started:.3f}s lang={profile.paddle_lang}",
@@ -610,7 +615,8 @@ def run(args: SimpleNamespace) -> int:
         source_ocr_config = _ocr_config_for_source(ocr_config, src, language_profile)
         if source_ocr_config.no_full_scan != ocr_config.no_full_scan:
             print(f"[{idx:02d}/{len(files)}] full_scan=true multi-kill-source | {src.name}", flush=True)
-        detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
+        with suppress_process_output(not verbose):
+            detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
         if len(detections) == 1 and detections[0].event_sec is None:
             detection = detections[0]
             if detection.detect_seconds == 0.0:

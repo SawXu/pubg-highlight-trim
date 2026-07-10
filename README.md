@@ -71,6 +71,7 @@ Run `pubg-highlight-trim --help` to see all options.
 | `--merge [MERGED_MP4]` | folder default | Create a merged mp4; optionally set the output path |
 | `--no-merge` | file default | Skip merged mp4 output |
 | `-y`, `--overwrite` | off | Overwrite output dir/merged file instead of creating unique names |
+| `--verbose` | off | Print startup settings and third-party OCR diagnostics; default output suppresses library noise |
 | `--profile` | off | Print per-clip timing breakdown (ffprobe, OCR, frame read, trim) |
 | `--ffmpeg` / `--ffprobe` | auto | Explicit path to ffmpeg.exe / ffprobe.exe |
 
