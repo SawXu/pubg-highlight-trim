@@ -46,11 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Common examples:\n"
             '  pubg-highlight-trim "video.mp4" -o ".\\clip" -y\n'
+            '  pubg-highlight-trim --files "video1.mp4" "video2.mp4" --merge ".\\merged.mp4" -y\n'
             '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" -o ".\\clip" --merge ".\\merged.mp4" -y\n'
             '  pubg-highlight-trim "F:\\Highlights\\PLAYERUNKNOWN\'S BATTLEGROUNDS" --scan-only --scan-mode full --coarse-step 2 -o ".\\fullscan_2s" -y\n'
         ),
     )
-    parser.add_argument("input", nargs="?", type=Path, default=Path("."), help="PUBG highlight folder or a single mp4 file")
+    parser.add_argument("input", nargs="?", type=Path, default=None, help="PUBG highlight folder or a single mp4 file")
+    parser.add_argument("--files", nargs="+", type=Path, default=None, help="Process only these mp4 files, in the specified order")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--target",

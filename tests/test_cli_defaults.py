@@ -1,6 +1,7 @@
 import unittest
 from contextlib import redirect_stderr
 from io import StringIO
+from pathlib import Path
 
 from pubg_highlight_trim.cli import build_parser
 
@@ -18,6 +19,26 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertEqual(args.scan_mode, "auto")
         self.assertIsNone(args.merge)
         self.assertFalse(args.no_auto_candidate_csv)
+        self.assertEqual(args.input, Path("video.mp4"))
+        self.assertIsNone(args.files)
+
+    def test_accepts_multiple_explicit_video_files(self):
+        args = build_parser().parse_args(["--files", "video1.mp4", "video2.mp4", "video3.mp4"])
+
+        self.assertEqual(args.files, [Path("video1.mp4"), Path("video2.mp4"), Path("video3.mp4")])
+        self.assertIsNone(args.input)
+
+    def test_no_input_defaults_to_current_directory(self):
+        args = build_parser().parse_args([])
+
+        self.assertIsNone(args.input)
+        self.assertIsNone(args.files)
+
+    def test_files_do_not_conflict_with_merge_output(self):
+        args = build_parser().parse_args(["--files", "video1.mp4", "video2.mp4", "--merge", "merged.mp4"])
+
+        self.assertEqual(args.files, [Path("video1.mp4"), Path("video2.mp4")])
+        self.assertEqual(args.merge, "merged.mp4")
 
     def test_scan_mode_is_the_only_scan_mode_switch(self):
         parser = build_parser()

@@ -135,26 +135,65 @@ def _format_language_counts(file_profiles: dict[Path, GameLanguageProfile]) -> s
 
 
 def _select_input_files(
-    input_path: Path,
+    input_paths: list[Path],
     args: SimpleNamespace,
-    single_file: bool,
+    directory_input: bool,
 ) -> tuple[list[Path], dict[Path, GameLanguageProfile]]:
     target = getattr(args, "target", "self-death")
     if _is_auto_game_language(args):
-        if single_file:
-            profile = infer_source_file_languages([input_path], target).get(input_path, default_game_language_profile())
-            return [input_path], {input_path: profile}
+        if not directory_input:
+            profiles = infer_source_file_languages(input_paths, target)
+            fallback = default_game_language_profile()
+            return input_paths, {path: profiles.get(path, fallback) for path in input_paths}
+        input_path = input_paths[0]
         selections = iter_source_file_languages(input_path, recursive=args.recursive, target=target)
         return [path for path, _ in selections], dict(selections)
 
     profile = get_game_language_profile(_requested_game_language(args) or DEFAULT_GAME_LANGUAGE)
-    if single_file:
-        return [input_path], {input_path: profile}
+    if not directory_input:
+        return input_paths, {path: profile for path in input_paths}
+    input_path = input_paths[0]
     files = iter_source_files(input_path, recursive=args.recursive, target=target, language=profile)
     return files, {path: profile for path in files}
 
 
-def _prepare_output_paths(args: SimpleNamespace, input_path: Path, base_folder: Path, single_file: bool) -> tuple[Path, Path]:
+def _input_paths(args: SimpleNamespace) -> list[Path]:
+    explicit_files = getattr(args, "files", None)
+    positional_input = getattr(args, "input", None)
+    if explicit_files and positional_input is not None:
+        raise SystemExit("Use either the positional input or --files, not both.")
+    raw_inputs = explicit_files or [positional_input or Path(".")]
+    return [Path(path).resolve() for path in raw_inputs]
+
+
+def _validate_inputs(args: SimpleNamespace) -> tuple[list[Path], bool, bool, Path]:
+    input_paths = _input_paths(args)
+    for input_path in input_paths:
+        if not input_path.exists():
+            raise SystemExit(f"Input path does not exist: {input_path}")
+
+    if len(input_paths) == 1 and input_paths[0].is_dir():
+        return input_paths, True, False, input_paths[0]
+
+    for input_path in input_paths:
+        if not input_path.is_file():
+            raise SystemExit(f"Multiple inputs must all be mp4 files: {input_path}")
+        if input_path.suffix.lower() != ".mp4":
+            label = "Single-file input" if len(input_paths) == 1 else "Multiple inputs"
+            raise SystemExit(f"{label} must be .mp4 files: {input_path}")
+
+    single_file = len(input_paths) == 1
+    base_folder = input_paths[0].parent
+    return input_paths, False, single_file, base_folder
+
+
+def _prepare_output_paths(
+    args: SimpleNamespace,
+    input_path: Path,
+    input_files: list[Path],
+    base_folder: Path,
+    single_file: bool,
+) -> tuple[Path, Path]:
     merge_output_override = _merge_output_override(args)
     if single_file:
         outdir = args.output_dir or base_folder / f"{input_path.stem}_pubg_trim_clips"
@@ -162,6 +201,9 @@ def _prepare_output_paths(args: SimpleNamespace, input_path: Path, base_folder: 
     else:
         outdir = args.output_dir or base_folder / "pubg_highlight_trim_output"
         merged = merge_output_override or base_folder / "pubg_highlight_trim_merged.mp4"
+
+    if merged.resolve() in {path.resolve() for path in input_files}:
+        raise SystemExit(f"Merge output must not overwrite an input file: {merged}")
 
     if args.overwrite:
         if outdir.exists():
@@ -471,21 +513,11 @@ def _clip_target_prefix(detection: EventDetection) -> str:
 
 def run(args: SimpleNamespace) -> int:
     run_started = time.time()
-    input_path = args.input.resolve()
-    if not input_path.exists():
-        raise SystemExit(f"Input path does not exist: {input_path}")
-
     setup_started = time.time()
+    input_paths, directory_input, single_file, base_folder = _validate_inputs(args)
+    input_path = input_paths[0]
     ffmpeg, ffprobe = find_ffmpeg_pair(args.ffmpeg, args.ffprobe)
-    single_file = input_path.is_file()
-    base_folder = input_path.parent if single_file else input_path
-    if single_file:
-        if input_path.suffix.lower() != ".mp4":
-            raise SystemExit(f"Single-file input must be an .mp4: {input_path}")
-    elif not input_path.is_dir():
-        raise SystemExit(f"Input path is neither a file nor a directory: {input_path}")
-
-    files, file_profiles = _select_input_files(input_path, args, single_file)
+    files, file_profiles = _select_input_files(input_paths, args, directory_input)
     if not files:
         if _is_auto_game_language(args):
             hints = "; ".join(get_game_language_profile(code).source_file_hint for code in game_language_choices())
@@ -496,7 +528,7 @@ def run(args: SimpleNamespace) -> int:
             f"{language_profile.source_file_hint}"
         )
 
-    outdir, merged = _prepare_output_paths(args, input_path, base_folder, single_file)
+    outdir, merged = _prepare_output_paths(args, input_path, files, base_folder, single_file)
     no_merge = _effective_no_merge(args, single_file)
     setup_seconds = time.time() - setup_started
     print(f"windows_only=true", flush=True)
