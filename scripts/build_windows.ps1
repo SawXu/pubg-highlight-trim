@@ -30,6 +30,8 @@ $modelData = "vendor\paddlex_cache;vendor\paddlex_cache"
     --clean `
     --name pubg-highlight-trim `
     --console `
+    --exclude-module tkinter `
+    --exclude-module PIL.ImageTk `
     --collect-all paddleocr `
     --collect-all paddle `
     --collect-all paddlex `
