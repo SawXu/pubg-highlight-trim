@@ -22,7 +22,7 @@ Run it from the extracted folder:
 
 ## Usage
 
-Point the CLI at your PUBG NVIDIA Highlight folder (or a single mp4):
+Point the CLI at your PUBG NVIDIA Highlight folder (or one or more mp4 files):
 
 ```powershell
 pubg-highlight-trim "C:\Users\you\AppData\Local\Temp\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰"
@@ -32,6 +32,12 @@ You can also pass one mp4 directly:
 
 ```powershell
 pubg-highlight-trim "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
+```
+
+When multiple mp4 files are specified, they are processed in command-line order and their trimmed clips are merged by default:
+
+```powershell
+pubg-highlight-trim --files "F:\Highlights\video1.mp4" "F:\Highlights\video2.mp4" "F:\Highlights\video3.mp4" --merge ".\selected_merged.mp4"
 ```
 
 Common options:
@@ -52,6 +58,7 @@ Run `pubg-highlight-trim --help` to see all options.
 | Option | Default | Description |
 | --- | --- | --- |
 | `input` (positional) | `.` | PUBG highlight folder or a single mp4 file |
+| `--files FILE [FILE ...]` | none | Process only these mp4 files, in the specified order |
 | `--target` | `both` | Event to detect: `self-death` (enemies knocking/eliminating you), `own-kill` (you knocking/eliminating others), `both` |
 | `--game-lang` | `auto` | Game language profile; `auto` detects from NVIDIA Highlight filenames. Choices: `auto`, `zh-Hans`, `zh-Hant`, `en` |
 | `-o`, `--output-dir` | auto | Directory for individual trimmed clips |
@@ -86,7 +93,7 @@ OCR options (advanced):
 
 ### Output behavior
 
-- Single-file input defaults to no merged mp4. Folder input defaults to merging the individual clips.
+- Single-file input defaults to no merged mp4. Folder and multi-file inputs default to merging the individual clips.
 - Use `--merge` without a value to force merging, `--merge ".\merged.mp4"` to choose the merged output path, or `--no-merge` to keep only individual clips.
 - Use `--profile` to print per-clip timings for ffprobe, OCR predict, video frame seek/read, trim encoding, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
 

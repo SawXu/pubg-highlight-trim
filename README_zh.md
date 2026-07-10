@@ -22,7 +22,7 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 
 ## 使用
 
-将 CLI 指向 PUBG NVIDIA Highlight 文件夹（或单个 mp4）：
+将 CLI 指向 PUBG NVIDIA Highlight 文件夹（或一个/多个 mp4）：
 
 ```powershell
 pubg-highlight-trim "C:\Users\you\AppData\Local\Temp\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰"
@@ -32,6 +32,12 @@ pubg-highlight-trim "C:\Users\you\AppData\Local\Temp\Highlights\PLAYERUNKNOWN'S 
 
 ```powershell
 pubg-highlight-trim "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
+```
+
+指定多个 mp4 时，工具会严格按命令行中的顺序处理，并默认合并裁剪结果：
+
+```powershell
+pubg-highlight-trim --files "F:\Highlights\video1.mp4" "F:\Highlights\video2.mp4" "F:\Highlights\video3.mp4" --merge ".\selected_merged.mp4"
 ```
 
 常用选项：
@@ -52,6 +58,7 @@ pubg-highlight-trim "." --profile
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `input`（位置参数） | `.` | PUBG highlight 文件夹或单个 mp4 文件 |
+| `--files FILE [FILE ...]` | 无 | 严格按指定顺序处理这些 mp4 文件 |
 | `--target` | `both` | 检测事件：`self-death`（敌人击倒/淘汰你）、`own-kill`（你击倒/淘汰敌人）、`both`（两者） |
 | `--game-lang` | `auto` | 游戏语言配置；`auto` 从 NVIDIA Highlight 文件名自动识别。可选：`auto`、`zh-Hans`、`zh-Hant`、`en` |
 | `-o`, `--output-dir` | 自动 | 单片段裁剪输出目录 |
@@ -86,7 +93,7 @@ OCR 选项（进阶）：
 
 ### 输出行为
 
-- 单文件输入默认不生成合并 mp4，文件夹输入默认合并所有片段。
+- 单文件输入默认不生成合并 mp4；文件夹或多文件输入默认合并所有片段。
 - 不带值使用 `--merge` 强制合并，`--merge ".\merged.mp4"` 指定合并输出路径，`--no-merge` 仅保留单片段。
 - 使用 `--profile` 打印每个片段的 ffprobe、OCR 预测、视频帧定位 / 读取、裁剪编码及总耗时。同样的耗时列也会写入 `检测与裁剪记录.csv`。
 

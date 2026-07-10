@@ -1,4 +1,5 @@
 import unittest
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,10 +10,13 @@ from pubg_highlight_trim.pipeline import (
     _apply_context_rules,
     _candidate_csv_path,
     _effective_no_merge,
+    _select_input_files,
+    _validate_inputs,
     _merge_output_override,
     _merged_clip_plans,
     _ocr_config_for_source,
     _partition_too_early_detections,
+    _prepare_output_paths,
     _record_detection,
     _record_skip,
     _use_fast_scan,
@@ -20,6 +24,59 @@ from pubg_highlight_trim.pipeline import (
 
 
 class PipelineMergeTests(unittest.TestCase):
+    def test_multiple_explicit_files_preserve_command_line_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            second = root / "second.mp4"
+            first = root / "first.mp4"
+            second.touch()
+            first.touch()
+            args = SimpleNamespace(input=None, files=[second, first], game_lang="en")
+
+            input_paths, directory_input, single_file, base_folder = _validate_inputs(args)
+            files, _ = _select_input_files(input_paths, args, directory_input)
+
+        self.assertEqual(files, [second.resolve(), first.resolve()])
+        self.assertFalse(directory_input)
+        self.assertFalse(single_file)
+        self.assertEqual(base_folder, root.resolve())
+
+    def test_multiple_inputs_reject_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video = root / "video.mp4"
+            video.touch()
+
+            with self.assertRaisesRegex(SystemExit, "must all be mp4 files"):
+                _validate_inputs(SimpleNamespace(input=None, files=[video, root]))
+
+    def test_multiple_inputs_reject_non_mp4_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video = root / "video.mp4"
+            text = root / "notes.txt"
+            video.touch()
+            text.touch()
+
+            with self.assertRaisesRegex(SystemExit, "must be .mp4 files"):
+                _validate_inputs(SimpleNamespace(input=None, files=[video, text]))
+
+    def test_rejects_positional_input_with_files_option(self):
+        with self.assertRaisesRegex(SystemExit, "either the positional input or --files"):
+            _validate_inputs(SimpleNamespace(input=Path("folder"), files=[Path("video.mp4")]))
+
+    def test_merge_output_must_not_match_an_input_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "first.mp4"
+            second = root / "second.mp4"
+            first.touch()
+            second.touch()
+            args = SimpleNamespace(output_dir=None, merge=str(second), overwrite=True)
+
+            with self.assertRaisesRegex(SystemExit, "must not overwrite an input file"):
+                _prepare_output_paths(args, first, [first, second], root, single_file=False)
+
     def test_merges_overlapping_events_into_one_clip(self):
         detections = [
             EventDetection(60.0, 30.5, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:knock:a"),
