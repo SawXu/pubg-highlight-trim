@@ -28,6 +28,9 @@ from .runtime import suppress_process_output
 from .source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files
 
 
+_WORKER_OCR_BACKENDS: dict[str, tuple[object, object]] = {}
+
+
 def unique_path(path: Path) -> Path:
     if not path.exists():
         return path
@@ -573,8 +576,12 @@ def _scan_source_worker(
 ) -> tuple[float, float, list[EventDetection]]:
     language = get_game_language_profile(language_code)
     suppress_worker_output = not getattr(sys, "frozen", False)
-    with suppress_process_output(suppress_worker_output):
-        cv2_module, ocr_engine = load_backend(language)
+    backend = _WORKER_OCR_BACKENDS.get(language.paddle_lang)
+    if backend is None:
+        with suppress_process_output(suppress_worker_output):
+            backend = load_backend(language)
+        _WORKER_OCR_BACKENDS[language.paddle_lang] = backend
+    cv2_module, ocr_engine = backend
     probe_started = time.time()
     duration = duration_sec(src, ffprobe)
     probe_seconds = time.time() - probe_started

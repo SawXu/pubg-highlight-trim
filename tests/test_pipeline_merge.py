@@ -24,6 +24,7 @@ from pubg_highlight_trim.pipeline import (
     _record_detection,
     _record_skip,
     _scan_source_worker,
+    _WORKER_OCR_BACKENDS,
     _use_fast_scan,
 )
 
@@ -31,16 +32,20 @@ from pubg_highlight_trim.pipeline import (
 class PipelineMergeTests(unittest.TestCase):
     def test_frozen_scan_worker_avoids_process_output_fd_redirection(self):
         language = get_game_language_profile("en")
+        _WORKER_OCR_BACKENDS.clear()
         with patch("pubg_highlight_trim.pipeline.get_game_language_profile", return_value=language), patch(
             "pubg_highlight_trim.pipeline.load_backend", return_value=(object(), object())
-        ), patch("pubg_highlight_trim.pipeline.duration_sec", return_value=60.0), patch(
+        ) as load_backend, patch("pubg_highlight_trim.pipeline.duration_sec", return_value=60.0), patch(
             "pubg_highlight_trim.pipeline.detect_ocr_events", return_value=[]
         ), patch(
             "pubg_highlight_trim.pipeline.suppress_process_output", side_effect=lambda _enabled: nullcontext()
         ) as suppress, patch("pubg_highlight_trim.pipeline.sys.frozen", True, create=True):
             _scan_source_worker(Path("video.mp4"), Path("ffprobe.exe"), "en", [], OcrConfig())
+            _scan_source_worker(Path("video2.mp4"), Path("ffprobe.exe"), "en", [], OcrConfig())
 
-        self.assertEqual(suppress.call_args_list, [call(False), call(False)])
+        self.assertEqual(load_backend.call_count, 1)
+        self.assertEqual(suppress.call_args_list, [call(False), call(False), call(False)])
+        _WORKER_OCR_BACKENDS.clear()
 
     def test_automatic_jobs_is_one_for_single_source(self):
         self.assertEqual(_automatic_jobs(1, cpu_count=16, available_memory_gb=32.0), 1)
