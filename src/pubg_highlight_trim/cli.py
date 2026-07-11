@@ -111,6 +111,11 @@ def build_parser() -> argparse.ArgumentParser:
     ocr.add_argument("--refine-step", type=float, default=0.5)
     ocr.add_argument("--roi", type=parse_roi, default=(0.30, 0.66, 0.70, 0.75), help="OCR crop ratios x1,y1,x2,y2")
     ocr.add_argument("--ocr-width", type=int, default=768, help="Downscale OCR ROI to this width; 0 disables")
+    ocr.add_argument(
+        "--no-brightness-gate",
+        action="store_true",
+        help="Disable the OpenCV bright outlined-text prefilter before coarse OCR",
+    )
     return parser
 
 

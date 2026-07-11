@@ -4,6 +4,9 @@ from io import StringIO
 from types import ModuleType
 from unittest.mock import patch
 
+import cv2
+import numpy as np
+
 from pubg_highlight_trim.game_languages import get_game_language_profile
 from pubg_highlight_trim.ocr import (
     OcrConfig,
@@ -14,9 +17,11 @@ from pubg_highlight_trim.ocr import (
     detect_events,
     extract_text_events,
     has_assist_text,
+    has_bright_event_text,
     is_assist_own_kill_text,
     is_delayed_own_elim_text,
     load_backend,
+    ocr_at,
     refine_event,
     same_noisy_close_event,
     same_text_event,
@@ -24,6 +29,52 @@ from pubg_highlight_trim.ocr import (
 
 
 class OcrRefineTests(unittest.TestCase):
+    def test_brightness_gate_detects_relative_center_event_text(self):
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        cv2.putText(frame, "YOU KILLED Enemy", (420, 490), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 5)
+        cv2.putText(frame, "YOU KILLED Enemy", (420, 490), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+        self.assertTrue(has_bright_event_text(cv2, frame, OcrConfig()))
+
+    def test_brightness_gate_rejects_blank_relative_center(self):
+        frame = np.full((1080, 1920, 3), 80, dtype=np.uint8)
+
+        self.assertFalse(has_bright_event_text(cv2, frame, OcrConfig()))
+
+    def test_ocr_at_reuses_same_frame_across_targets(self):
+        class FakeFrame:
+            shape = (100, 200, 3)
+
+            def __getitem__(self, _key):
+                return self
+
+        class FakeCap:
+            def __init__(self):
+                self.read_count = 0
+
+            def set(self, _property, _value):
+                pass
+
+            def read(self):
+                self.read_count += 1
+                return True, FakeFrame()
+
+        class FakeCv2:
+            CAP_PROP_POS_MSEC = 0
+            INTER_AREA = 0
+
+        config = OcrConfig(target="both", ocr_width=0)
+        cap = FakeCap()
+        with patch("pubg_highlight_trim.ocr._predict_text", return_value=("你用M416淘汰了Enemy", "0.99", 1.25)) as predict:
+            first = ocr_at(FakeCv2(), cap, None, 30.5, config)
+            second = ocr_at(FakeCv2(), cap, None, 30.5, config)
+
+        self.assertEqual(first.text, second.text)
+        self.assertEqual(first.seconds, 1.25)
+        self.assertEqual(second.seconds, 0.0)
+        self.assertEqual(cap.read_count, 1)
+        predict.assert_called_once()
+
     def test_classifies_own_kill_text(self):
         self.assertEqual(classify_own_kill_text("你用M416淘汰了Player123"), "paddle-own-kill-text")
         self.assertIsNone(classify_own_kill_text("John用M416击倒了你"))
