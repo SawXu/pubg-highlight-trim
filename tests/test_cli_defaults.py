@@ -69,9 +69,9 @@ class CliDefaultsTests(unittest.TestCase):
         self.assertTrue(args.overwrite)
         self.assertTrue(args.dry_run)
 
-    def test_jobs_defaults_to_one(self):
+    def test_jobs_defaults_to_auto(self):
         args = build_parser().parse_args(["video.mp4"])
-        self.assertEqual(args.jobs, 1)
+        self.assertIsNone(args.jobs)
 
     def test_jobs_accepts_parallel_scan_count(self):
         args = build_parser().parse_args(["video.mp4", "--scan-only", "--jobs", "2"])

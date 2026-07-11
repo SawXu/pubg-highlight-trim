@@ -50,8 +50,9 @@ pubg-highlight-trim "." --scan-only --scan-mode full --coarse-step 2 -o ".\fulls
 pubg-highlight-trim "." --scan-mode fast
 pubg-highlight-trim "." --profile
 
-# 两个视频并行扫描，不改变 OCR 采样与检测规则
-pubg-highlight-trim "." --scan-only --jobs 2 -o ".\parallel_scan" -y
+# 自动选择并行度，一般无需手动设置
+pubg-highlight-trim "." --scan-only -o ".\parallel_scan" -y
+pubg-highlight-trim "." --scan-only --jobs 1  # 关闭并行 worker
 ```
 
 运行 `pubg-highlight-trim --help` 查看全部选项。
@@ -76,7 +77,7 @@ pubg-highlight-trim "." --scan-only --jobs 2 -o ".\parallel_scan" -y
 | `-y`, `--overwrite` | 关 | 覆盖输出目录 / 合并文件，而非生成唯一名称 |
 | `--verbose` | 关 | 打印启动配置和第三方 OCR 诊断；默认输出会抑制依赖库噪声 |
 | `--profile` | 关 | 打印每个片段的耗时明细（ffprobe、OCR、读帧、裁剪） |
-| `--jobs` | `1` | 并行扫描独立视频；裁剪和合并仍按顺序执行；建议先从 `2` 开始 |
+| `--jobs` | `auto` | 根据视频数量、CPU 和可用内存自动选择 1 或 2 个 OCR worker；用 `1` 关闭并行，也可手动覆盖 |
 | `--ffmpeg` / `--ffprobe` | 自动 | 显式指定 ffmpeg.exe / ffprobe.exe 路径 |
 
 OCR 选项（进阶）：

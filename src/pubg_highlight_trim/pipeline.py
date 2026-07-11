@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import ctypes
 import json
+import os
 import shutil
 import time
 from collections import Counter
@@ -521,6 +523,46 @@ def _clip_target_prefix(detection: EventDetection) -> str:
     return f"{detection.target or 'event'}{suffix}"
 
 
+def _available_memory_gb() -> float | None:
+    if os.name != "nt":
+        return None
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [
+            ("length", ctypes.c_ulong),
+            ("memory_load", ctypes.c_ulong),
+            ("total_physical", ctypes.c_ulonglong),
+            ("available_physical", ctypes.c_ulonglong),
+            ("total_page_file", ctypes.c_ulonglong),
+            ("available_page_file", ctypes.c_ulonglong),
+            ("total_virtual", ctypes.c_ulonglong),
+            ("available_virtual", ctypes.c_ulonglong),
+            ("available_extended_virtual", ctypes.c_ulonglong),
+        ]
+
+    status = MemoryStatus()
+    status.length = ctypes.sizeof(MemoryStatus)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        return None
+    return status.available_physical / (1024**3)
+
+
+def _automatic_jobs(source_count: int, cpu_count: int | None = None, available_memory_gb: float | None = None) -> int:
+    if source_count < 2:
+        return 1
+    cpu_count = cpu_count if cpu_count is not None else (os.cpu_count() or 1)
+    available_memory_gb = available_memory_gb if available_memory_gb is not None else _available_memory_gb()
+    if cpu_count < 8 or (available_memory_gb is not None and available_memory_gb < 12.0):
+        return 1
+    return 2
+
+
+def _effective_jobs(requested_jobs: int | None, source_count: int) -> tuple[int, bool]:
+    if requested_jobs is not None:
+        return requested_jobs, False
+    return _automatic_jobs(source_count), True
+
+
 def _scan_source_worker(
     src: Path,
     ffprobe: Path,
@@ -573,7 +615,9 @@ def run(args: SimpleNamespace) -> int:
         print(f"output_dir={outdir}", flush=True)
         print(f"merge_output={merged}", flush=True)
         print(f"merge={str(not no_merge).lower()}", flush=True)
-        print(f"jobs={max(1, int(getattr(args, 'jobs', 1)))}", flush=True)
+        requested_jobs = getattr(args, "jobs", None)
+        effective_jobs, automatic_jobs = _effective_jobs(requested_jobs, len(files))
+        print(f"jobs={effective_jobs}{' (auto)' if automatic_jobs else ''}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
     candidate_csv = _candidate_csv_path(args, input_path, base_folder)
@@ -631,9 +675,7 @@ def run(args: SimpleNamespace) -> int:
     detectors: Counter[str] = Counter()
     encoders: Counter[str] = Counter()
     min_event_sec = _min_event_sec(args)
-    jobs = int(getattr(args, "jobs", 1))
-    if jobs < 1:
-        raise SystemExit("--jobs must be at least 1")
+    jobs, _ = _effective_jobs(getattr(args, "jobs", None), len(files))
     parallel_results: dict[Path, tuple[float, float, list[EventDetection]]] = {}
     if jobs > 1:
         with ProcessPoolExecutor(max_workers=jobs) as executor:
