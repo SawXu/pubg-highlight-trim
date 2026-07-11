@@ -22,6 +22,18 @@ def parse_roi(value: str) -> tuple[float, float, float, float]:
     return x1, y1, x2, y2
 
 
+def parse_jobs(value: str) -> int | None:
+    if value.lower() == "auto":
+        return None
+    try:
+        jobs = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("jobs must be auto or a positive integer") from exc
+    if jobs < 1:
+        raise argparse.ArgumentTypeError("jobs must be auto or a positive integer")
+    return jobs
+
+
 def parse_window(value: str) -> tuple[float, float]:
     if ":" not in value:
         raise argparse.ArgumentTypeError("Window must be start:end seconds")
@@ -87,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/merged file instead of creating unique names")
     parser.add_argument("--verbose", action="store_true", help="Print startup settings and third-party OCR diagnostics")
     parser.add_argument("--profile", action="store_true", help="Print per-clip timing breakdown for OCR, frame reads, and trimming")
-    parser.add_argument("--jobs", type=int, default=1, help="Parallel per-video OCR workers; trimming and merging remain ordered; default 1")
+    parser.add_argument("--jobs", type=parse_jobs, default=None, help="Parallel per-video OCR workers; auto selects a safe count; use 1 to disable")
     parser.add_argument("--ffmpeg", default=None, help="Explicit ffmpeg.exe path")
     parser.add_argument("--ffprobe", default=None, help="Explicit ffprobe.exe path")
 

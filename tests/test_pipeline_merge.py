@@ -8,6 +8,8 @@ from pubg_highlight_trim.game_languages import get_game_language_profile
 from pubg_highlight_trim.ocr import OcrConfig
 from pubg_highlight_trim.pipeline import (
     _apply_context_rules,
+    _automatic_jobs,
+    _effective_jobs,
     _candidate_csv_path,
     _effective_no_merge,
     _select_input_files,
@@ -24,6 +26,20 @@ from pubg_highlight_trim.pipeline import (
 
 
 class PipelineMergeTests(unittest.TestCase):
+    def test_automatic_jobs_is_one_for_single_source(self):
+        self.assertEqual(_automatic_jobs(1, cpu_count=16, available_memory_gb=32.0), 1)
+
+    def test_automatic_jobs_is_conservative_on_small_systems(self):
+        self.assertEqual(_automatic_jobs(10, cpu_count=4, available_memory_gb=32.0), 1)
+        self.assertEqual(_automatic_jobs(10, cpu_count=16, available_memory_gb=8.0), 1)
+
+    def test_automatic_jobs_uses_two_for_capable_multi_file_system(self):
+        self.assertEqual(_automatic_jobs(10, cpu_count=16, available_memory_gb=32.0), 2)
+
+    def test_explicit_jobs_overrides_automatic_selection(self):
+        self.assertEqual(_effective_jobs(1, 10), (1, False))
+        self.assertEqual(_effective_jobs(3, 10), (3, False))
+
     def test_multiple_explicit_files_preserve_command_line_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
