@@ -49,6 +49,9 @@ pubg-highlight-trim "F:\NVIDIA\TEMP\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS" --
 pubg-highlight-trim "." --scan-only --scan-mode full --coarse-step 2 -o ".\fullscan_2s" -y
 pubg-highlight-trim "." --scan-mode fast
 pubg-highlight-trim "." --profile
+
+# Scan two videos in parallel without changing OCR sampling or detection rules
+pubg-highlight-trim "." --scan-only --jobs 2 -o ".\parallel_scan" -y
 ```
 
 Run `pubg-highlight-trim --help` to see all options.
@@ -73,6 +76,7 @@ Run `pubg-highlight-trim --help` to see all options.
 | `-y`, `--overwrite` | off | Overwrite output dir/merged file instead of creating unique names |
 | `--verbose` | off | Print startup settings and third-party OCR diagnostics; default output suppresses library noise |
 | `--profile` | off | Print per-clip timing breakdown (ffprobe, OCR, frame read, trim) |
+| `--jobs` | `1` | Run independent video OCR scans in parallel; trimming and merging remain ordered; `2` is a good starting point |
 | `--ffmpeg` / `--ffprobe` | auto | Explicit path to ffmpeg.exe / ffprobe.exe |
 
 OCR options (advanced):

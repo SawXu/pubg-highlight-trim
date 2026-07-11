@@ -49,6 +49,9 @@ pubg-highlight-trim "F:\NVIDIA\TEMP\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS" --
 pubg-highlight-trim "." --scan-only --scan-mode full --coarse-step 2 -o ".\fullscan_2s" -y
 pubg-highlight-trim "." --scan-mode fast
 pubg-highlight-trim "." --profile
+
+# 两个视频并行扫描，不改变 OCR 采样与检测规则
+pubg-highlight-trim "." --scan-only --jobs 2 -o ".\parallel_scan" -y
 ```
 
 运行 `pubg-highlight-trim --help` 查看全部选项。
@@ -73,6 +76,7 @@ pubg-highlight-trim "." --profile
 | `-y`, `--overwrite` | 关 | 覆盖输出目录 / 合并文件，而非生成唯一名称 |
 | `--verbose` | 关 | 打印启动配置和第三方 OCR 诊断；默认输出会抑制依赖库噪声 |
 | `--profile` | 关 | 打印每个片段的耗时明细（ffprobe、OCR、读帧、裁剪） |
+| `--jobs` | `1` | 并行扫描独立视频；裁剪和合并仍按顺序执行；建议先从 `2` 开始 |
 | `--ffmpeg` / `--ffprobe` | 自动 | 显式指定 ffmpeg.exe / ffprobe.exe 路径 |
 
 OCR 选项（进阶）：

@@ -87,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/merged file instead of creating unique names")
     parser.add_argument("--verbose", action="store_true", help="Print startup settings and third-party OCR diagnostics")
     parser.add_argument("--profile", action="store_true", help="Print per-clip timing breakdown for OCR, frame reads, and trimming")
+    parser.add_argument("--jobs", type=int, default=1, help="Parallel per-video OCR workers; trimming and merging remain ordered; default 1")
     parser.add_argument("--ffmpeg", default=None, help="Explicit ffmpeg.exe path")
     parser.add_argument("--ffprobe", default=None, help="Explicit ffprobe.exe path")
 

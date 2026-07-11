@@ -5,6 +5,7 @@ import json
 import shutil
 import time
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -520,6 +521,24 @@ def _clip_target_prefix(detection: EventDetection) -> str:
     return f"{detection.target or 'event'}{suffix}"
 
 
+def _scan_source_worker(
+    src: Path,
+    ffprobe: Path,
+    language_code: str,
+    candidate_times: list[float],
+    config: OcrConfig,
+) -> tuple[float, float, list[EventDetection]]:
+    language = get_game_language_profile(language_code)
+    with suppress_process_output(True):
+        cv2_module, ocr_engine = load_backend(language)
+    probe_started = time.time()
+    duration = duration_sec(src, ffprobe)
+    probe_seconds = time.time() - probe_started
+    with suppress_process_output(True):
+        detections = detect_ocr_events(src, cv2_module, ocr_engine, duration, candidate_times, config)
+    return duration, probe_seconds, detections
+
+
 def run(args: SimpleNamespace) -> int:
     run_started = time.time()
     setup_started = time.time()
@@ -554,6 +573,7 @@ def run(args: SimpleNamespace) -> int:
         print(f"output_dir={outdir}", flush=True)
         print(f"merge_output={merged}", flush=True)
         print(f"merge={str(not no_merge).lower()}", flush=True)
+        print(f"jobs={max(1, int(getattr(args, 'jobs', 1)))}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
     candidate_csv = _candidate_csv_path(args, input_path, base_folder)
@@ -611,21 +631,43 @@ def run(args: SimpleNamespace) -> int:
     detectors: Counter[str] = Counter()
     encoders: Counter[str] = Counter()
     min_event_sec = _min_event_sec(args)
+    jobs = int(getattr(args, "jobs", 1))
+    if jobs < 1:
+        raise SystemExit("--jobs must be at least 1")
+    parallel_results: dict[Path, tuple[float, float, list[EventDetection]]] = {}
+    if jobs > 1:
+        with ProcessPoolExecutor(max_workers=jobs) as executor:
+            futures = {
+                src: executor.submit(
+                    _scan_source_worker,
+                    src,
+                    ffprobe,
+                    file_profiles[src].code,
+                    candidates.get(src.name, []),
+                    _ocr_config_for_source(ocr_config_for(file_profiles[src]), src, file_profiles[src]),
+                )
+                for src in files
+            }
+            for src, future in futures.items():
+                parallel_results[src] = future.result()
 
     for idx, src in enumerate(files, 1):
         language_profile = file_profiles[src]
-        cv2_module, ocr_engine = backend_for(language_profile)
         ocr_config = ocr_config_for(language_profile)
         clip_started = time.time()
-        probe_started = time.time()
-        dur = duration_sec(src, ffprobe)
-        probe_seconds = time.time() - probe_started
         detect_started = time.time()
         source_ocr_config = _ocr_config_for_source(ocr_config, src, language_profile)
         if source_ocr_config.no_full_scan != ocr_config.no_full_scan:
             print(f"[{idx:02d}/{len(files)}] full_scan=true multi-kill-source | {src.name}", flush=True)
-        with suppress_process_output(not verbose):
-            detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
+        if jobs > 1:
+            dur, probe_seconds, detections = parallel_results[src]
+        else:
+            cv2_module, ocr_engine = backend_for(language_profile)
+            probe_started = time.time()
+            dur = duration_sec(src, ffprobe)
+            probe_seconds = time.time() - probe_started
+            with suppress_process_output(not verbose):
+                detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
         if len(detections) == 1 and detections[0].event_sec is None:
             detection = detections[0]
             if detection.detect_seconds == 0.0:
