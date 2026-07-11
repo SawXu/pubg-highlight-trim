@@ -5,6 +5,7 @@ import ctypes
 import json
 import os
 import shutil
+import sys
 import time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -571,12 +572,13 @@ def _scan_source_worker(
     config: OcrConfig,
 ) -> tuple[float, float, list[EventDetection]]:
     language = get_game_language_profile(language_code)
-    with suppress_process_output(True):
+    suppress_worker_output = not getattr(sys, "frozen", False)
+    with suppress_process_output(suppress_worker_output):
         cv2_module, ocr_engine = load_backend(language)
     probe_started = time.time()
     duration = duration_sec(src, ffprobe)
     probe_seconds = time.time() - probe_started
-    with suppress_process_output(True):
+    with suppress_process_output(suppress_worker_output):
         detections = detect_ocr_events(src, cv2_module, ocr_engine, duration, candidate_times, config)
     return duration, probe_seconds, detections
 
