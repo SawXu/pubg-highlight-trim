@@ -103,9 +103,12 @@ def _source_forces_full_scan(src: Path, language: GameLanguageProfile) -> bool:
 
 
 def _ocr_config_for_source(config: OcrConfig, src: Path, language: GameLanguageProfile) -> OcrConfig:
+    updates: dict[str, object] = {}
     if config.no_full_scan and _source_forces_full_scan(src, language):
-        return replace(config, no_full_scan=False)
-    return config
+        updates["no_full_scan"] = False
+    if language.match_end_source_re.search(src.name) is not None:
+        updates["brightness_gate"] = False
+    return replace(config, **updates) if updates else config
 
 
 def _effective_no_merge(args: SimpleNamespace, single_file: bool) -> bool:
@@ -248,6 +251,7 @@ def _blank_record(idx: int, src: Path, dur: float, status: str, method: str, det
         "OcrFrameSeconds": "0.000",
         "OcrCoarseFrames": "0",
         "OcrRefineFrames": "0",
+        "OcrGateSkippedFrames": "0",
         "ProbeSeconds": "0.000",
         "TrimSeconds": "0.000",
         "TotalSeconds": "0.000",
@@ -295,6 +299,7 @@ def _record_detection(
         "OcrFrameSeconds": f"{detection.ocr_frame_seconds:.3f}",
         "OcrCoarseFrames": str(detection.ocr_coarse_frames),
         "OcrRefineFrames": str(detection.ocr_refine_frames),
+        "OcrGateSkippedFrames": str(detection.ocr_gate_skipped_frames),
         "ProbeSeconds": f"{probe_seconds:.3f}",
         "TrimSeconds": f"{trim_seconds:.3f}",
         "TotalSeconds": f"{total_seconds:.3f}",
@@ -331,6 +336,7 @@ def _record_skip(
             "OcrFrameSeconds": f"{detection.ocr_frame_seconds:.3f}",
             "OcrCoarseFrames": str(detection.ocr_coarse_frames),
             "OcrRefineFrames": str(detection.ocr_refine_frames),
+            "OcrGateSkippedFrames": str(detection.ocr_gate_skipped_frames),
             "ProbeSeconds": f"{probe_seconds:.3f}",
             "TrimSeconds": f"{trim_seconds:.3f}",
             "TotalSeconds": f"{total_seconds:.3f}",
@@ -438,6 +444,7 @@ def _profile_clip(
         f"samples={detection.sampled_count} "
         f"coarse={detection.ocr_coarse_frames} "
         f"refine={detection.ocr_refine_frames} "
+        f"gate_skipped={detection.ocr_gate_skipped_frames} "
         f"trim={trim_seconds:.3f}s "
         f"total={total_seconds:.3f}s | {src.name}",
         flush=True,
@@ -477,6 +484,7 @@ def _merge_detection_group(group: list[EventDetection]) -> EventDetection:
         "+".join(context_rules) if context_rules else "default",
         max((_detection_before(d) for d in group), default=0.0),
         max((_detection_after(d) for d in group), default=0.0),
+        last.ocr_gate_skipped_frames,
     )
 
 
@@ -594,6 +602,7 @@ def run(args: SimpleNamespace) -> int:
             no_full_scan=no_full_scan,
             roi=args.roi,
             ocr_width=args.ocr_width,
+            brightness_gate=not getattr(args, "no_brightness_gate", False),
         )
 
     records: list[dict[str, str]] = []

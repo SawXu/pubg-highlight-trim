@@ -25,3 +25,4 @@ class EventDetection:
     context_rule: str = ""
     clip_before_sec: float = 0.0
     clip_after_sec: float = 0.0
+    ocr_gate_skipped_frames: int = 0

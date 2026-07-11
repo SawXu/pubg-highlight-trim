@@ -69,6 +69,13 @@ class OcrConfig:
     assist_after: float = 1.2
     assist_step: float = 0.5
     ocr_width: int = 768
+    brightness_gate: bool = False
+    brightness_gate_roi: tuple[float, float, float, float] = (0.26, 0.635, 0.74, 0.725)
+    brightness_gate_width: int = 768
+    frame_cache: dict[tuple[str, int, tuple[float, float, float, float], int], tuple[str, str]] = field(
+        default_factory=dict,
+        repr=False,
+    )
 
 
 def normalize_text(text: str) -> str:
@@ -463,6 +470,52 @@ def _crop_frame(cv2_module: Any, frame: Any, roi: tuple[float, float, float, flo
     return crop
 
 
+def has_bright_event_text(cv2_module: Any, frame: Any, config: OcrConfig) -> bool:
+    import numpy as np
+
+    crop = _crop_frame(cv2_module, frame, config.brightness_gate_roi, 0)
+    if crop.size == 0:
+        return True
+
+    gate_width = max(1, config.brightness_gate_width)
+    scale = gate_width / crop.shape[1]
+    crop = cv2_module.resize(
+        crop,
+        (gate_width, max(1, int(round(crop.shape[0] * scale)))),
+        interpolation=cv2_module.INTER_AREA if scale < 1 else cv2_module.INTER_LINEAR,
+    )
+    hsv = cv2_module.cvtColor(crop, cv2_module.COLOR_BGR2HSV)
+    gray = cv2_module.cvtColor(crop, cv2_module.COLOR_BGR2GRAY)
+    white = cv2_module.inRange(hsv, (0, 0, 155), (179, 105, 255))
+    yellow = cv2_module.inRange(hsv, (3, 70, 135), (42, 255, 255))
+    bright = cv2_module.bitwise_or(white, yellow)
+    dark = cv2_module.inRange(gray, 0, 100)
+    dark_near = cv2_module.dilate(dark, np.ones((5, 5), dtype=np.uint8))
+    outlined = cv2_module.bitwise_and(bright, dark_near)
+    neighbour_count = cv2_module.boxFilter(
+        (outlined > 0).astype(np.uint8),
+        cv2_module.CV_16U,
+        (7, 5),
+        normalize=False,
+    )
+    grouped = ((outlined > 0) & (neighbour_count >= 3)).astype(np.uint8)
+    if int(grouped.sum()) < 1450:
+        return False
+
+    row_counts = grouped.sum(axis=1)
+    if int(np.convolve(row_counts, np.ones(11, dtype=np.int32), mode="same").max()) < 1000:
+        return False
+
+    closed = cv2_module.morphologyEx(
+        grouped,
+        cv2_module.MORPH_CLOSE,
+        np.ones((3, 11), dtype=np.uint8),
+    )
+    _, _, stats, _ = cv2_module.connectedComponentsWithStats(closed, 8)
+    max_height = max(3, int(crop.shape[0] * 0.6))
+    return any(3 <= height <= max_height and width >= 20 for _, _, width, height, _ in stats[1:])
+
+
 def _predict_text(ocr: Any, crop: Any) -> tuple[str, str, float]:
     started = time.time()
     raw = ocr.predict(crop)
@@ -481,17 +534,52 @@ def _predict_text(ocr: Any, crop: Any) -> tuple[str, str, float]:
     return normalize_text("".join(texts)), ";".join(scores), elapsed
 
 
-def ocr_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -> OcrResult:
+def _ocr_crop_at(
+    cv2_module: Any,
+    cap: Any,
+    ocr: Any,
+    sec: float,
+    config: OcrConfig,
+    roi: tuple[float, float, float, float],
+    cache_namespace: str,
+    apply_brightness_gate: bool = False,
+) -> tuple[str, str, float, float, bool, bool]:
+    cache_key = (cache_namespace, int(round(max(0.0, sec) * 1000)), roi, config.ocr_width)
+    cached = config.frame_cache.get(cache_key)
+    if cached is not None:
+        return cached[0], cached[1], 0.0, 0.0, True, False
+
     frame_started = time.time()
     cap.set(cv2_module.CAP_PROP_POS_MSEC, max(0.0, sec) * 1000)
     ok, frame = cap.read()
     if not ok or frame is None:
-        return OcrResult("", "", 0.0, "frame-read-failed", time.time() - frame_started)
+        return "", "", 0.0, time.time() - frame_started, False, False
 
-    crop = _crop_frame(cv2_module, frame, config.roi, config.ocr_width)
+    if apply_brightness_gate and config.brightness_gate and not has_bright_event_text(cv2_module, frame, config):
+        return "", "", 0.0, time.time() - frame_started, True, True
+
+    crop = _crop_frame(cv2_module, frame, roi, config.ocr_width)
     frame_elapsed = time.time() - frame_started
-
     text, scores, elapsed = _predict_text(ocr, crop)
+    config.frame_cache[cache_key] = (text, scores)
+    return text, scores, elapsed, frame_elapsed, True, False
+
+
+def ocr_at(
+    cv2_module: Any,
+    cap: Any,
+    ocr: Any,
+    sec: float,
+    config: OcrConfig,
+    apply_brightness_gate: bool = False,
+) -> OcrResult:
+    text, scores, elapsed, frame_elapsed, available, gate_skipped = _ocr_crop_at(
+        cv2_module, cap, ocr, sec, config, config.roi, "primary", apply_brightness_gate
+    )
+    if not available:
+        return OcrResult("", "", 0.0, "frame-read-failed", frame_elapsed)
+    if gate_skipped:
+        return OcrResult("", "", 0.0, "opencv-no-bright-event-text", frame_elapsed)
     if config.target in {"own-kill", "both"} and has_own_kill_candidate(text, config.language):
         if is_delayed_own_elim_text(text, config.language) and not extract_own_kill_events(text, profile=config.language):
             method = "paddle-own-kill-delayed-elim-skipped"
@@ -505,15 +593,11 @@ def ocr_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -
 
 
 def ocr_assist_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -> OcrResult:
-    frame_started = time.time()
-    cap.set(cv2_module.CAP_PROP_POS_MSEC, max(0.0, sec) * 1000)
-    ok, frame = cap.read()
-    if not ok or frame is None:
-        return OcrResult("", "", 0.0, "frame-read-failed", time.time() - frame_started)
-
-    crop = _crop_frame(cv2_module, frame, config.assist_roi, config.ocr_width)
-    frame_elapsed = time.time() - frame_started
-    text, scores, elapsed = _predict_text(ocr, crop)
+    text, scores, elapsed, frame_elapsed, available, _ = _ocr_crop_at(
+        cv2_module, cap, ocr, sec, config, config.assist_roi, "assist"
+    )
+    if not available:
+        return OcrResult("", "", 0.0, "frame-read-failed", frame_elapsed)
     method = "paddle-own-kill-assist-skipped" if has_assist_text(text, config.language) else "paddle-not-assist-text"
     return OcrResult(text, scores, elapsed, method, frame_elapsed)
 
@@ -661,10 +745,12 @@ def detect_event(path: Path, cv2_module: Any, ocr: Any, duration: float, candida
 
 def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candidate_times: list[float], config: OcrConfig) -> list[EventDetection]:
     detect_started = time.time()
+    config.frame_cache.clear()
     cap = cv2_module.VideoCapture(str(path))
     sampled_count = 0
     coarse_count = 0
     refine_count = 0
+    gate_skipped_count = 0
     total_ocr_seconds = 0.0
     total_frame_seconds = 0.0
     last_text = ""
@@ -676,9 +762,15 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
         for sec in build_text_priority_scan_times(duration, candidate_times, config):
             sampled_count += 1
             coarse_count += 1
-            result = ocr_at(cv2_module, cap, ocr, sec, config)
+            result = (
+                ocr_at(cv2_module, cap, ocr, sec, config, apply_brightness_gate=True)
+                if config.brightness_gate
+                else ocr_at(cv2_module, cap, ocr, sec, config)
+            )
             total_ocr_seconds += result.seconds
             total_frame_seconds += result.frame_seconds
+            if result.method == "opencv-no-bright-event-text":
+                gate_skipped_count += 1
             if result.text:
                 last_text, last_scores, last_method = result.text, result.scores, result.method
             for event in extract_text_events(result.text, config.target, config.language):
@@ -756,6 +848,7 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                         "1",
                         f"{event_sec:.3f}",
                         event_weapon=refined_event.weapon,
+                        ocr_gate_skipped_frames=gate_skipped_count,
                     )
                 )
                 seen_events.append((refined_event, event_sec))
@@ -779,5 +872,6 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
             coarse_count,
             refine_count,
             config.target,
+            ocr_gate_skipped_frames=gate_skipped_count,
         )
     ]
