@@ -8,7 +8,7 @@ import shutil
 import sys
 import time
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -567,6 +567,11 @@ def _effective_jobs(requested_jobs: int | None, source_count: int) -> tuple[int,
     return _automatic_jobs(source_count), True
 
 
+def _progress_line(phase: str, current: int, total: int, workers: int) -> str:
+    payload = {"phase": phase, "current": current, "total": total, "workers": workers}
+    return "PROGRESS " + json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+
+
 def _scan_source_worker(
     src: Path,
     ffprobe: Path,
@@ -685,22 +690,25 @@ def run(args: SimpleNamespace) -> int:
     encoders: Counter[str] = Counter()
     min_event_sec = _min_event_sec(args)
     jobs, _ = _effective_jobs(getattr(args, "jobs", None), len(files))
+    print(_progress_line("scan", 0, len(files), jobs), flush=True)
     parallel_results: dict[Path, tuple[float, float, list[EventDetection]]] = {}
     if jobs > 1:
         with ProcessPoolExecutor(max_workers=jobs) as executor:
             futures = {
-                src: executor.submit(
+                executor.submit(
                     _scan_source_worker,
                     src,
                     ffprobe,
                     file_profiles[src].code,
                     candidates.get(src.name, []),
                     _ocr_config_for_source(ocr_config_for(file_profiles[src]), src, file_profiles[src]),
-                )
+                ): src
                 for src in files
             }
-            for src, future in futures.items():
+            for completed, future in enumerate(as_completed(futures), 1):
+                src = futures[future]
                 parallel_results[src] = future.result()
+                print(_progress_line("scan", completed, len(files), jobs), flush=True)
 
     for idx, src in enumerate(files, 1):
         language_profile = file_profiles[src]

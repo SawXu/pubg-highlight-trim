@@ -4,6 +4,8 @@
 
 Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight（精彩时刻）片段进行裁剪。
 
+仓库同时提供原生 Windows 桌面 UI。UI 使用 WPF，不包含浏览器运行时；它把 CLI 当作独立进程运行，不引用 Python 源码。
+
 默认行为同时检测“你击倒/淘汰敌人”和“敌人击倒/淘汰你”两类事件，保留事件前 5 秒与后 1 秒，跳过前 2 秒内的事件；对燃烧瓶 / 火瓶淘汰事件保留前 10 秒。
 
 ## 安装
@@ -14,6 +16,8 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 2. 将 zip 解压到任意目录。
 3. 压缩包内已包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg.exe` / `ffprobe.exe`，以及 OCR 检测所需的 PaddleOCR 模型。
 
+需要图形界面时，下载 `pubg-highlight-trim-ui-windows-x64.zip`。解压后运行 `pubg-highlight-trim-ui.exe`；同包的 `cli` 目录包含完整 CLI 和 OCR 运行时，请勿单独移动 UI exe。
+
 在解压目录下直接运行：
 
 ```powershell
@@ -21,6 +25,14 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 ```
 
 ## 使用
+
+### 图形界面
+
+UI 支持选择文件夹或单个 MP4、检测目标和语言、剪辑范围、扫描模式、并行任务、仅扫描、合并输出及递归搜索。运行期间会显示逐文件进度、保留/跳过数量和原始 CLI 日志；完成后可直接打开输出目录或播放合并视频。
+
+UI 仅通过 CLI 参数、标准输出和最终 `summary.json` 与后端通信。可通过 `PUBG_HIGHLIGHT_TRIM_CLI` 环境变量覆盖 CLI 路径，便于开发或测试其他 CLI 版本。
+
+### 命令行
 
 将 CLI 指向 PUBG NVIDIA Highlight 文件夹（或一个/多个 mp4）：
 
@@ -148,11 +160,20 @@ python -m unittest discover -s tests -v
 powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
 python -m pip install -e ".[ocr,build]"
 powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 -SkipCliBuild
 ```
 
 release zip 包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg/ffprobe` 以及 OCR 检测所需的 PaddleOCR 模型。zip 用户无需安装 Python。
 
-GitHub Actions 会在推送 `v0.1.0` 等标签或手动 `workflow_dispatch` 时构建 Windows release zip。
+UI 测试单独运行：
+
+```powershell
+dotnet test .\ui\PubgHighlightTrim.Ui.Tests\PubgHighlightTrim.Ui.Tests.csproj --configuration Release
+```
+
+UI release 是自包含的原生 WPF 单文件应用，发布包在 `cli` 子目录并排携带完整 CLI bundle；用户无需安装 .NET 或 Python。
+
+GitHub Actions 会在推送 `v0.1.0` 等标签或手动 `workflow_dispatch` 时构建 CLI 与 UI 两种 Windows release zip。
 
 ## 许可证
 
