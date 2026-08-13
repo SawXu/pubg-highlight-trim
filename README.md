@@ -4,6 +4,8 @@ English | [简体中文](README_zh.md)
 
 Windows-only CLI for trimming PUBG NVIDIA Highlight clips around key OCR events.
 
+The repository also ships a native Windows desktop UI. It uses WPF with no browser runtime, launches the CLI as a separate process, and does not reference the Python source code.
+
 Default behavior detects both your knocks/eliminations and enemies knocking/eliminating you, keeps 5 seconds before and 1 second after the detected event, skips events in the first 2 seconds, and keeps 10 seconds before molotov/fire-bomb eliminations.
 
 ## Installation
@@ -14,6 +16,8 @@ No Python install required.
 2. Extract the zip to any folder.
 3. The bundle includes `pubg-highlight-trim.exe`, bundled `ffmpeg.exe`/`ffprobe.exe`, and the PaddleOCR models needed by OCR detection.
 
+For the graphical app, download `pubg-highlight-trim-ui-windows-x64.zip`, extract it, and run `pubg-highlight-trim-ui.exe`. Keep the bundled `cli` directory beside the UI executable because it contains the complete CLI and OCR runtime.
+
 Run it from the extracted folder:
 
 ```powershell
@@ -21,6 +25,14 @@ Run it from the extracted folder:
 ```
 
 ## Usage
+
+### Desktop UI
+
+The UI covers folder or single-MP4 selection, detection target and language, clip timing, scan mode, worker count, scan-only mode, merged output, and recursive search. During a run it shows per-file progress, include/skip counts, and the raw CLI log. On completion it can open the output folder or play the merged video.
+
+The UI communicates only through CLI arguments, standard output, and the final `summary.json`. Set `PUBG_HIGHLIGHT_TRIM_CLI` to override the CLI executable during development or compatibility testing.
+
+### Command line
 
 Point the CLI at your PUBG NVIDIA Highlight folder (or one or more mp4 files):
 
@@ -148,11 +160,20 @@ python -m unittest discover -s tests -v
 powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
 python -m pip install -e ".[ocr,build]"
 powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 -SkipCliBuild
 ```
 
 The release zip contains `pubg-highlight-trim.exe`, bundled `ffmpeg/ffprobe`, and the PaddleOCR models needed by OCR detection. No Python install is required for users of the zip.
 
-GitHub Actions builds the Windows release zip on tag pushes like `v0.1.0` or manual `workflow_dispatch`.
+Run the UI tests separately:
+
+```powershell
+dotnet test .\ui\PubgHighlightTrim.Ui.Tests\PubgHighlightTrim.Ui.Tests.csproj --configuration Release
+```
+
+The UI release is a self-contained native WPF single-file app. Its release archive carries the complete CLI bundle in a side-by-side `cli` directory, so users need neither .NET nor Python installed.
+
+GitHub Actions builds both CLI and UI Windows release archives on tag pushes like `v0.1.0` or manual `workflow_dispatch`.
 
 ## License
 

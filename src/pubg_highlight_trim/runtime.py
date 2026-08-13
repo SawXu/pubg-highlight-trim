@@ -7,6 +7,17 @@ from collections.abc import Iterator
 from pathlib import Path
 
 
+def configure_process_output_encoding() -> None:
+    encoding = os.environ.get("PUBG_HIGHLIGHT_TRIM_OUTPUT_ENCODING")
+    if not encoding:
+        return
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding=encoding, errors="replace")
+
+
 def runtime_roots() -> list[Path]:
     roots: list[Path] = []
     frozen_root = getattr(sys, "_MEIPASS", None)

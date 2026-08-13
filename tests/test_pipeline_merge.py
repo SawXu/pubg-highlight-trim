@@ -21,6 +21,7 @@ from pubg_highlight_trim.pipeline import (
     _ocr_config_for_source,
     _partition_too_early_detections,
     _prepare_output_paths,
+    _progress_line,
     _record_detection,
     _record_skip,
     _scan_source_worker,
@@ -30,6 +31,12 @@ from pubg_highlight_trim.pipeline import (
 
 
 class PipelineMergeTests(unittest.TestCase):
+    def test_progress_line_is_machine_readable_and_path_free(self):
+        self.assertEqual(
+            _progress_line("scan", 3, 12, 2),
+            'PROGRESS {"phase":"scan","current":3,"total":12,"workers":2}',
+        )
+
     def test_frozen_scan_worker_avoids_process_output_fd_redirection(self):
         language = get_game_language_profile("en")
         _WORKER_OCR_BACKENDS.clear()
