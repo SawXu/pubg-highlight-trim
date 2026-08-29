@@ -208,21 +208,25 @@ def _prepare_output_paths(
     merge_output_override = _merge_output_override(args)
     if single_file:
         outdir = args.output_dir or base_folder / f"{input_path.stem}_pubg_trim_clips"
-        merged = merge_output_override or base_folder / f"{input_path.stem}_pubg_trim.mp4"
+        merged_name = f"{input_path.stem}_pubg_trim.mp4"
     else:
         outdir = args.output_dir or base_folder / "pubg_highlight_trim_output"
-        merged = merge_output_override or base_folder / "pubg_highlight_trim_merged.mp4"
-
-    if merged.resolve() in {path.resolve() for path in input_files}:
-        raise SystemExit(f"Merge output must not overwrite an input file: {merged}")
+        merged_name = "pubg_highlight_trim_merged.mp4"
 
     if args.overwrite:
         if outdir.exists():
             shutil.rmtree(outdir)
+    else:
+        outdir = unique_dir(outdir)
+
+    merged = merge_output_override or outdir / merged_name
+    if merged.resolve() in {path.resolve() for path in input_files}:
+        raise SystemExit(f"Merge output must not overwrite an input file: {merged}")
+
+    if args.overwrite:
         if merged.exists():
             merged.unlink()
     else:
-        outdir = unique_dir(outdir)
         merged = unique_path(merged)
 
     outdir.mkdir(parents=True, exist_ok=True)

@@ -121,6 +121,43 @@ class PipelineMergeTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "must not overwrite an input file"):
                 _prepare_output_paths(args, first, [first, second], root, single_file=False)
 
+    def test_default_merge_output_is_inside_folder_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "first.mp4"
+            first.touch()
+            args = SimpleNamespace(output_dir=None, merge=True, overwrite=True)
+
+            outdir, merged = _prepare_output_paths(args, first, [first], root, single_file=False)
+
+            self.assertEqual(outdir, root / "pubg_highlight_trim_output")
+            self.assertEqual(merged, outdir / "pubg_highlight_trim_merged.mp4")
+
+    def test_default_merge_output_follows_unique_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "first.mp4"
+            first.touch()
+            (root / "pubg_highlight_trim_output").mkdir()
+            args = SimpleNamespace(output_dir=None, merge=True, overwrite=False)
+
+            outdir, merged = _prepare_output_paths(args, first, [first], root, single_file=False)
+
+            self.assertEqual(outdir, root / "pubg_highlight_trim_output_1")
+            self.assertEqual(merged, outdir / "pubg_highlight_trim_merged.mp4")
+
+    def test_default_single_file_merge_output_is_inside_clip_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "match.mp4"
+            first.touch()
+            args = SimpleNamespace(output_dir=None, merge=True, overwrite=True)
+
+            outdir, merged = _prepare_output_paths(args, first, [first], root, single_file=True)
+
+            self.assertEqual(outdir, root / "match_pubg_trim_clips")
+            self.assertEqual(merged, outdir / "match_pubg_trim.mp4")
+
     def test_merges_overlapping_events_into_one_clip(self):
         detections = [
             EventDetection(60.0, 30.5, "paddle-own-kill-text", "ocr", target="own-kill", event_key="own-kill:knock:a"),
