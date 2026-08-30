@@ -46,7 +46,7 @@ You can also pass one mp4 directly:
 pubg-highlight-trim "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
 ```
 
-When multiple mp4 files are specified, they are processed in command-line order and their trimmed clips are merged by default:
+When multiple mp4 files are specified, they are processed from the earliest recording to the latest, based on the timestamp in each PUBG filename, and their trimmed clips are merged by default:
 
 ```powershell
 pubg-highlight-trim --files "F:\Highlights\video1.mp4" "F:\Highlights\video2.mp4" "F:\Highlights\video3.mp4" --merge ".\selected_merged.mp4"
@@ -74,7 +74,7 @@ Run `pubg-highlight-trim --help` to see all options.
 | Option | Default | Description |
 | --- | --- | --- |
 | `input` (positional) | `.` | PUBG highlight folder or a single mp4 file |
-| `--files FILE [FILE ...]` | none | Process only these mp4 files, in the specified order |
+| `--files FILE [FILE ...]` | none | Process only these mp4 files, ordered by the recording timestamp in each PUBG filename |
 | `--target` | `both` | Event to detect: `self-death` (enemies knocking/eliminating you), `own-kill` (you knocking/eliminating others), `both` |
 | `--game-lang` | `auto` | Game language profile; `auto` detects from NVIDIA Highlight filenames. Choices: `auto`, `zh-Hans`, `zh-Hant`, `en` |
 | `-o`, `--output-dir` | auto | Directory for individual trimmed clips |

@@ -46,7 +46,7 @@ pubg-highlight-trim "C:\Users\you\AppData\Local\Temp\Highlights\PLAYERUNKNOWN'S 
 pubg-highlight-trim "F:\Highlights\PLAYERUNKNOWN'S BATTLEGROUNDS\淘汰\PLAYERUNKNOWN'S BATTLEGROUNDS 2026.06.28 - 22.30.13.65.淘汰.DVR.mp4"
 ```
 
-指定多个 mp4 时，工具会严格按命令行中的顺序处理，并默认合并裁剪结果：
+指定多个 mp4 时，工具会按 PUBG 文件名中的录制时间从早到晚处理，并默认合并裁剪结果：
 
 ```powershell
 pubg-highlight-trim --files "F:\Highlights\video1.mp4" "F:\Highlights\video2.mp4" "F:\Highlights\video3.mp4" --merge ".\selected_merged.mp4"
@@ -74,7 +74,7 @@ pubg-highlight-trim "." --scan-only --jobs 1  # 关闭并行 worker
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `input`（位置参数） | `.` | PUBG highlight 文件夹或单个 mp4 文件 |
-| `--files FILE [FILE ...]` | 无 | 严格按指定顺序处理这些 mp4 文件 |
+| `--files FILE [FILE ...]` | 无 | 按 PUBG 文件名中的录制时间从早到晚处理这些 mp4 文件 |
 | `--target` | `both` | 检测事件：`self-death`（敌人击倒/淘汰你）、`own-kill`（你击倒/淘汰敌人）、`both`（两者） |
 | `--game-lang` | `auto` | 游戏语言配置；`auto` 从 NVIDIA Highlight 文件名自动识别。可选：`auto`、`zh-Hans`、`zh-Hant`、`en` |
 | `-o`, `--output-dir` | 自动 | 单片段裁剪输出目录 |

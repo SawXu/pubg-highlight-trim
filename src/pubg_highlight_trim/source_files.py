@@ -2,17 +2,32 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 from .game_languages import GAME_LANGUAGE_PROFILES, GameLanguageProfile, default_game_language_profile
 
 
 _PROFILE_ORDER = {code: index for index, code in enumerate(GAME_LANGUAGE_PROFILES)}
+_RECORDING_TIMESTAMP_RE = re.compile(r"(?P<date>\d{4}\.\d{2}\.\d{2})\s*-\s*(?P<time>\d{2}\.\d{2}\.\d{2})")
+
+
+def _source_sort_key(path: Path) -> tuple[bool, datetime | str, str]:
+    match = _RECORDING_TIMESTAMP_RE.search(path.name)
+    if match:
+        timestamp = datetime.strptime(f"{match['date']} {match['time']}", "%Y.%m.%d %H.%M.%S")
+        return False, timestamp, path.name.lower()
+    return True, path.name.lower(), path.name.lower()
+
+
+def sort_source_files(paths: list[Path]) -> list[Path]:
+    """Order highlight sources from the earliest recording to the latest."""
+    return sorted(paths, key=_source_sort_key)
 
 
 def _iter_mp4_files(folder: Path, recursive: bool) -> list[Path]:
     pattern = "**/*.mp4" if recursive else "*.mp4"
-    return sorted(folder.glob(pattern), key=lambda p: str(p).lower())
+    return sort_source_files(list(folder.glob(pattern)))
 
 
 def _source_file_matches_profile(name: str, target: str, profile: GameLanguageProfile) -> bool:
