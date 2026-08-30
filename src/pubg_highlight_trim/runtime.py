@@ -63,13 +63,24 @@ def suppress_process_output(enabled: bool = True) -> Iterator[None]:
 
     sys.stdout.flush()
     sys.stderr.flush()
-    saved_stdout = os.dup(stdout_fd)
-    saved_stderr = os.dup(stderr_fd)
+    try:
+        saved_stdout = os.dup(stdout_fd)
+        saved_stderr = os.dup(stderr_fd)
+    except OSError:
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                yield
+        return
     try:
         with open(os.devnull, "w", encoding="utf-8") as devnull:
-            os.dup2(devnull.fileno(), stdout_fd)
-            os.dup2(devnull.fileno(), stderr_fd)
-            yield
+            try:
+                os.dup2(devnull.fileno(), stdout_fd)
+                os.dup2(devnull.fileno(), stderr_fd)
+            except OSError:
+                with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                    yield
+            else:
+                yield
     finally:
         sys.stdout.flush()
         sys.stderr.flush()
