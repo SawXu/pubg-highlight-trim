@@ -75,7 +75,6 @@ class PipelineMergeTests(unittest.TestCase):
                     "en",
                     "--output-dir",
                     str(output_dir),
-                    "--merge",
                     "-y",
                     "--jobs",
                     "1",
@@ -104,11 +103,15 @@ class PipelineMergeTests(unittest.TestCase):
             with (output_dir / "检测与裁剪记录.csv").open(encoding="utf-8-sig", newline="") as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual([Path(row["Output"]).parent for row in rows], [output_dir / "clips"] * 2)
+            self.assertTrue(all(Path(row["Output"]).is_file() for row in rows))
 
             summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["output_dir"], str(output_dir))
             self.assertEqual(summary["merge_output"], str(output_dir / "pubg_highlight_trim_merged.mp4"))
             self.assertEqual(summary["concat_list"], str(output_dir / "pubg_highlight_trim_merged.concat.txt"))
+            self.assertEqual(summary["csv"], str(output_dir / "检测与裁剪记录.csv"))
+            self.assertTrue(Path(summary["csv"]).is_file())
+            self.assertTrue(Path(summary["concat_list"]).is_file())
 
     def test_run_dry_run_does_not_create_clips_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -175,7 +178,7 @@ class PipelineMergeTests(unittest.TestCase):
             self.assertEqual(summary["merge_output"], str(merged))
             self.assertEqual(summary["concat_list"], str(merged.with_suffix(".concat.txt")))
 
-    def test_run_no_merge_still_writes_trimmed_clips_under_clips(self):
+    def test_run_single_file_defaults_to_no_merge_and_writes_trimmed_clips(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "source.mp4"
@@ -188,7 +191,6 @@ class PipelineMergeTests(unittest.TestCase):
                     "en",
                     "--output-dir",
                     str(output_dir),
-                    "--no-merge",
                     "--jobs",
                     "1",
                     "-y",
@@ -205,6 +207,64 @@ class PipelineMergeTests(unittest.TestCase):
             summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertFalse(summary["merge"])
             self.assertEqual(summary["merge_output"], "")
+
+    def test_run_uses_unique_output_dir_for_clips(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.mp4"
+            output_dir = root / "output"
+            source.touch()
+            output_dir.mkdir()
+            args = build_parser().parse_args(
+                [
+                    str(source),
+                    "--game-lang",
+                    "en",
+                    "--output-dir",
+                    str(output_dir),
+                    "--jobs",
+                    "1",
+                ]
+            )
+            detection = EventDetection(60.0, 30.0, "paddle-own-kill-text", "ocr", target="own-kill")
+            code, _trim_clip, _concat_clips = self._run_with_mocked_video_pipeline(args, detection)
+
+            unique_output = root / "output_1"
+            self.assertEqual(code, 0)
+            self.assertTrue((unique_output / "clips" / "001_own-kill_source.mp4").is_file())
+            self.assertFalse((output_dir / "clips").exists())
+            summary = json.loads((unique_output / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["output_dir"], str(unique_output))
+
+    def test_run_overwrite_clears_old_root_trimmed_clips(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.mp4"
+            output_dir = root / "output"
+            source.touch()
+            output_dir.mkdir()
+            (output_dir / "001_old.mp4").write_bytes(b"old")
+            (output_dir / "clips").mkdir()
+            (output_dir / "clips" / "001_old.mp4").write_bytes(b"old")
+            args = build_parser().parse_args(
+                [
+                    str(source),
+                    "--game-lang",
+                    "en",
+                    "--output-dir",
+                    str(output_dir),
+                    "--jobs",
+                    "1",
+                    "-y",
+                ]
+            )
+            detection = EventDetection(60.0, 30.0, "paddle-own-kill-text", "ocr", target="own-kill")
+            code, _trim_clip, _concat_clips = self._run_with_mocked_video_pipeline(args, detection)
+
+            self.assertEqual(code, 0)
+            self.assertFalse((output_dir / "001_old.mp4").exists())
+            self.assertFalse((output_dir / "clips" / "001_old.mp4").exists())
+            self.assertTrue((output_dir / "clips" / "001_own-kill_source.mp4").is_file())
 
     def test_progress_line_is_machine_readable_and_path_free(self):
         self.assertEqual(
