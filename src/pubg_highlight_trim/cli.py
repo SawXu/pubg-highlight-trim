@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import platform
+import sys
+import traceback
 from pathlib import Path
 
 from . import __version__
@@ -136,4 +138,10 @@ def main(argv: list[str] | None = None) -> int:
     if platform.system() != "Windows":
         raise SystemExit("pubg-highlight-trim currently supports Windows only.")
     args = build_parser().parse_args(argv)
-    return run(args)
+    try:
+        return run(args)
+    except Exception as exc:
+        print(f"ERROR {exc}", file=sys.stderr, flush=True)
+        if args.verbose:
+            traceback.print_exc()
+        return 1

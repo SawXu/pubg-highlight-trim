@@ -77,3 +77,13 @@ def suppress_process_output(enabled: bool = True) -> Iterator[None]:
         os.dup2(saved_stderr, stderr_fd)
         os.close(saved_stdout)
         os.close(saved_stderr)
+
+
+@contextlib.contextmanager
+def suppress_python_output(enabled: bool = True) -> Iterator[None]:
+    if not enabled:
+        yield
+        return
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            yield
