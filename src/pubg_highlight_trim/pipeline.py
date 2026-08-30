@@ -26,7 +26,7 @@ from .game_languages import (
 from .models import EventDetection
 from .ocr import OcrConfig, OcrUnavailable, detect_events as detect_ocr_events, is_molotov_weapon, load_backend
 from .runtime import suppress_process_output, suppress_python_output
-from .source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files
+from .source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files, sort_source_files
 
 
 _WORKER_OCR_BACKENDS: dict[str, tuple[object, object]] = {}
@@ -156,6 +156,7 @@ def _select_input_files(
         if not directory_input:
             profiles = infer_source_file_languages(input_paths, target)
             fallback = default_game_language_profile()
+            input_paths = sort_source_files(input_paths)
             return input_paths, {path: profiles.get(path, fallback) for path in input_paths}
         input_path = input_paths[0]
         selections = iter_source_file_languages(input_path, recursive=args.recursive, target=target)
@@ -163,6 +164,7 @@ def _select_input_files(
 
     profile = get_game_language_profile(_requested_game_language(args) or DEFAULT_GAME_LANGUAGE)
     if not directory_input:
+        input_paths = sort_source_files(input_paths)
         return input_paths, {path: profile for path in input_paths}
     input_path = input_paths[0]
     files = iter_source_files(input_path, recursive=args.recursive, target=target, language=profile)

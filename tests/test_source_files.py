@@ -2,12 +2,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pubg_highlight_trim.source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files
+from pubg_highlight_trim.source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files, sort_source_files
 
 
 class SourceFilesTests(unittest.TestCase):
     def touch(self, path: Path) -> None:
         path.write_bytes(b"")
+
+    def test_sort_source_files_uses_recording_timestamp(self):
+        latest = Path("PLAYERUNKNOWN'S BATTLEGROUNDS 2026.08.30 - 22.00.00.65.淘汰.DVR.mp4")
+        earliest = Path("PLAYERUNKNOWN'S BATTLEGROUNDS 2026.08.30 - 09.00.00.65.淘汰.DVR.mp4")
+
+        self.assertEqual(sort_source_files([latest, earliest]), [earliest, latest])
 
     def test_iter_source_files_excludes_replays_and_multi_kill(self):
         with tempfile.TemporaryDirectory() as temp:
