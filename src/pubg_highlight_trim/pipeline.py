@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import contextlib
 import ctypes
 import json
 import os
@@ -24,7 +25,7 @@ from .game_languages import (
 )
 from .models import EventDetection
 from .ocr import OcrConfig, OcrUnavailable, detect_events as detect_ocr_events, is_molotov_weapon, load_backend
-from .runtime import suppress_process_output
+from .runtime import suppress_process_output, suppress_python_output
 from .source_files import infer_source_file_languages, iter_source_file_languages, iter_source_files
 
 
@@ -582,19 +583,26 @@ def _scan_source_worker(
     language_code: str,
     candidate_times: list[float],
     config: OcrConfig,
+    verbose: bool = False,
 ) -> tuple[float, float, list[EventDetection]]:
     language = get_game_language_profile(language_code)
-    suppress_worker_output = not getattr(sys, "frozen", False)
+    # Frozen workers cannot safely redirect inherited descriptors, but Python
+    # diagnostics can still be hidden without changing the process handles.
+    suppress_worker_output = not verbose and not getattr(sys, "frozen", False)
+    def python_output_context() -> contextlib.AbstractContextManager[None]:
+        if not verbose and getattr(sys, "frozen", False):
+            return suppress_python_output()
+        return contextlib.nullcontext()
     backend = _WORKER_OCR_BACKENDS.get(language.paddle_lang)
     if backend is None:
-        with suppress_process_output(suppress_worker_output):
-            backend = load_backend(language)
+        with suppress_process_output(suppress_worker_output), python_output_context():
+            backend = load_backend(language, verbose=verbose)
         _WORKER_OCR_BACKENDS[language.paddle_lang] = backend
     cv2_module, ocr_engine = backend
     probe_started = time.time()
     duration = duration_sec(src, ffprobe)
     probe_seconds = time.time() - probe_started
-    with suppress_process_output(suppress_worker_output):
+    with suppress_process_output(suppress_worker_output), python_output_context():
         detections = detect_ocr_events(src, cv2_module, ocr_engine, duration, candidate_times, config)
     return duration, probe_seconds, detections
 
@@ -620,7 +628,7 @@ def run(args: SimpleNamespace) -> int:
     no_merge = _effective_no_merge(args, single_file)
     setup_seconds = time.time() - setup_started
     verbose = getattr(args, "verbose", False)
-    if verbose or args.profile:
+    if verbose:
         print(f"windows_only=true", flush=True)
         print(f"sources={len(files)}", flush=True)
         print("detector=ocr", flush=True)
@@ -641,7 +649,7 @@ def run(args: SimpleNamespace) -> int:
     candidate_csv = _candidate_csv_path(args, input_path, base_folder)
     candidates = read_candidate_csv(candidate_csv)
     no_full_scan = _use_fast_scan(args, candidate_csv)
-    if verbose or args.profile:
+    if verbose:
         print(f"scan_mode={getattr(args, 'scan_mode', 'auto')}", flush=True)
         print(f"full_scan={str(not no_full_scan).lower()}", flush=True)
         print(f"candidate_csv={candidate_csv or ''}", flush=True)
@@ -706,6 +714,7 @@ def run(args: SimpleNamespace) -> int:
                     file_profiles[src].code,
                     candidates.get(src.name, []),
                     _ocr_config_for_source(ocr_config_for(file_profiles[src]), src, file_profiles[src]),
+                    verbose,
                 ): src
                 for src in files
             }
