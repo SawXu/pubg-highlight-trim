@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 import time
+import uuid
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
@@ -14,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .ffmpeg_tools import concat_clips, duration_sec, find_ffmpeg_pair, trim_clip
+from .cache import cache_key, load_detection_cache, save_detection_cache
 from .game_languages import (
     AUTO_GAME_LANGUAGE,
     DEFAULT_GAME_LANGUAGE,
@@ -79,6 +81,10 @@ def _discover_candidate_csv(input_path: Path, base_folder: Path) -> Path | None:
         if not root.exists():
             continue
         candidates.extend(path for path in root.glob("fullscan_*/candidate_events.csv") if path.is_file())
+        candidates.extend(path for path in root.glob("*/candidate_events.csv") if path.is_file())
+        direct = root / "candidate_events.csv"
+        if direct.is_file():
+            candidates.append(direct)
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime)
@@ -265,6 +271,16 @@ def _blank_record(idx: int, src: Path, dur: float, status: str, method: str, det
         "OcrCoarseFrames": "0",
         "OcrRefineFrames": "0",
         "OcrGateSkippedFrames": "0",
+        "OcrGateReason": "",
+        "OcrRequests": "0",
+        "OcrSuccesses": "0",
+        "OcrCacheHits": "0",
+        "OcrSkipped": "0",
+        "RefineBudgetUsed": "0",
+        "AssistBudgetUsed": "0",
+        "TerminationReason": "",
+        "RefineOcrSeconds": "0.000",
+        "AssistOcrSeconds": "0.000",
         "ProbeSeconds": "0.000",
         "TrimSeconds": "0.000",
         "TotalSeconds": "0.000",
@@ -313,6 +329,16 @@ def _record_detection(
         "OcrCoarseFrames": str(detection.ocr_coarse_frames),
         "OcrRefineFrames": str(detection.ocr_refine_frames),
         "OcrGateSkippedFrames": str(detection.ocr_gate_skipped_frames),
+        "OcrGateReason": detection.gate_reason,
+        "OcrRequests": str(detection.ocr_requests),
+        "OcrSuccesses": str(detection.ocr_successes),
+        "OcrCacheHits": str(detection.ocr_cache_hits),
+        "OcrSkipped": str(detection.ocr_skipped),
+        "RefineBudgetUsed": str(detection.refine_budget_used),
+        "AssistBudgetUsed": str(detection.assist_budget_used),
+        "TerminationReason": detection.termination_reason,
+        "RefineOcrSeconds": f"{detection.refine_ocr_seconds:.3f}",
+        "AssistOcrSeconds": f"{detection.assist_ocr_seconds:.3f}",
         "ProbeSeconds": f"{probe_seconds:.3f}",
         "TrimSeconds": f"{trim_seconds:.3f}",
         "TotalSeconds": f"{total_seconds:.3f}",
@@ -350,12 +376,107 @@ def _record_skip(
             "OcrCoarseFrames": str(detection.ocr_coarse_frames),
             "OcrRefineFrames": str(detection.ocr_refine_frames),
             "OcrGateSkippedFrames": str(detection.ocr_gate_skipped_frames),
+            "OcrGateReason": detection.gate_reason,
+            "OcrRequests": str(detection.ocr_requests),
+            "OcrSuccesses": str(detection.ocr_successes),
+            "OcrCacheHits": str(detection.ocr_cache_hits),
+            "OcrSkipped": str(detection.ocr_skipped),
+            "RefineBudgetUsed": str(detection.refine_budget_used),
+            "AssistBudgetUsed": str(detection.assist_budget_used),
+            "TerminationReason": detection.termination_reason,
+            "RefineOcrSeconds": f"{detection.refine_ocr_seconds:.3f}",
+            "AssistOcrSeconds": f"{detection.assist_ocr_seconds:.3f}",
             "ProbeSeconds": f"{probe_seconds:.3f}",
             "TrimSeconds": f"{trim_seconds:.3f}",
             "TotalSeconds": f"{total_seconds:.3f}",
         }
     )
     return row
+
+
+CANDIDATE_CSV_COLUMNS = [
+    "SchemaVersion",
+    "RunId",
+    "Name",
+    "Status",
+    "Target",
+    "StartSec",
+    "EndSec",
+    "EventSec",
+    "EventSecs",
+    "Score",
+    "GateStatus",
+    "GateReason",
+    "SamplingDensity",
+    "SampledFrames",
+    "OcrRequests",
+    "OcrSuccesses",
+    "OcrSkipped",
+    "OcrCacheHits",
+    "OcrCoarseFrames",
+    "OcrRefineFrames",
+    "RefineBudgetUsed",
+    "AssistBudgetUsed",
+    "RefineOcrSeconds",
+    "AssistOcrSeconds",
+    "CacheStatus",
+    "TerminationReason",
+    "Method",
+    "Detector",
+]
+
+
+def _candidate_row(run_id: str, record: dict[str, str], cache_status: str = "miss") -> dict[str, str]:
+    event_sec = record.get("EventSec", "")
+    score = (record.get("PaddleScores", "").split(";", 1)[0]).strip()
+    coarse = int(record.get("OcrCoarseFrames", "0") or 0)
+    refine = int(record.get("OcrRefineFrames", "0") or 0)
+    density = "none" if coarse + refine == 0 else ("dense" if refine else "coarse")
+    gate_reason = record.get("OcrGateReason", "")
+    gate_status = "disabled" if gate_reason == "disabled" else (
+        "skipped" if record.get("OcrGateSkippedFrames", "0") not in {"", "0"} else "passed"
+    )
+    row = {
+        "SchemaVersion": "1",
+        "RunId": run_id,
+        "Name": record.get("Name", ""),
+        "Status": record.get("Status", ""),
+        "Target": record.get("Target", ""),
+        "StartSec": record.get("KeepStartSec", ""),
+        "EndSec": record.get("KeepEndSec", ""),
+        "EventSec": event_sec,
+        "EventSecs": record.get("EventSecs", ""),
+        "Score": score,
+        "GateStatus": gate_status,
+        "GateReason": gate_reason,
+        "SamplingDensity": density,
+        "SampledFrames": record.get("SampledFrames", "0"),
+        "OcrRequests": record.get("OcrRequests", "0"),
+        "OcrSuccesses": record.get("OcrSuccesses", "0"),
+        "OcrSkipped": record.get("OcrSkipped", "0"),
+        "OcrCacheHits": record.get("OcrCacheHits", "0"),
+        "OcrCoarseFrames": record.get("OcrCoarseFrames", "0"),
+        "OcrRefineFrames": record.get("OcrRefineFrames", "0"),
+        "RefineBudgetUsed": record.get("RefineBudgetUsed", "0"),
+        "AssistBudgetUsed": record.get("AssistBudgetUsed", "0"),
+        "RefineOcrSeconds": record.get("RefineOcrSeconds", "0.000"),
+        "AssistOcrSeconds": record.get("AssistOcrSeconds", "0.000"),
+        "CacheStatus": cache_status,
+        "TerminationReason": record.get("TerminationReason", ""),
+        "Method": record.get("Method", ""),
+        "Detector": record.get("Detector", ""),
+    }
+    return row
+
+
+def _write_candidate_csv(path: Path, run_id: str, records: list[dict[str, str]], cache_status: dict[str, str] | None = None) -> None:
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CANDIDATE_CSV_COLUMNS)
+        writer.writeheader()
+        for record in records:
+            if not record.get("EventSec"):
+                continue
+            writer.writerow(_candidate_row(run_id, record, (cache_status or {}).get(record.get("Name", ""), "miss")))
 
 
 def _min_event_sec(args: SimpleNamespace) -> float:
@@ -458,6 +579,11 @@ def _profile_clip(
         f"coarse={detection.ocr_coarse_frames} "
         f"refine={detection.ocr_refine_frames} "
         f"gate_skipped={detection.ocr_gate_skipped_frames} "
+        f"ocr_requests={detection.ocr_requests} "
+        f"ocr_successes={detection.ocr_successes} "
+        f"ocr_cache_hits={detection.ocr_cache_hits} "
+        f"ocr_skipped={detection.ocr_skipped} "
+        f"termination={detection.termination_reason or '-'} "
         f"trim={trim_seconds:.3f}s "
         f"total={total_seconds:.3f}s | {src.name}",
         flush=True,
@@ -498,6 +624,16 @@ def _merge_detection_group(group: list[EventDetection]) -> EventDetection:
         max((_detection_before(d) for d in group), default=0.0),
         max((_detection_after(d) for d in group), default=0.0),
         last.ocr_gate_skipped_frames,
+        last.ocr_requests,
+        last.ocr_successes,
+        last.ocr_cache_hits,
+        last.ocr_skipped,
+        last.refine_budget_used,
+        last.assist_budget_used,
+        last.termination_reason,
+        last.gate_reason,
+        last.refine_ocr_seconds,
+        last.assist_ocr_seconds,
     )
 
 
@@ -604,6 +740,7 @@ def _scan_source_worker(
 
 def run(args: SimpleNamespace) -> int:
     run_started = time.time()
+    run_id = uuid.uuid4().hex
     setup_started = time.time()
     input_paths, directory_input, single_file, base_folder = _validate_inputs(args)
     input_path = input_paths[0]
@@ -624,6 +761,9 @@ def run(args: SimpleNamespace) -> int:
     no_merge = _effective_no_merge(args, single_file)
     setup_seconds = time.time() - setup_started
     verbose = getattr(args, "verbose", False)
+    fast_path = bool(getattr(args, "fast_path", False)) and not bool(getattr(args, "no_fast_path", False))
+    requested_cache_dir = getattr(args, "cache_dir", None)
+    cache_dir = Path(requested_cache_dir) if requested_cache_dir else (base_folder / ".pubg_highlight_trim_cache" if fast_path else None)
     if verbose:
         print(f"windows_only=true", flush=True)
         print(f"sources={len(files)}", flush=True)
@@ -640,6 +780,12 @@ def run(args: SimpleNamespace) -> int:
         requested_jobs = getattr(args, "jobs", None)
         effective_jobs, automatic_jobs = _effective_jobs(requested_jobs, len(files))
         print(f"jobs={effective_jobs}{' (auto)' if automatic_jobs else ''}", flush=True)
+        print(f"fast_path={str(fast_path).lower()}", flush=True)
+        print(
+            f"brightness_gate_mode={getattr(args, 'brightness_gate_mode', None) or ('light' if fast_path else 'full')}",
+            flush=True,
+        )
+        print(f"cache_dir={cache_dir or ''}", flush=True)
     if args.profile:
         print(f"profile=true setup={setup_seconds:.3f}s", flush=True)
     candidate_csv = _candidate_csv_path(args, input_path, base_folder)
@@ -672,6 +818,11 @@ def run(args: SimpleNamespace) -> int:
         return backend
 
     def ocr_config_for(profile: GameLanguageProfile) -> OcrConfig:
+        sampling_mode = "adaptive" if fast_path else (
+            "fixed" if bool(getattr(args, "no_fast_path", False)) else getattr(args, "sampling_mode", "fixed")
+        )
+        gate_mode = getattr(args, "brightness_gate_mode", None) or ("light" if fast_path else "full")
+        brightness_gate = not getattr(args, "no_brightness_gate", False) and gate_mode != "none"
         return OcrConfig(
             target=args.target,
             language=profile,
@@ -688,7 +839,17 @@ def run(args: SimpleNamespace) -> int:
             no_full_scan=no_full_scan,
             roi=args.roi,
             ocr_width=args.ocr_width,
-            brightness_gate=not getattr(args, "no_brightness_gate", False),
+            brightness_gate=brightness_gate,
+            brightness_gate_mode=gate_mode,
+            sampling_mode=sampling_mode,
+            adaptive_step=getattr(args, "adaptive_step", 0.5),
+            adaptive_window=getattr(args, "adaptive_window", 2.0),
+            ocr_max_calls=getattr(args, "ocr_max_calls", None),
+            ocr_min_interval=getattr(args, "ocr_min_interval", 0.0),
+            refine_max_frames=getattr(args, "refine_max_frames", None),
+            assist_max_frames=getattr(args, "assist_max_frames", None),
+            refine_max_seconds=getattr(args, "refine_max_seconds", None),
+            assist_max_seconds=getattr(args, "assist_max_seconds", None),
         )
 
     records: list[dict[str, str]] = []
@@ -696,10 +857,38 @@ def run(args: SimpleNamespace) -> int:
     methods: Counter[str] = Counter()
     detectors: Counter[str] = Counter()
     encoders: Counter[str] = Counter()
+    source_configs = {
+        src: _ocr_config_for_source(ocr_config_for(file_profiles[src]), src, file_profiles[src]) for src in files
+    }
+    cache_enabled = cache_dir is not None and not bool(getattr(args, "no_fast_path", False))
+    cache_status: dict[str, str] = {}
+    cache_keys: dict[Path, str] = {}
+    cache_hit_count = 0
+    cache_miss_count = 0
+    cache_read_seconds = 0.0
+    cache_write_seconds = 0.0
     min_event_sec = _min_event_sec(args)
     jobs, _ = _effective_jobs(getattr(args, "jobs", None), len(files))
     print(_progress_line("scan", 0, len(files), jobs), flush=True)
+    scan_started = time.time()
     parallel_results: dict[Path, tuple[float, float, list[EventDetection]]] = {}
+    uncached_files: list[Path] = []
+    for src in files:
+        if cache_enabled:
+            key = cache_key(src, source_configs[src], candidates.get(src.name, []))
+            cache_keys[src] = key
+            cache_read_started = time.time()
+            cached_detections = load_detection_cache(cache_dir, key)
+            cache_read_seconds += time.time() - cache_read_started
+            if cached_detections is not None:
+                duration = cached_detections[0].duration_sec if cached_detections else duration_sec(src, ffprobe)
+                parallel_results[src] = (duration, 0.0, cached_detections)
+                cache_status[src.name] = "hit"
+                cache_hit_count += 1
+                continue
+            cache_miss_count += 1
+        cache_status[src.name] = "miss" if cache_enabled else "disabled"
+        uncached_files.append(src)
     if jobs > 1:
         with ProcessPoolExecutor(max_workers=jobs) as executor:
             futures = {
@@ -709,33 +898,47 @@ def run(args: SimpleNamespace) -> int:
                     ffprobe,
                     file_profiles[src].code,
                     candidates.get(src.name, []),
-                    _ocr_config_for_source(ocr_config_for(file_profiles[src]), src, file_profiles[src]),
+                    source_configs[src],
                     verbose,
                 ): src
-                for src in files
+                for src in uncached_files
             }
-            for completed, future in enumerate(as_completed(futures), 1):
+            completed = len(files) - len(uncached_files)
+            for progress in range(1, completed + 1):
+                print(_progress_line("scan", progress, len(files), jobs), flush=True)
+            for future_index, future in enumerate(as_completed(futures), 1):
                 src = futures[future]
                 parallel_results[src] = future.result()
-                print(_progress_line("scan", completed, len(files), jobs), flush=True)
+                if cache_enabled:
+                    cache_write_started = time.time()
+                    save_detection_cache(cache_dir, cache_keys[src], parallel_results[src][2])
+                    cache_write_seconds += time.time() - cache_write_started
+                print(_progress_line("scan", completed + future_index, len(files), jobs), flush=True)
 
     for idx, src in enumerate(files, 1):
         language_profile = file_profiles[src]
         ocr_config = ocr_config_for(language_profile)
         clip_started = time.time()
         detect_started = time.time()
-        source_ocr_config = _ocr_config_for_source(ocr_config, src, language_profile)
+        source_ocr_config = source_configs[src]
         if source_ocr_config.no_full_scan != ocr_config.no_full_scan:
             print(f"[{idx:02d}/{len(files)}] full_scan=true multi-kill-source | {src.name}", flush=True)
         if jobs > 1:
             dur, probe_seconds, detections = parallel_results[src]
         else:
-            cv2_module, ocr_engine = backend_for(language_profile)
-            probe_started = time.time()
-            dur = duration_sec(src, ffprobe)
-            probe_seconds = time.time() - probe_started
-            with suppress_process_output(not verbose):
-                detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
+            if src in parallel_results:
+                dur, probe_seconds, detections = parallel_results[src]
+            else:
+                cv2_module, ocr_engine = backend_for(language_profile)
+                probe_started = time.time()
+                dur = duration_sec(src, ffprobe)
+                probe_seconds = time.time() - probe_started
+                with suppress_process_output(not verbose):
+                    detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
+                if cache_enabled:
+                    cache_write_started = time.time()
+                    save_detection_cache(cache_dir, cache_keys[src], detections)
+                    cache_write_seconds += time.time() - cache_write_started
         if len(detections) == 1 and detections[0].event_sec is None:
             detection = detections[0]
             if detection.detect_seconds == 0.0:
@@ -812,15 +1015,21 @@ def run(args: SimpleNamespace) -> int:
                 )
             )
 
+    scan_seconds = time.time() - scan_started
     csv_path = outdir / "检测与裁剪记录.csv"
+    record_fields = list(_blank_record(0, Path(""), 0.0, "", "", "").keys())
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(records[0].keys()))
+        writer = csv.DictWriter(handle, fieldnames=record_fields)
         writer.writeheader()
         writer.writerows(records)
+
+    candidate_output_csv = outdir / "candidate_events.csv"
+    _write_candidate_csv(candidate_output_csv, run_id, records, cache_status)
 
     concat_list = None
     merge_duration = 0.0
     merge_size = 0.0
+    trim_total_seconds = sum(float(row.get("TrimSeconds", "0") or 0.0) for row in records)
     if clips and not no_merge and not args.dry_run:
         merge_started = time.time()
         concat_list = concat_clips(clips, merged, ffmpeg)
@@ -830,6 +1039,72 @@ def run(args: SimpleNamespace) -> int:
             print(f"PROFILE merge={time.time() - merge_started:.3f}s clips={len(clips)}", flush=True)
 
     included_count = sum(1 for row in records if row["Status"] == "included")
+    profile_total_sec = time.time() - run_started
+
+    def source_total(field: str) -> int:
+        totals: dict[str, int] = {}
+        for row in records:
+            name = row.get("Name", "")
+            value = int(row.get(field, "0") or 0)
+            totals[name] = max(totals.get(name, 0), value)
+        return sum(totals.values())
+
+    def source_total_seconds(field: str) -> float:
+        totals: dict[str, float] = {}
+        for row in records:
+            name = row.get("Name", "")
+            value = float(row.get(field, "0") or 0.0)
+            totals[name] = max(totals.get(name, 0.0), value)
+        return sum(totals.values())
+
+    profile = {
+        "schema_version": "1",
+        "run_id": run_id,
+        "stages": {
+            "setup": round(setup_seconds, 3),
+            "scan": round(scan_seconds, 3),
+            "decode_probe": round(source_total_seconds("ProbeSeconds"), 3),
+            "roi_gate": round(source_total_seconds("OcrFrameSeconds"), 3),
+            "sampling": round(scan_seconds, 3),
+            "candidate_generation": round(scan_seconds, 3),
+            "ocr": round(source_total_seconds("OcrSeconds"), 3),
+            "refine": round(source_total_seconds("RefineOcrSeconds"), 3),
+            "assist": round(source_total_seconds("AssistOcrSeconds"), 3),
+            "cache_read": round(cache_read_seconds, 3),
+            "cache_write": round(cache_write_seconds, 3),
+            "trim": round(trim_total_seconds, 3),
+            "merge": round(merge_duration, 3),
+            "total": round(profile_total_sec, 3),
+        },
+        "counts": {
+            "sources": len(files),
+            "candidates": sum(1 for row in records if row.get("EventSec")),
+            "outputs": len(clips),
+            "ocr_requests": source_total("OcrRequests"),
+            "ocr_successes": source_total("OcrSuccesses"),
+            "ocr_skipped": source_total("OcrSkipped"),
+            "ocr_cache_hits": source_total("OcrCacheHits"),
+            "refine_calls": source_total("OcrRefineFrames"),
+            "assist_calls": source_total("AssistBudgetUsed"),
+        },
+        "cache": {
+            "enabled": cache_enabled,
+            "directory": "" if cache_dir is None else str(cache_dir),
+            "hits": cache_hit_count,
+            "misses": cache_miss_count,
+            "hit_rate": round(cache_hit_count / (cache_hit_count + cache_miss_count), 3)
+            if cache_hit_count + cache_miss_count
+            else 0.0,
+        },
+        "candidate_csv": str(candidate_output_csv),
+        "termination_reasons": dict(
+            Counter(row.get("TerminationReason", "") for row in records if row.get("TerminationReason"))
+        ),
+    }
+    profile_path = outdir / "profile.json"
+    profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+    if args.profile:
+        print(f"PROFILE run_id={run_id} scan={scan_seconds:.3f}s outputs={len(clips)} cache_hits={cache_hit_count}", flush=True)
     summary = {
         "source_count": len(files),
         "included_count": included_count,
@@ -847,6 +1122,12 @@ def run(args: SimpleNamespace) -> int:
         "scan_mode": getattr(args, "scan_mode", "auto"),
         "full_scan": not no_full_scan,
         "candidate_csv": "" if candidate_csv is None else str(candidate_csv),
+        "candidate_events_csv": str(candidate_output_csv),
+        "profile": str(profile_path),
+        "run_id": run_id,
+        "cache_enabled": cache_enabled,
+        "cache_hits": cache_hit_count,
+        "cache_misses": cache_miss_count,
         "concat_list": "" if concat_list is None else str(concat_list),
         "csv": str(csv_path),
         "merge_duration_sec": round(merge_duration, 3),
@@ -854,7 +1135,7 @@ def run(args: SimpleNamespace) -> int:
         "methods": dict(methods),
         "detectors": dict(detectors),
         "encoders": dict(encoders),
-        "profile_total_sec": round(time.time() - run_started, 3),
+        "profile_total_sec": round(profile_total_sec, 3),
     }
     summary_path = outdir / "summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

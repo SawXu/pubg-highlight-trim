@@ -26,3 +26,13 @@ class EventDetection:
     clip_before_sec: float = 0.0
     clip_after_sec: float = 0.0
     ocr_gate_skipped_frames: int = 0
+    ocr_requests: int = 0
+    ocr_successes: int = 0
+    ocr_cache_hits: int = 0
+    ocr_skipped: int = 0
+    refine_budget_used: int = 0
+    assist_budget_used: int = 0
+    termination_reason: str = ""
+    gate_reason: str = ""
+    refine_ocr_seconds: float = 0.0
+    assist_ocr_seconds: float = 0.0
