@@ -156,14 +156,77 @@ python -m unittest discover -s tests -v
 
 ### 本地构建 Windows release
 
+#### 构建环境
+
+本地构建需要 Windows x64、可联网的 PowerShell，以及以下工具：
+
+- 推荐使用 64 位 Python 3.12.x。`pyproject.toml` 固定了 `paddleocr==3.7.0` 和 `paddlepaddle==3.2.2`；目前 `paddlepaddle==3.2.2` 没有适用于 Windows 的 Python 3.14 wheel，因此 Python 3.14 无法安装本项目的 OCR 构建依赖。
+- 构建 UI 需要 .NET 10 SDK（项目目标框架为 `net10.0-windows`）。
+- 构建脚本会用 `mt.exe` 检查最终 UI 可执行文件的 DPI manifest。请安装 Windows 10/11 SDK，并将包含 `mt.exe` 的目录加入 `PATH`；该目录通常类似 `C:\Program Files (x86)\Windows Kits\10\bin\<版本>\x64`。也可以从 Visual Studio Developer PowerShell（已配置 Windows SDK 的环境）运行构建。可先用 `Get-Command mt.exe` 验证。
+
+不要使用系统 Python 3.14。先在仓库根目录创建并启用 Python 3.12 虚拟环境：
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
-python -m pip install -e ".[ocr,build]"
-powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 -SkipCliBuild
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python --version  # 应显示 Python 3.12.x
+python -m pip install --upgrade pip
 ```
 
-release zip 包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg/ffprobe` 以及 OCR 检测所需的 PaddleOCR 模型。zip 用户无需安装 Python。
+如果 PowerShell 禁止执行激活脚本，也可以直接使用 `.\.venv\Scripts\python.exe` 执行下面所有 Python 命令。
+
+#### 安装 Python 构建依赖
+
+在已启用 `.venv` 的终端中安装 `pyproject.toml` 的 `[ocr,build]` 可选依赖：
+
+```powershell
+python -m pip install -e ".[ocr,build]"
+```
+
+该 extra 会安装以下构建所需的包（以及它们的传递依赖）：
+
+- `opencv-contrib-python>=4.9`
+- `paddleocr==3.7.0`
+- `paddlepaddle==3.2.2`
+- `pyinstaller>=6.10`
+
+#### 构建 CLI bundle
+
+推荐先单独构建 CLI。`build_windows.ps1` 在缺少 `vendor\ffmpeg\ffmpeg.exe` 或 `ffprobe.exe` 时自动下载 FFmpeg，并运行 `prefetch_ocr_models.py` 将 PaddleOCR 模型缓存到 `vendor\paddlex_cache`；模型和 FFmpeg 都会被复制进发布 bundle。
+
+```powershell
+# 可选：提前下载 FFmpeg；省略时 build_windows.ps1 会自动下载
+powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
+
+# 可选：提前下载/校验 PaddleOCR 模型；构建脚本也会自动执行
+python .\scripts\prefetch_ocr_models.py --cache-dir vendor\paddlex_cache
+
+# 依赖已由上一步安装，因此跳过脚本内的重复安装
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 `
+    -Python .\.venv\Scripts\python.exe -SkipInstall
+```
+
+CLI 构建会清理旧的 `build` / `dist` 目录，运行 PyInstaller 并生成：
+
+- `dist\pubg-highlight-trim\pubg-highlight-trim.exe`：可直接运行的 CLI bundle。
+- `dist\pubg-highlight-trim-windows-x64.zip`：包含 CLI、FFmpeg/FFprobe、PaddleOCR 模型和许可文件的发布包。该 zip 的用户无需安装 Python。
+
+#### 构建 GUI EXE
+
+CLI bundle 存在后，运行下面的命令构建自包含 WPF GUI。`-SkipCliBuild` 表示复用已有的 `dist\pubg-highlight-trim`；如果该目录中没有 CLI exe，脚本会报错。省略此参数则会先重新构建 CLI。
+
+```powershell
+# 复用刚刚生成的 CLI bundle（推荐）
+powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 -SkipCliBuild
+
+# 或者一条命令同时重新构建 CLI 和 GUI
+powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1
+```
+
+GUI 构建会执行 `dotnet publish`、检查 `mt.exe` 生成的 DPI manifest，并把 CLI bundle 复制到 UI 包的 `cli` 子目录。产物为：
+
+- `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`：自包含 GUI EXE。
+- `dist\pubg-highlight-trim-ui-windows-x64.zip`：GUI、并排的 `cli` bundle、FFmpeg/FFprobe、PaddleOCR 模型和文档的完整发布包。用户无需安装 .NET、Python 或其他运行时。
 
 UI 测试单独运行：
 
