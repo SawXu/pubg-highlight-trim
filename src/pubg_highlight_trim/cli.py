@@ -140,6 +140,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return run(args)
+    except SystemExit as exc:
+        if isinstance(exc.code, int):
+            return exc.code
+        print(f"ERROR {exc.code}", file=sys.stderr, flush=True)
+        return 1
     except Exception as exc:
         print(f"ERROR {exc}", file=sys.stderr, flush=True)
         if args.verbose:

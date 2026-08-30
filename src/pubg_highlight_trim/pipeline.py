@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import contextlib
 import ctypes
 import json
 import os
@@ -588,23 +587,17 @@ def _scan_source_worker(
     verbose: bool = False,
 ) -> tuple[float, float, list[EventDetection]]:
     language = get_game_language_profile(language_code)
-    # Frozen workers cannot safely redirect inherited descriptors, but Python
-    # diagnostics can still be hidden without changing the process handles.
-    suppress_worker_output = not verbose and not getattr(sys, "frozen", False)
-    def python_output_context() -> contextlib.AbstractContextManager[None]:
-        if not verbose and getattr(sys, "frozen", False):
-            return suppress_python_output()
-        return contextlib.nullcontext()
+    suppress_worker_output = not verbose
     backend = _WORKER_OCR_BACKENDS.get(language.paddle_lang)
     if backend is None:
-        with suppress_process_output(suppress_worker_output), python_output_context():
+        with suppress_process_output(suppress_worker_output):
             backend = load_backend(language, verbose=verbose)
         _WORKER_OCR_BACKENDS[language.paddle_lang] = backend
     cv2_module, ocr_engine = backend
     probe_started = time.time()
     duration = duration_sec(src, ffprobe)
     probe_seconds = time.time() - probe_started
-    with suppress_process_output(suppress_worker_output), python_output_context():
+    with suppress_process_output(suppress_worker_output):
         detections = detect_ocr_events(src, cv2_module, ocr_engine, duration, candidate_times, config)
     return duration, probe_seconds, detections
 
