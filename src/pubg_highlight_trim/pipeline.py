@@ -620,6 +620,7 @@ def run(args: SimpleNamespace) -> int:
         )
 
     outdir, merged = _prepare_output_paths(args, input_path, files, base_folder, single_file)
+    clips_dir = outdir / "clips"
     no_merge = _effective_no_merge(args, single_file)
     setup_seconds = time.time() - setup_started
     verbose = getattr(args, "verbose", False)
@@ -778,7 +779,8 @@ def run(args: SimpleNamespace) -> int:
             encoder = ""
             trim_seconds = 0.0
             if not args.dry_run:
-                output_path = unique_path(outdir / f"{len(clips) + 1:03d}_{_clip_target_prefix(detection)}_{src.name}")
+                clips_dir.mkdir(parents=True, exist_ok=True)
+                output_path = unique_path(clips_dir / f"{len(clips) + 1:03d}_{_clip_target_prefix(detection)}_{src.name}")
                 trim_started = time.time()
                 encoder = trim_clip(src, output_path, start, end - start, ffmpeg)
                 trim_seconds = time.time() - trim_started

@@ -77,13 +77,13 @@ pubg-highlight-trim "." --scan-only --jobs 1  # 关闭并行 worker
 | `--files FILE [FILE ...]` | 无 | 按 PUBG 文件名中的录制时间从早到晚处理这些 mp4 文件 |
 | `--target` | `both` | 检测事件：`self-death`（敌人击倒/淘汰你）、`own-kill`（你击倒/淘汰敌人）、`both`（两者） |
 | `--game-lang` | `auto` | 游戏语言配置；`auto` 从 NVIDIA Highlight 文件名自动识别。可选：`auto`、`zh-Hans`、`zh-Hant`、`en` |
-| `-o`, `--output-dir` | 自动 | 单片段裁剪输出目录 |
+| `-o`, `--output-dir` | 自动 | 本次运行的 output 根目录；逐段 Trim 视频写入其下的 `clips/` 子目录 |
 | `--before` | `5.0` | 事件前保留秒数 |
 | `--after` | `1.0` | 事件后保留秒数 |
 | `--min-event-sec` | `2.0` | 跳过早于该秒数的事件；`0` 保留开场事件 |
 | `--molotov-elim-before` | `10.0` | 燃烧瓶 / 火瓶淘汰事件前保留秒数；`0` 禁用 |
 | `--recursive` | 关 | 同时搜索子目录 |
-| `--dry-run` / `--scan-only` | 关 | 仅检测并写 CSV / 摘要，不裁剪、不合并 |
+| `--dry-run` / `--scan-only` | 关 | 仅检测并写 CSV / 摘要，不生成 Trim 或 Merge 视频 |
 | `--merge [MERGED_MP4]` | 文件夹默认开 | 生成合并 mp4；可指定输出路径 |
 | `--no-merge` | 单文件默认关 | 不生成合并 mp4 |
 | `-y`, `--overwrite` | 关 | 覆盖输出目录 / 合并文件，而非生成唯一名称 |
@@ -113,8 +113,23 @@ OCR 选项（进阶）：
 ### 输出行为
 
 - 单文件输入默认不生成合并 mp4；文件夹或多文件输入默认合并所有片段。
-- 不带值使用 `--merge` 强制合并，`--merge ".\merged.mp4"` 指定合并输出路径，`--no-merge` 仅保留单片段。
+- 所有逐段 Trim 视频都写入 `<output>/clips/`；默认 Merge 视频写入 `<output>/` 根目录，因此根目录不会混放逐段视频。
+- 不带值使用 `--merge` 强制合并，Merge 默认写入 output 根目录；`--merge ".\merged.mp4"` 等显式路径继续遵循用户指定的位置，`--no-merge` 仅保留 `clips/` 中的逐段视频。
+- 使用 `--dry-run` / `--scan-only` 时只生成扫描记录和摘要，不生成 Trim 或 Merge 视频，也不要求创建空的 `clips/` 目录。
 - 使用 `--profile` 打印每个片段的 ffprobe、OCR 预测、视频帧定位 / 读取、裁剪编码及总耗时。同样的耗时列也会写入 `检测与裁剪记录.csv`。
+
+默认合并输出的目录结构如下（CSV、摘要和 concat 清单等非视频文件也会保留在根目录）：
+
+```text
+pubg_highlight_trim_output/
+├── clips/
+│   ├── 001_<target>_<source>.mp4
+│   └── 002_<target>_<source>.mp4
+├── pubg_highlight_trim_merged.mp4
+├── pubg_highlight_trim_merged.concat.txt
+├── 检测与裁剪记录.csv
+└── summary.json
+```
 
 ## 检测
 
