@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import re
 import time
+from bisect import insort
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
+from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 
@@ -34,6 +36,32 @@ class OcrResult:
     seconds: float
     method: str
     frame_seconds: float = 0.0
+    cache_hit: bool = False
+    gate_reason: str = ""
+    skipped_reason: str = ""
+
+
+@dataclass
+class OcrRuntimeStats:
+    """Counters for one source scan; kept separate from immutable event data."""
+
+    ocr_requests: int = 0
+    ocr_successes: int = 0
+    ocr_cache_hits: int = 0
+    ocr_skipped: int = 0
+    gate_skipped: int = 0
+    refine_budget_used: int = 0
+    assist_budget_used: int = 0
+    refine_calls: int = 0
+    assist_calls: int = 0
+    refine_ocr_seconds: float = 0.0
+    assist_ocr_seconds: float = 0.0
+    last_gate_reason: str = ""
+    gate_reasons: list[str] = field(default_factory=list)
+    last_skip_reason: str = ""
+    last_cache_hit: bool = False
+    last_request_sec: float | None = None
+    termination_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -70,12 +98,81 @@ class OcrConfig:
     assist_step: float = 0.5
     ocr_width: int = 768
     brightness_gate: bool = False
+    brightness_gate_mode: str = "full"
     brightness_gate_roi: tuple[float, float, float, float] = (0.26, 0.635, 0.74, 0.725)
     brightness_gate_width: int = 768
+    sampling_mode: str = "fixed"
+    adaptive_step: float = 0.5
+    adaptive_window: float = 2.0
+    ocr_max_calls: int | None = None
+    ocr_min_interval: float = 0.0
+    refine_max_frames: int | None = None
+    assist_max_frames: int | None = None
+    refine_max_seconds: float | None = None
+    assist_max_seconds: float | None = None
     frame_cache: dict[tuple[str, int, tuple[float, float, float, float], int], tuple[str, str]] = field(
         default_factory=dict,
         repr=False,
     )
+    decoded_frame_cache: dict[int, Any] = field(default_factory=dict, repr=False)
+    decoded_frame_cache_size: int = 8
+    runtime: OcrRuntimeStats = field(default_factory=OcrRuntimeStats, repr=False)
+
+    def __post_init__(self) -> None:
+        for name, roi in (("roi", self.roi), ("assist_roi", self.assist_roi), ("brightness_gate_roi", self.brightness_gate_roi)):
+            validate_roi(roi, name)
+        if self.brightness_gate_mode not in {"full", "light", "none"}:
+            raise ValueError("brightness_gate_mode must be full, light, or none")
+        if self.sampling_mode not in {"fixed", "adaptive"}:
+            raise ValueError("sampling_mode must be fixed or adaptive")
+        if self.scan_start < 0 or not isfinite(self.scan_start):
+            raise ValueError("scan_start must be a finite non-negative number")
+        if self.scan_end is not None and (self.scan_end <= self.scan_start or not isfinite(self.scan_end)):
+            raise ValueError("scan_end must be greater than scan_start")
+        for start, stop in self.priority_window:
+            if start < 0 or stop <= start or not isfinite(start) or not isfinite(stop):
+                raise ValueError("priority windows must satisfy 0 <= start < end")
+        for name in ("coarse_step", "candidate_step", "refine_step", "refine_search_step", "assist_step", "adaptive_step"):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        for name in ("candidate_lookback", "candidate_lookahead", "refine_before", "refine_after", "assist_after", "adaptive_window", "ocr_min_interval"):
+            value = getattr(self, name)
+            if value < 0 or not isfinite(value):
+                raise ValueError(f"{name} must be a finite non-negative number")
+        for name in ("ocr_max_calls", "refine_max_frames", "assist_max_frames"):
+            value = getattr(self, name)
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must be non-negative or None")
+        for name in ("refine_max_seconds", "assist_max_seconds"):
+            value = getattr(self, name)
+            if value is not None and (value < 0 or not isfinite(value)):
+                raise ValueError(f"{name} must be finite and non-negative or None")
+        if self.ocr_width < 0 or self.brightness_gate_width < 0:
+            raise ValueError("OCR widths must be non-negative")
+        if self.decoded_frame_cache_size < 1:
+            raise ValueError("decoded_frame_cache_size must be positive")
+
+    def reset_runtime(self) -> None:
+        self.runtime = OcrRuntimeStats()
+
+
+def validate_roi(roi: tuple[float, float, float, float], name: str = "ROI") -> tuple[float, float, float, float]:
+    try:
+        size = len(roi)
+    except TypeError as exc:
+        raise ValueError(f"{name} must contain four values") from exc
+    if size != 4:
+        raise ValueError(f"{name} must contain four values")
+    x1, y1, x2, y2 = roi
+    try:
+        finite = all(isfinite(value) for value in roi)
+    except TypeError as exc:
+        raise ValueError(f"{name} values must be numeric") from exc
+    if not finite:
+        raise ValueError(f"{name} values must be finite")
+    if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
+        raise ValueError(f"{name} values must be ratios in ascending order, between 0 and 1")
+    return roi
 
 
 def normalize_text(text: str) -> str:
@@ -460,6 +557,24 @@ def build_text_priority_scan_times(duration: float, candidate_times: list[float]
     return [key / 1000 for key in sorted(times)]
 
 
+def build_adaptive_scan_times(duration: float, candidate_times: list[float], config: OcrConfig) -> list[float]:
+    """Build a deterministic coarse schedule plus denser candidate windows."""
+    end_limit = min(duration, config.scan_end if config.scan_end is not None else duration)
+    times: set[int] = set()
+    times.update(int(round(t * 1000)) for t in time_range(config.scan_start, end_limit, config.coarse_step))
+    for start, stop in config.priority_window:
+        lo = max(config.scan_start, 0.0, start)
+        hi = min(end_limit, stop)
+        if hi >= lo:
+            times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.adaptive_step))
+    for candidate in candidate_times:
+        lo = max(config.scan_start, 0.0, candidate - config.candidate_lookback)
+        hi = min(end_limit, candidate + config.candidate_lookahead)
+        if hi >= lo:
+            times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.adaptive_step))
+    return [key / 1000 for key in sorted(times)]
+
+
 def _crop_frame(cv2_module: Any, frame: Any, roi: tuple[float, float, float, float], ocr_width: int) -> Any:
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = roi
@@ -470,12 +585,14 @@ def _crop_frame(cv2_module: Any, frame: Any, roi: tuple[float, float, float, flo
     return crop
 
 
-def has_bright_event_text(cv2_module: Any, frame: Any, config: OcrConfig) -> bool:
+def brightness_gate_result(cv2_module: Any, frame: Any, config: OcrConfig) -> tuple[bool, str]:
+    if config.brightness_gate_mode == "none":
+        return True, "disabled"
     import numpy as np
 
     crop = _crop_frame(cv2_module, frame, config.brightness_gate_roi, 0)
     if crop.size == 0:
-        return True
+        return True, "empty-roi"
 
     gate_width = max(1, config.brightness_gate_width)
     scale = gate_width / crop.shape[1]
@@ -484,6 +601,12 @@ def has_bright_event_text(cv2_module: Any, frame: Any, config: OcrConfig) -> boo
         (gate_width, max(1, int(round(crop.shape[0] * scale)))),
         interpolation=cv2_module.INTER_AREA if scale < 1 else cv2_module.INTER_LINEAR,
     )
+    if config.brightness_gate_mode == "light":
+        gray = cv2_module.cvtColor(crop, cv2_module.COLOR_BGR2GRAY)
+        bright_pixels = int((gray >= 155).sum())
+        threshold = max(8, int(crop.shape[0] * crop.shape[1] * 0.002))
+        return (True, "light-brightness-passed") if bright_pixels >= threshold else (False, "light-low-brightness")
+
     hsv = cv2_module.cvtColor(crop, cv2_module.COLOR_BGR2HSV)
     gray = cv2_module.cvtColor(crop, cv2_module.COLOR_BGR2GRAY)
     white = cv2_module.inRange(hsv, (0, 0, 155), (179, 105, 255))
@@ -500,11 +623,11 @@ def has_bright_event_text(cv2_module: Any, frame: Any, config: OcrConfig) -> boo
     )
     grouped = ((outlined > 0) & (neighbour_count >= 3)).astype(np.uint8)
     if int(grouped.sum()) < 1450:
-        return False
+        return False, "insufficient-bright-outline"
 
     row_counts = grouped.sum(axis=1)
     if int(np.convolve(row_counts, np.ones(11, dtype=np.int32), mode="same").max()) < 1000:
-        return False
+        return False, "insufficient-horizontal-structure"
 
     closed = cv2_module.morphologyEx(
         grouped,
@@ -513,7 +636,12 @@ def has_bright_event_text(cv2_module: Any, frame: Any, config: OcrConfig) -> boo
     )
     _, _, stats, _ = cv2_module.connectedComponentsWithStats(closed, 8)
     max_height = max(3, int(crop.shape[0] * 0.6))
-    return any(3 <= height <= max_height and width >= 20 for _, _, width, height, _ in stats[1:])
+    passed = any(3 <= height <= max_height and width >= 20 for _, _, width, height, _ in stats[1:])
+    return (True, "passed") if passed else (False, "no-connected-text")
+
+
+def has_bright_event_text(cv2_module: Any, frame: Any, config: OcrConfig) -> bool:
+    return brightness_gate_result(cv2_module, frame, config)[0]
 
 
 def _predict_text(ocr: Any, crop: Any) -> tuple[str, str, float]:
@@ -544,25 +672,106 @@ def _ocr_crop_at(
     cache_namespace: str,
     apply_brightness_gate: bool = False,
 ) -> tuple[str, str, float, float, bool, bool]:
-    cache_key = (cache_namespace, int(round(max(0.0, sec) * 1000)), roi, config.ocr_width)
+    config.runtime.last_skip_reason = ""
+    config.runtime.last_gate_reason = ""
+    config.runtime.last_cache_hit = False
+    frame_key = int(round(max(0.0, sec) * 1000))
+    cache_key = (cache_namespace, frame_key, roi, config.ocr_width)
     cached = config.frame_cache.get(cache_key)
     if cached is not None:
+        config.runtime.ocr_cache_hits += 1
+        config.runtime.last_cache_hit = True
         return cached[0], cached[1], 0.0, 0.0, True, False
 
-    frame_started = time.time()
-    cap.set(cv2_module.CAP_PROP_POS_MSEC, max(0.0, sec) * 1000)
-    ok, frame = cap.read()
-    if not ok or frame is None:
-        return "", "", 0.0, time.time() - frame_started, False, False
+    if config.ocr_max_calls is not None and config.runtime.ocr_requests >= config.ocr_max_calls:
+        config.runtime.ocr_skipped += 1
+        config.runtime.last_skip_reason = "ocr-budget-exhausted"
+        config.runtime.termination_reason = "ocr-budget-exhausted"
+        return "", "", 0.0, 0.0, True, False
+    if (
+        config.ocr_min_interval > 0
+        and config.runtime.last_request_sec is not None
+        and abs(sec - config.runtime.last_request_sec) < config.ocr_min_interval - 1e-6
+    ):
+        config.runtime.ocr_skipped += 1
+        config.runtime.last_skip_reason = "ocr-min-interval"
+        return "", "", 0.0, 0.0, True, False
 
-    if apply_brightness_gate and config.brightness_gate and not has_bright_event_text(cv2_module, frame, config):
-        return "", "", 0.0, time.time() - frame_started, True, True
+    frame_started = time.time()
+    frame = config.decoded_frame_cache.get(frame_key)
+    if frame is None:
+        cap.set(cv2_module.CAP_PROP_POS_MSEC, max(0.0, sec) * 1000)
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            config.runtime.ocr_skipped += 1
+            config.runtime.last_skip_reason = "frame-read-failed"
+            return "", "", 0.0, time.time() - frame_started, False, False
+        config.decoded_frame_cache[frame_key] = frame
+        if len(config.decoded_frame_cache) > config.decoded_frame_cache_size:
+            config.decoded_frame_cache.pop(next(iter(config.decoded_frame_cache)))
+
+    if apply_brightness_gate and config.brightness_gate and config.brightness_gate_mode != "none":
+        gate_passed, gate_reason = brightness_gate_result(cv2_module, frame, config)
+        config.runtime.last_gate_reason = gate_reason
+        if gate_reason not in config.runtime.gate_reasons:
+            config.runtime.gate_reasons.append(gate_reason)
+        if not gate_passed:
+            config.runtime.ocr_skipped += 1
+            config.runtime.gate_skipped += 1
+            config.runtime.last_skip_reason = gate_reason
+            return "", "", 0.0, time.time() - frame_started, True, True
 
     crop = _crop_frame(cv2_module, frame, roi, config.ocr_width)
     frame_elapsed = time.time() - frame_started
+    config.runtime.ocr_requests += 1
+    config.runtime.last_request_sec = sec
     text, scores, elapsed = _predict_text(ocr, crop)
+    config.runtime.ocr_successes += 1
     config.frame_cache[cache_key] = (text, scores)
     return text, scores, elapsed, frame_elapsed, True, False
+
+
+def _last_ocr_result_metadata(config: OcrConfig) -> tuple[bool, str, str]:
+    return config.runtime.last_cache_hit, config.runtime.last_gate_reason, config.runtime.last_skip_reason
+
+
+def _ocr_budget_method(config: OcrConfig) -> str:
+    return config.runtime.last_skip_reason or "ocr-budget-exhausted"
+
+
+def _result_from_crop(
+    text: str,
+    scores: str,
+    elapsed: float,
+    frame_elapsed: float,
+    available: bool,
+    gate_skipped: bool,
+    config: OcrConfig,
+) -> OcrResult:
+    cache_hit, gate_reason, skip_reason = _last_ocr_result_metadata(config)
+    if skip_reason == "ocr-budget-exhausted" or skip_reason == "ocr-min-interval":
+        return OcrResult("", "", 0.0, _ocr_budget_method(config), frame_elapsed, cache_hit, gate_reason, skip_reason)
+    if not available:
+        return OcrResult("", "", 0.0, "frame-read-failed", frame_elapsed, cache_hit, gate_reason, skip_reason)
+    if gate_skipped:
+        return OcrResult("", "", 0.0, "opencv-no-bright-event-text", frame_elapsed, cache_hit, gate_reason, skip_reason)
+    return OcrResult(text, scores, elapsed, "", frame_elapsed, cache_hit, gate_reason, skip_reason)
+
+
+def _classify_ocr_result(result: OcrResult, config: OcrConfig) -> OcrResult:
+    if not result.text:
+        if not result.method:
+            result.method = "paddle-not-target-text"
+        return result
+    if config.target in {"own-kill", "both"} and has_own_kill_candidate(result.text, config.language):
+        if is_delayed_own_elim_text(result.text, config.language) and not extract_own_kill_events(result.text, profile=config.language):
+            result.method = "paddle-own-kill-delayed-elim-skipped"
+            return result
+        if is_assist_own_kill_text(result.text, config.language) and not extract_own_kill_events(result.text, profile=config.language):
+            result.method = "paddle-own-kill-assist-skipped"
+            return result
+    result.method = classify_target_text(result.text, config.target, config.language) or "paddle-not-target-text"
+    return result
 
 
 def ocr_at(
@@ -576,30 +785,18 @@ def ocr_at(
     text, scores, elapsed, frame_elapsed, available, gate_skipped = _ocr_crop_at(
         cv2_module, cap, ocr, sec, config, config.roi, "primary", apply_brightness_gate
     )
-    if not available:
-        return OcrResult("", "", 0.0, "frame-read-failed", frame_elapsed)
-    if gate_skipped:
-        return OcrResult("", "", 0.0, "opencv-no-bright-event-text", frame_elapsed)
-    if config.target in {"own-kill", "both"} and has_own_kill_candidate(text, config.language):
-        if is_delayed_own_elim_text(text, config.language) and not extract_own_kill_events(text, profile=config.language):
-            method = "paddle-own-kill-delayed-elim-skipped"
-            return OcrResult(text, scores, elapsed, method, frame_elapsed)
-        if is_assist_own_kill_text(text, config.language) and not extract_own_kill_events(text, profile=config.language):
-            method = "paddle-own-kill-assist-skipped"
-            return OcrResult(text, scores, elapsed, method, frame_elapsed)
-
-    method = classify_target_text(text, config.target, config.language) or "paddle-not-target-text"
-    return OcrResult(text, scores, elapsed, method, frame_elapsed)
+    result = _result_from_crop(text, scores, elapsed, frame_elapsed, available, gate_skipped, config)
+    return _classify_ocr_result(result, config)
 
 
 def ocr_assist_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -> OcrResult:
-    text, scores, elapsed, frame_elapsed, available, _ = _ocr_crop_at(
+    text, scores, elapsed, frame_elapsed, available, gate_skipped = _ocr_crop_at(
         cv2_module, cap, ocr, sec, config, config.assist_roi, "assist"
     )
-    if not available:
-        return OcrResult("", "", 0.0, "frame-read-failed", frame_elapsed)
-    method = "paddle-own-kill-assist-skipped" if has_assist_text(text, config.language) else "paddle-not-assist-text"
-    return OcrResult(text, scores, elapsed, method, frame_elapsed)
+    result = _result_from_crop(text, scores, elapsed, frame_elapsed, available, gate_skipped, config)
+    if result.method in {"", "paddle-not-target-text"}:
+        result.method = "paddle-own-kill-assist-skipped" if has_assist_text(text, config.language) else "paddle-not-assist-text"
+    return result
 
 
 def detect_assist_nearby(
@@ -615,9 +812,21 @@ def detect_assist_nearby(
     total_ocr_seconds = 0.0
     total_frame_seconds = 0.0
     end = min(duration, event_sec + config.assist_after)
+    assist_started = time.time()
+    assist_used = 0
     for sec in time_range(event_sec, end, config.assist_step):
+        if config.assist_max_frames is not None and assist_used >= config.assist_max_frames:
+            config.runtime.termination_reason = "assist-budget-exhausted"
+            break
+        if config.assist_max_seconds is not None and time.time() - assist_started >= config.assist_max_seconds:
+            config.runtime.termination_reason = "assist-time-budget-exhausted"
+            break
+        assist_used += 1
+        config.runtime.assist_budget_used += 1
+        config.runtime.assist_calls += 1
         sampled += 1
         result = ocr_assist_at(cv2_module, cap, ocr, sec, config)
+        config.runtime.assist_ocr_seconds += result.seconds
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
         if is_assist_own_kill_text(result.text, config.language) and any(
@@ -642,12 +851,20 @@ def _refine_with_matcher(
     sampled = 0
     total_ocr_seconds = 0.0
     total_frame_seconds = 0.0
+    refine_used = 0
 
     hit: tuple[float, OcrResult] | None = None
     if coarse_result is not None and matches(coarse_result):
         hit = (coarse_sec, coarse_result)
     else:
+        if config.refine_max_frames is not None and refine_used >= config.refine_max_frames:
+            config.runtime.termination_reason = "refine-budget-exhausted"
+            return coarse_sec, OcrResult("", "", 0.0, "paddle-refine-budget-exhausted"), sampled, total_ocr_seconds, total_frame_seconds
+        refine_used += 1
+        config.runtime.refine_budget_used += 1
+        config.runtime.refine_calls += 1
         result = ocr_at(cv2_module, cap, ocr, coarse_sec, config)
+        config.runtime.refine_ocr_seconds += result.seconds
         sampled += 1
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
@@ -660,10 +877,21 @@ def _refine_with_matcher(
     hit_sec, hit_result = hit
     miss_sec: float | None = None
     probe_step = max(config.refine_search_step, config.refine_step)
+    refine_started = time.time()
     t = round(hit_sec - probe_step, 3)
     while t >= lo - 1e-6:
+        if config.refine_max_frames is not None and refine_used >= config.refine_max_frames:
+            config.runtime.termination_reason = "refine-budget-exhausted"
+            break
+        if config.refine_max_seconds is not None and time.time() - refine_started >= config.refine_max_seconds:
+            config.runtime.termination_reason = "refine-time-budget-exhausted"
+            break
+        refine_used += 1
+        config.runtime.refine_budget_used += 1
+        config.runtime.refine_calls += 1
         sampled += 1
         result = ocr_at(cv2_module, cap, ocr, t, config)
+        config.runtime.refine_ocr_seconds += result.seconds
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
         if matches(result):
@@ -681,8 +909,18 @@ def _refine_with_matcher(
         mid = round((hit_sec + miss_sec) / 2, 3)
         if mid <= miss_sec + 1e-6 or mid >= hit_sec - 1e-6:
             break
+        if config.refine_max_frames is not None and refine_used >= config.refine_max_frames:
+            config.runtime.termination_reason = "refine-budget-exhausted"
+            break
+        if config.refine_max_seconds is not None and time.time() - refine_started >= config.refine_max_seconds:
+            config.runtime.termination_reason = "refine-time-budget-exhausted"
+            break
+        refine_used += 1
+        config.runtime.refine_budget_used += 1
+        config.runtime.refine_calls += 1
         sampled += 1
         result = ocr_at(cv2_module, cap, ocr, mid, config)
+        config.runtime.refine_ocr_seconds += result.seconds
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
         if matches(result):
@@ -745,7 +983,9 @@ def detect_event(path: Path, cv2_module: Any, ocr: Any, duration: float, candida
 
 def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candidate_times: list[float], config: OcrConfig) -> list[EventDetection]:
     detect_started = time.time()
+    config.reset_runtime()
     config.frame_cache.clear()
+    config.decoded_frame_cache.clear()
     cap = cv2_module.VideoCapture(str(path))
     sampled_count = 0
     coarse_count = 0
@@ -759,7 +999,16 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
     seen_events: list[tuple[TextEvent, float]] = []
     detections: list[EventDetection] = []
     try:
-        for sec in build_text_priority_scan_times(duration, candidate_times, config):
+        scan_times = (
+            build_adaptive_scan_times(duration, candidate_times, config)
+            if config.sampling_mode == "adaptive"
+            else build_text_priority_scan_times(duration, candidate_times, config)
+        )
+        scheduled = {int(round(sec * 1000)) for sec in scan_times}
+        scan_index = 0
+        while scan_index < len(scan_times):
+            sec = scan_times[scan_index]
+            scan_index += 1
             sampled_count += 1
             coarse_count += 1
             result = (
@@ -771,8 +1020,24 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
             total_frame_seconds += result.frame_seconds
             if result.method == "opencv-no-bright-event-text":
                 gate_skipped_count += 1
+            if result.skipped_reason == "ocr-budget-exhausted":
+                break
             if result.text:
                 last_text, last_scores, last_method = result.text, result.scores, result.method
+            if (
+                config.sampling_mode == "adaptive"
+                and config.brightness_gate
+                and result.method != "opencv-no-bright-event-text"
+            ):
+                for dense_sec in time_range(
+                    max(config.scan_start, sec - config.adaptive_window),
+                    min(duration, sec + config.adaptive_window),
+                    config.adaptive_step,
+                ):
+                    dense_key = int(round(dense_sec * 1000))
+                    if dense_key not in scheduled:
+                        insort(scan_times, dense_sec)
+                        scheduled.add(dense_key)
             for event in extract_text_events(result.text, config.target, config.language):
                 if any(
                     same_text_event(event, seen)
@@ -849,6 +1114,16 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                         f"{event_sec:.3f}",
                         event_weapon=refined_event.weapon,
                         ocr_gate_skipped_frames=gate_skipped_count,
+                        ocr_requests=config.runtime.ocr_requests,
+                        ocr_successes=config.runtime.ocr_successes,
+                        ocr_cache_hits=config.runtime.ocr_cache_hits,
+                        ocr_skipped=config.runtime.ocr_skipped,
+                        refine_budget_used=config.runtime.refine_budget_used,
+                        assist_budget_used=config.runtime.assist_budget_used,
+                        termination_reason=config.runtime.termination_reason,
+                        gate_reason=";".join(config.runtime.gate_reasons) or ("disabled" if not config.brightness_gate else ""),
+                        refine_ocr_seconds=config.runtime.refine_ocr_seconds,
+                        assist_ocr_seconds=config.runtime.assist_ocr_seconds,
                     )
                 )
                 seen_events.append((refined_event, event_sec))
@@ -873,5 +1148,15 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
             refine_count,
             config.target,
             ocr_gate_skipped_frames=gate_skipped_count,
+            ocr_requests=config.runtime.ocr_requests,
+            ocr_successes=config.runtime.ocr_successes,
+            ocr_cache_hits=config.runtime.ocr_cache_hits,
+            ocr_skipped=config.runtime.ocr_skipped,
+            refine_budget_used=config.runtime.refine_budget_used,
+            assist_budget_used=config.runtime.assist_budget_used,
+            termination_reason=config.runtime.termination_reason,
+            gate_reason=";".join(config.runtime.gate_reasons) or ("disabled" if not config.brightness_gate else ""),
+            refine_ocr_seconds=config.runtime.refine_ocr_seconds,
+            assist_ocr_seconds=config.runtime.assist_ocr_seconds,
         )
     ]

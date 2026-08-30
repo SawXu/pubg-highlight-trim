@@ -36,6 +36,26 @@ def parse_jobs(value: str) -> int | None:
     return jobs
 
 
+def parse_nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be a non-negative integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be a non-negative integer")
+    return parsed
+
+
+def parse_nonnegative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be a non-negative number") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be a non-negative number")
+    return parsed
+
+
 def parse_window(value: str) -> tuple[float, float]:
     if ":" not in value:
         raise argparse.ArgumentTypeError("Window must be start:end seconds")
@@ -101,6 +121,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/merged file instead of creating unique names")
     parser.add_argument("--verbose", action="store_true", help="Print startup settings and third-party OCR diagnostics")
     parser.add_argument("--profile", action="store_true", help="Print per-clip timing breakdown for OCR, frame reads, and trimming")
+    fast_path = parser.add_mutually_exclusive_group()
+    fast_path.add_argument("--fast-path", action="store_true", help="Enable adaptive low-cost sampling and bounded OCR")
+    fast_path.add_argument("--no-fast-path", action="store_true", help="Disable adaptive sampling and persistent OCR cache")
+    parser.add_argument("--cache-dir", type=Path, default=None, help="Persistent cache directory for reusable OCR results")
     parser.add_argument("--jobs", type=parse_jobs, default=None, help="Parallel per-video OCR workers; auto selects a safe count; use 1 to disable")
     parser.add_argument("--ffmpeg", default=None, help="Explicit ffmpeg.exe path")
     parser.add_argument("--ffprobe", default=None, help="Explicit ffprobe.exe path")
@@ -124,12 +148,28 @@ def build_parser() -> argparse.ArgumentParser:
     ocr.add_argument("--refine-before", type=float, default=6.0)
     ocr.add_argument("--refine-after", type=float, default=0.4)
     ocr.add_argument("--refine-step", type=float, default=0.5)
+    ocr.add_argument("--sampling-mode", choices=["fixed", "adaptive"], default="fixed", help="Fixed scan schedule or adaptive coarse-to-dense sampling")
+    ocr.add_argument("--adaptive-step", type=parse_nonnegative_float, default=0.5, help="Seconds between samples in adaptive candidate windows")
+    ocr.add_argument("--adaptive-window", type=parse_nonnegative_float, default=2.0, help="Seconds around a coarse activity hit to sample densely")
+    ocr.add_argument("--ocr-max-calls", type=parse_nonnegative_int, default=None, help="Maximum PaddleOCR requests per source")
+    ocr.add_argument("--ocr-min-interval", type=parse_nonnegative_float, default=0.0, help="Minimum seconds between uncached OCR requests")
+    ocr.add_argument("--refine-max-frames", type=parse_nonnegative_int, default=None, help="Maximum refine samples per source")
+    ocr.add_argument("--assist-max-frames", type=parse_nonnegative_int, default=None, help="Maximum assist samples per source")
+    ocr.add_argument("--refine-max-seconds", type=parse_nonnegative_float, default=None, help="Wall-clock refine budget per source")
+    ocr.add_argument("--assist-max-seconds", type=parse_nonnegative_float, default=None, help="Wall-clock assist budget per source")
     ocr.add_argument("--roi", type=parse_roi, default=(0.30, 0.66, 0.70, 0.75), help="OCR crop ratios x1,y1,x2,y2")
     ocr.add_argument("--ocr-width", type=int, default=768, help="Downscale OCR ROI to this width; 0 disables")
     ocr.add_argument(
         "--no-brightness-gate",
         action="store_true",
         help="Disable the OpenCV bright outlined-text prefilter before coarse OCR",
+    )
+    ocr.add_argument(
+        "--brightness-gate-mode",
+        "--gate-mode",
+        choices=["full", "light", "none"],
+        default=None,
+        help="Gate implementation: full morphology, cheap light statistics, or none",
     )
     return parser
 
