@@ -80,7 +80,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=AUTO_GAME_LANGUAGE,
         help="PUBG game language profile; auto detects from NVIDIA Highlight filenames",
     )
-    parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Directory for individual trimmed clips")
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Root output directory; individual trimmed clips are written under its clips subdirectory",
+    )
     parser.add_argument("--before", "--seconds-before", dest="seconds_before", type=float, default=5.0, help="Seconds to keep before event")
     parser.add_argument("--after", "--seconds-after", dest="seconds_after", type=float, default=1.0, help="Seconds to keep after event")
     parser.add_argument("--min-event-sec", type=float, default=2.0, help="Skip detected events earlier than this many seconds; use 0 to keep opening events")

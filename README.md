@@ -77,7 +77,7 @@ Run `pubg-highlight-trim --help` to see all options.
 | `--files FILE [FILE ...]` | none | Process only these mp4 files, ordered by the recording timestamp in each PUBG filename |
 | `--target` | `both` | Event to detect: `self-death` (enemies knocking/eliminating you), `own-kill` (you knocking/eliminating others), `both` |
 | `--game-lang` | `auto` | Game language profile; `auto` detects from NVIDIA Highlight filenames. Choices: `auto`, `zh-Hans`, `zh-Hant`, `en` |
-| `-o`, `--output-dir` | auto | Directory for individual trimmed clips |
+| `-o`, `--output-dir` | auto | Root output directory; individual trimmed clips are written under `clips\` |
 | `--before` | `5.0` | Seconds to keep before an event |
 | `--after` | `1.0` | Seconds to keep after an event |
 | `--min-event-sec` | `2.0` | Skip events earlier than this many seconds; `0` keeps opening events |
@@ -114,6 +114,7 @@ OCR options (advanced):
 
 - Single-file input defaults to no merged mp4. Folder and multi-file inputs default to merging the individual clips.
 - Use `--merge` without a value to force merging, `--merge ".\merged.mp4"` to choose the merged output path, or `--no-merge` to keep only individual clips.
+- The selected output directory is the run's root. Trimmed clips are written under its `clips\` subdirectory; the default merged mp4, concat list, CSV, and summary remain in the root.
 - Use `--profile` to print per-clip timings for ffprobe, OCR predict, video frame seek/read, trim encoding, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
 
 ## Detection
