@@ -358,7 +358,7 @@
             <Grid>
                 <TextBlock x:Name="FooterStatusText" Text="就绪" Foreground="{StaticResource MutedBrush}"
                            FontSize="11" VerticalAlignment="Center" />
-                <TextBlock Text="UI 0.1 · CLI black-box mode" Foreground="#87918D" FontSize="10"
+                <TextBlock Text="UI 0.3.4 · CLI black-box mode" Foreground="#87918D" FontSize="10"
                            HorizontalAlignment="Right" VerticalAlignment="Center" />
             </Grid>
         </Border>
