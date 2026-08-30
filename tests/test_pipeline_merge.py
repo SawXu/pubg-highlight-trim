@@ -37,7 +37,7 @@ class PipelineMergeTests(unittest.TestCase):
             'PROGRESS {"phase":"scan","current":3,"total":12,"workers":2}',
         )
 
-    def test_frozen_scan_worker_avoids_process_output_fd_redirection(self):
+    def test_frozen_scan_worker_suppresses_process_output(self):
         language = get_game_language_profile("en")
         _WORKER_OCR_BACKENDS.clear()
         with patch("pubg_highlight_trim.pipeline.get_game_language_profile", return_value=language), patch(
@@ -51,7 +51,7 @@ class PipelineMergeTests(unittest.TestCase):
             _scan_source_worker(Path("video2.mp4"), Path("ffprobe.exe"), "en", [], OcrConfig())
 
         self.assertEqual(load_backend.call_count, 1)
-        self.assertEqual(suppress.call_args_list, [call(False), call(False), call(False)])
+        self.assertEqual(suppress.call_args_list, [call(True), call(True), call(True)])
         _WORKER_OCR_BACKENDS.clear()
 
     def test_automatic_jobs_is_one_for_single_source(self):

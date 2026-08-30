@@ -75,6 +75,18 @@ class SuppressProcessOutputTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(stderr.getvalue(), "")
 
+    def test_falls_back_to_python_streams_when_descriptor_redirect_fails(self):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        with redirect_stdout(stdout), redirect_stderr(stderr), patch("pubg_highlight_trim.runtime.os.dup2", side_effect=OSError):
+            with suppress_process_output():
+                print("python noise")
+                sys.stderr.write("python error\n")
+
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "")
+
 
 if __name__ == "__main__":
     unittest.main()
