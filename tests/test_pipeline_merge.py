@@ -68,11 +68,11 @@ class PipelineMergeTests(unittest.TestCase):
         self.assertEqual(_effective_jobs(1, 10), (1, False))
         self.assertEqual(_effective_jobs(3, 10), (3, False))
 
-    def test_multiple_explicit_files_preserve_command_line_order(self):
+    def test_multiple_explicit_files_are_processed_in_recording_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            second = root / "second.mp4"
-            first = root / "first.mp4"
+            second = root / "PLAYERUNKNOWN'S BATTLEGROUNDS 2026.08.30 - 22.00.00.65.淘汰.DVR.mp4"
+            first = root / "PLAYERUNKNOWN'S BATTLEGROUNDS 2026.08.30 - 09.00.00.65.淘汰.DVR.mp4"
             second.touch()
             first.touch()
             args = SimpleNamespace(input=None, files=[second, first], game_lang="en")
@@ -80,7 +80,7 @@ class PipelineMergeTests(unittest.TestCase):
             input_paths, directory_input, single_file, base_folder = _validate_inputs(args)
             files, _ = _select_input_files(input_paths, args, directory_input)
 
-        self.assertEqual(files, [second.resolve(), first.resolve()])
+        self.assertEqual(files, [first.resolve(), second.resolve()])
         self.assertFalse(directory_input)
         self.assertFalse(single_file)
         self.assertEqual(base_folder, root.resolve())
