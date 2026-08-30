@@ -156,14 +156,41 @@ python -m unittest discover -s tests -v
 
 ### Build Windows release locally
 
+The release build needs a Windows x64 machine with:
+
+- Python 3.12 x64. The project metadata supports Python 3.10+, but the pinned `paddlepaddle==3.2.2` does not provide a Windows wheel for Python 3.14. Python 3.12 is the verified build version.
+- .NET 10 SDK, including the Windows Desktop targeting pack, for the WPF UI.
+- The Windows 10/11 SDK `mt.exe` tool on `PATH`. The build uses it to verify the UI executable's `PerMonitorV2` DPI manifest.
+- PowerShell and network access for downloading FFmpeg and, on a first build, OCR models.
+
+The Python build dependencies are declared in `pyproject.toml` and installed with the `ocr` and `build` extras:
+
+- `opencv-contrib-python>=4.9`
+- `paddleocr==3.7.0`
+- `paddlepaddle==3.2.2`
+- `pyinstaller>=6.10`
+
+Create and use a Python 3.12 virtual environment before building:
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
-python -m pip install -e ".[ocr,build]"
-powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 -SkipCliBuild
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[ocr,build]"
 ```
 
-The release zip contains `pubg-highlight-trim.exe`, bundled `ffmpeg/ffprobe`, and the PaddleOCR models needed by OCR detection. No Python install is required for users of the zip.
+Build the CLI bundle first, then publish the GUI and package both together:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 `
+  -Python .\.venv\Scripts\python.exe
+powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 `
+  -SkipCliBuild
+```
+
+`build_windows.ps1` prefetches the `en` and `zh-Hans` PaddleOCR models into `vendor\paddlex_cache`, embeds FFmpeg and the models into the CLI bundle, and creates `dist\pubg-highlight-trim-windows-x64.zip`. `build_ui_windows.ps1 -SkipCliBuild` reuses that CLI bundle, publishes a self-contained WPF single-file executable, verifies its DPI manifest, and creates `dist\pubg-highlight-trim-ui-windows-x64.zip`. The UI executable is also available at `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`; its package keeps the CLI at `cli\pubg-highlight-trim.exe` beside it.
+
+If the CLI bundle already exists, omit the first build command and run only the UI command. The release archives contain all runtime dependencies, so users need neither Python nor .NET installed.
 
 Run the UI tests separately:
 
