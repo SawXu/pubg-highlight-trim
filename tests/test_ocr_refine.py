@@ -241,6 +241,74 @@ class OcrRefineTests(unittest.TestCase):
         self.assertEqual([d.event_key for d in detections], ["own-kill:knock:enemya", "own-kill:knock:enemyb"])
         self.assertEqual([d.event_sec for d in detections], [30.0, 32.0])
 
+    def test_adaptive_expansion_only_uses_target_seed_and_does_not_recurse(self):
+        class FakeCap:
+            def release(self):
+                pass
+
+        class FakeCv2:
+            def VideoCapture(self, _path):
+                return FakeCap()
+
+        seen: list[float] = []
+        event = extract_text_events("你用M416击倒了EnemyA", "both")[0]
+
+        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+            seen.append(sec)
+            if 2.0 <= sec <= 6.0:
+                return OcrResult("你用M416击倒了EnemyA", "", 0.01, "paddle-own-kill-text")
+            return OcrResult("普通HUD文字", "", 0.01, "paddle-not-target-text")
+
+        def fake_refine(_cv2, _cap, _ocr, sec, _duration, _config, _event, coarse_result=None):
+            return sec, coarse_result or OcrResult("", "", 0.0, "paddle-refine-missed"), 0, 0.0, 0.0
+
+        config = OcrConfig(
+            target="both",
+            priority_window=[],
+            sampling_mode="adaptive",
+            coarse_step=4.0,
+            adaptive_step=0.5,
+            adaptive_window=2.0,
+            refine_before=0.0,
+        )
+        with patch("pubg_highlight_trim.ocr.ocr_at", fake_ocr_at), patch(
+            "pubg_highlight_trim.ocr.refine_text_event", fake_refine
+        ), patch("pubg_highlight_trim.ocr.detect_assist_nearby", return_value=(None, 0, 0.0, 0.0)):
+            detections = detect_events("dummy.mp4", FakeCv2(), None, 8.0, [], config)
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(detections[0].event_sec, 4.0)
+        self.assertEqual(seen, [0.0, 4.0, 4.5, 5.0, 5.5, 6.0, 8.0])
+
+    def test_adaptive_expansion_ignores_non_target_ocr_text(self):
+        class FakeCap:
+            def release(self):
+                pass
+
+        class FakeCv2:
+            def VideoCapture(self, _path):
+                return FakeCap()
+
+        seen: list[float] = []
+
+        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+            seen.append(sec)
+            return OcrResult("普通HUD文字", "", 0.01, "paddle-not-target-text")
+
+        config = OcrConfig(
+            target="both",
+            priority_window=[],
+            sampling_mode="adaptive",
+            coarse_step=4.0,
+            adaptive_step=0.5,
+            adaptive_window=2.0,
+        )
+        with patch("pubg_highlight_trim.ocr.ocr_at", fake_ocr_at):
+            detections = detect_events("dummy.mp4", FakeCv2(), None, 8.0, [], config)
+
+        self.assertEqual(seen, [0.0, 4.0, 8.0])
+        self.assertEqual(detections[0].event_sec, None)
+
     def test_detect_events_suppresses_own_kill_elimination_after_knock(self):
         class FakeCap:
             def release(self):

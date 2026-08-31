@@ -56,6 +56,24 @@ class PerformancePathTests(unittest.TestCase):
         self.assertEqual(samples, sorted(set(samples)))
         self.assertIn(3.5, samples)
 
+    def test_adaptive_schedule_keeps_candidate_anchor_without_dense_grid(self):
+        config = OcrConfig(
+            sampling_mode="adaptive",
+            priority_window=[],
+            candidate_lookback=1.0,
+            candidate_lookahead=0.5,
+            coarse_step=2.0,
+            candidate_step=4.0,
+            adaptive_step=0.5,
+        )
+
+        samples = build_adaptive_scan_times(8.0, [3.5], config)
+
+        self.assertIn(3.5, samples)
+        self.assertIn(2.5, samples)
+        self.assertNotIn(3.0, samples)
+        self.assertEqual(len(samples), len(set(samples)))
+
     def test_primary_and_assist_roi_share_one_decoded_frame(self):
         class Frame:
             shape = (10, 10, 3)

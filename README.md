@@ -104,6 +104,8 @@ OCR options (advanced):
 | `--coarse-step` | `4.0` | Seconds between coarse-scan frames |
 | `--candidate-lookback` / `--candidate-lookahead` | `8.0` / `0.5` | Time window around candidate hints |
 | `--candidate-step` | `4.0` | Seconds between candidate-scan frames |
+| `--adaptive-step` | `0.5` | Seconds between samples after a coarse target hit; keeps event confirmation at 0.5-second precision |
+| `--adaptive-window` | `2.0` | Forward window after a coarse target hit to sample adaptively; backward confirmation uses refine |
 | `--refine-before` / `--refine-after` | `6.0` / `0.4` | Refine window around a coarse hit |
 | `--refine-step` | `0.5` | Seconds between refine-scan frames |
 | `--roi` | `0.30,0.66,0.70,0.75` | OCR crop ratios `x1,y1,x2,y2` |
