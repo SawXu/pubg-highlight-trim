@@ -558,7 +558,12 @@ def build_text_priority_scan_times(duration: float, candidate_times: list[float]
 
 
 def build_adaptive_scan_times(duration: float, candidate_times: list[float], config: OcrConfig) -> list[float]:
-    """Build a deterministic coarse schedule plus denser candidate windows."""
+    """Build coarse discovery samples and exact candidate-time anchors.
+
+    Dense samples are added later only after a seed sample identifies a target
+    event. Keeping the initial schedule coarse prevents the adaptive path from
+    paying the dense OCR cost across every priority window.
+    """
     end_limit = min(duration, config.scan_end if config.scan_end is not None else duration)
     times: set[int] = set()
     times.update(int(round(t * 1000)) for t in time_range(config.scan_start, end_limit, config.coarse_step))
@@ -566,12 +571,14 @@ def build_adaptive_scan_times(duration: float, candidate_times: list[float], con
         lo = max(config.scan_start, 0.0, start)
         hi = min(end_limit, stop)
         if hi >= lo:
-            times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.adaptive_step))
+            times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.candidate_step))
     for candidate in candidate_times:
         lo = max(config.scan_start, 0.0, candidate - config.candidate_lookback)
         hi = min(end_limit, candidate + config.candidate_lookahead)
         if hi >= lo:
-            times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.adaptive_step))
+            times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.candidate_step))
+            if lo <= candidate <= hi:
+                times.add(int(round(candidate * 1000)))
     return [key / 1000 for key in sorted(times)]
 
 
@@ -1005,12 +1012,16 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
             else build_text_priority_scan_times(duration, candidate_times, config)
         )
         scheduled = {int(round(sec * 1000)) for sec in scan_times}
+        adaptive_seed_keys = set(scheduled) if config.sampling_mode == "adaptive" else set()
         scan_index = 0
         while scan_index < len(scan_times):
             sec = scan_times[scan_index]
             scan_index += 1
             sampled_count += 1
-            coarse_count += 1
+            frame_key = int(round(sec * 1000))
+            is_adaptive_seed = frame_key in adaptive_seed_keys
+            if is_adaptive_seed or config.sampling_mode != "adaptive":
+                coarse_count += 1
             result = (
                 ocr_at(cv2_module, cap, ocr, sec, config, apply_brightness_gate=True)
                 if config.brightness_gate
@@ -1025,12 +1036,11 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
             if result.text:
                 last_text, last_scores, last_method = result.text, result.scores, result.method
             if (
-                config.sampling_mode == "adaptive"
-                and config.brightness_gate
-                and result.method != "opencv-no-bright-event-text"
+                is_adaptive_seed
+                and extract_text_events(result.text, config.target, config.language)
             ):
                 for dense_sec in time_range(
-                    max(config.scan_start, sec - config.adaptive_window),
+                    max(config.scan_start, sec),
                     min(duration, sec + config.adaptive_window),
                     config.adaptive_step,
                 ):
