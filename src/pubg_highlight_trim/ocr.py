@@ -566,17 +566,22 @@ def build_adaptive_scan_times(duration: float, candidate_times: list[float], con
     """
     end_limit = min(duration, config.scan_end if config.scan_end is not None else duration)
     times: set[int] = set()
-    times.update(int(round(t * 1000)) for t in time_range(config.scan_start, end_limit, config.coarse_step))
+    if not config.no_full_scan:
+        times.update(int(round(t * 1000)) for t in time_range(config.scan_start, end_limit, config.coarse_step))
     for start, stop in config.priority_window:
         lo = max(config.scan_start, 0.0, start)
         hi = min(end_limit, stop)
         if hi >= lo:
             times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.candidate_step))
+            times.add(int(round(lo * 1000)))
+            times.add(int(round(hi * 1000)))
     for candidate in candidate_times:
         lo = max(config.scan_start, 0.0, candidate - config.candidate_lookback)
         hi = min(end_limit, candidate + config.candidate_lookahead)
         if hi >= lo:
             times.update(int(round(t * 1000)) for t in time_range(lo, hi, config.candidate_step))
+            times.add(int(round(lo * 1000)))
+            times.add(int(round(hi * 1000)))
             if lo <= candidate <= hi:
                 times.add(int(round(candidate * 1000)))
     return [key / 1000 for key in sorted(times)]

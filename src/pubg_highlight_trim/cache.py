@@ -50,15 +50,19 @@ def cache_key(
             "sampling_mode": config.sampling_mode,
             "adaptive_step": config.adaptive_step,
             "adaptive_window": config.adaptive_window,
+            "event_dedupe_seconds": config.event_dedupe_seconds,
             "no_full_scan": config.no_full_scan,
             "candidate_times": sorted(candidate_times or []),
         },
         "roi": config.roi,
         "ocr_width": config.ocr_width,
+        "ocr_min_interval": config.ocr_min_interval,
+        "ocr_max_calls": config.ocr_max_calls,
         "gate": {
             "enabled": config.brightness_gate,
             "mode": config.brightness_gate_mode,
             "roi": config.brightness_gate_roi,
+            "width": config.brightness_gate_width,
         },
         "refine": {
             "before": config.refine_before,
@@ -91,6 +95,8 @@ def load_detection_cache(cache_dir: Path | None, key: str) -> list[EventDetectio
     if not data_path.is_file() or not complete_path.is_file():
         return None
     try:
+        if complete_path.read_text(encoding="ascii").strip() != CACHE_VERSION:
+            return None
         payload = json.loads(data_path.read_text(encoding="utf-8"))
         if payload.get("cache_version") != CACHE_VERSION:
             return None

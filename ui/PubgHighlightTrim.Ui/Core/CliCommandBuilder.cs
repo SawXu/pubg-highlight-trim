@@ -33,6 +33,8 @@ public static class CliCommandBuilder
             "--jobs", options.Jobs,
         ]);
 
+        AddFlag(arguments, options.ScanMode.Equals("fast", StringComparison.OrdinalIgnoreCase), "--fast-path");
+
         if (!string.IsNullOrWhiteSpace(options.OutputDirectory))
         {
             arguments.Add("--output-dir");
