@@ -74,6 +74,35 @@ class PerformancePathTests(unittest.TestCase):
         self.assertNotIn(3.0, samples)
         self.assertEqual(len(samples), len(set(samples)))
 
+    def test_adaptive_schedule_honors_fast_candidate_scan_mode(self):
+        config = OcrConfig(
+            sampling_mode="adaptive",
+            no_full_scan=True,
+            priority_window=[],
+            candidate_lookback=1.0,
+            candidate_lookahead=0.5,
+            coarse_step=2.0,
+            candidate_step=4.0,
+        )
+
+        samples = build_adaptive_scan_times(8.0, [3.5], config)
+
+        self.assertEqual(samples, [2.5, 3.5, 4.0])
+
+    def test_adaptive_schedule_covers_candidate_window_boundaries(self):
+        config = OcrConfig(
+            sampling_mode="adaptive",
+            no_full_scan=True,
+            priority_window=[],
+            candidate_lookback=1.0,
+            candidate_lookahead=0.5,
+            candidate_step=4.0,
+        )
+
+        samples = build_adaptive_scan_times(8.0, [3.2], config)
+
+        self.assertEqual(samples, [2.2, 3.2, 3.7])
+
     def test_primary_and_assist_roi_share_one_decoded_frame(self):
         class Frame:
             shape = (10, 10, 3)
@@ -116,6 +145,33 @@ class PerformancePathTests(unittest.TestCase):
             self.assertIsNone(load_detection_cache(root / "cache", key))
             source.write_bytes(b"video-b")
             self.assertNotEqual(key, cache_key(source, config))
+
+    def test_cache_key_includes_runtime_cost_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "video.mp4"
+            source.write_bytes(b"video")
+            baseline = OcrConfig()
+
+            for changed in (
+                OcrConfig(ocr_min_interval=0.25),
+                OcrConfig(ocr_max_calls=4),
+                OcrConfig(brightness_gate_width=512),
+                OcrConfig(event_dedupe_seconds=2.0),
+            ):
+                self.assertNotEqual(cache_key(source, baseline), cache_key(source, changed))
+
+    def test_cache_requires_current_completion_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "video.mp4"
+            source.write_bytes(b"video")
+            config = OcrConfig()
+            key = cache_key(source, config)
+            cache_dir = root / "cache"
+            save_detection_cache(cache_dir, key, [EventDetection(12.0, None, "none", "ocr")])
+            (cache_dir / f"{key}.complete").write_text("stale", encoding="ascii")
+
+            self.assertIsNone(load_detection_cache(cache_dir, key))
 
     def test_candidate_csv_has_stable_columns_and_run_id(self):
         record = {

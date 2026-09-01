@@ -67,6 +67,31 @@ public sealed class CliCommandBuilderTests
     }
 
     [TestMethod]
+    public void Build_FastScanEnablesFastPath()
+    {
+        var options = new CliRunOptions(
+            [@"C:\Videos\highlights"],
+            null,
+            "both",
+            "auto",
+            5,
+            1,
+            2,
+            10,
+            "fast",
+            "auto",
+            false,
+            true,
+            false,
+            false,
+            true);
+
+        var arguments = CliCommandBuilder.Build(options);
+
+        CollectionAssert.Contains(arguments.ToList(), "--fast-path");
+    }
+
+    [TestMethod]
     public void Preview_QuotesPathsContainingSpaces()
     {
         var preview = CliCommandBuilder.Preview(@"C:\Program Files\PUBG Trim\pubg-highlight-trim.exe", [@"C:\Video Clips", "--merge"]);
