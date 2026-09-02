@@ -535,6 +535,15 @@ class PipelineMergeTests(unittest.TestCase):
 
         self.assertFalse(effective.no_full_scan)
 
+        hant = get_game_language_profile("zh-Hant")
+        hant_effective = _ocr_config_for_source(
+            OcrConfig(no_full_scan=True, language=hant),
+            Path("a.多重擊殺.DVR.mp4"),
+            hant,
+        )
+
+        self.assertFalse(hant_effective.no_full_scan)
+
     def test_match_end_sources_disable_brightness_gate(self):
         profile = get_game_language_profile("en")
         config = OcrConfig(no_full_scan=False, brightness_gate=True)

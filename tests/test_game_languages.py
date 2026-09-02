@@ -5,6 +5,7 @@ from pathlib import Path
 from pubg_highlight_trim.game_language_tables import LANGUAGE_REGEX_TABLES
 from pubg_highlight_trim.game_languages import game_language_choices, get_game_language_profile
 from pubg_highlight_trim.ocr import (
+    classify_self_text,
     extract_text_events,
     is_assist_own_kill_text,
     is_delayed_own_elim_text,
@@ -65,6 +66,19 @@ class GameLanguageTests(unittest.TestCase):
         self.assertEqual(self_elim.action, "eliminate")
         self.assertEqual(self_elim.weapon, "MP5K")
 
+    def test_en_extracts_fall_damage_self_death(self):
+        profile = get_game_language_profile("en")
+
+        for text in (
+            "YOU WERE KNOCKED OUT BY FALLING",
+            "YOU WERE KNOCKED OUT FROM FALLING",
+            "YOU DIED FROM FALLING",
+        ):
+            with self.subTest(text=text):
+                event = extract_text_events(text, "both", profile)[0]
+                self.assertEqual(event.key, "self-death:zone")
+                self.assertEqual(event.action, "zone-downed")
+
     def test_en_skips_delayed_finally_killed_text(self):
         profile = get_game_language_profile("en")
 
@@ -100,6 +114,15 @@ class GameLanguageTests(unittest.TestCase):
         self.assertEqual(self_knock.action, "knock")
         self.assertEqual(self_elim.action, "eliminate")
 
+    def test_zh_hans_extracts_fall_damage_self_death(self):
+        profile = get_game_language_profile("zh-Hans")
+
+        for text in ("你因坠落遭击倒", "你因摔落倒地"):
+            with self.subTest(text=text):
+                event = extract_text_events(text, "both", profile)[0]
+                self.assertEqual(event.key, "self-death:zone")
+                self.assertEqual(event.action, "zone-downed")
+
     def test_zh_hant_strips_distance_from_subject_key(self):
         profile = get_game_language_profile("zh-Hant")
 
@@ -115,6 +138,16 @@ class GameLanguageTests(unittest.TestCase):
         self.assertFalse(is_assist_own_kill_text("您以P90擊殺OpponentCharlie擊殺數", profile))
         self.assertTrue(is_delayed_own_elim_text("您終於擊殺OpponentDelta擊殺", profile))
 
+    def test_zh_hant_extracts_fall_damage_self_death(self):
+        profile = get_game_language_profile("zh-Hant")
+
+        text = "您因墜落遭擊倒"
+
+        self.assertEqual(classify_self_text(text, profile), "paddle-zone-self-downed-text")
+        event = extract_text_events(text, "both", profile)[0]
+        self.assertEqual(event.key, "self-death:zone")
+        self.assertEqual(event.action, "zone-downed")
+
     def test_zh_hant_source_filename_profile(self):
         profile = get_game_language_profile("zh-Hant")
         with tempfile.TemporaryDirectory() as temp:
@@ -122,14 +155,16 @@ class GameLanguageTests(unittest.TestCase):
             self_death = root / "a.死亡.DVR.mp4"
             own_knock = root / "b.擊倒.DVR.mp4"
             own_kill = root / "c.單次擊殺.DVR.mp4"
-            match_end = root / "d.對戰結束.DVR.mp4"
+            multi_kill = root / "d.多重擊殺.DVR.mp4"
+            match_end = root / "e.對戰結束.DVR.mp4"
             replay = root / "e.死亡畫面.DVR.mp4"
-            for path in [self_death, own_knock, own_kill, match_end, replay]:
+            for path in [self_death, own_knock, own_kill, multi_kill, match_end, replay]:
                 self.touch(path)
 
             self.assertEqual(iter_source_files(root, target="self-death", language=profile), [self_death])
-            self.assertEqual(iter_source_files(root, target="own-kill", language=profile), [own_knock, own_kill, match_end])
-            self.assertEqual(iter_source_files(root, target="both", language=profile), [self_death, own_knock, own_kill, match_end])
+            self.assertEqual(iter_source_files(root, target="own-kill", language=profile), [own_knock, own_kill, multi_kill, match_end])
+            self.assertEqual(iter_source_files(root, target="both", language=profile), [self_death, own_knock, own_kill, multi_kill, match_end])
+            self.assertTrue(profile.multi_kill_source_re.search(multi_kill.name))
 
     def test_en_source_filename_profile(self):
         profile = get_game_language_profile("en")
