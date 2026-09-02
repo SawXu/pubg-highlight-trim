@@ -53,6 +53,9 @@ No Python or .NET installation is required.
 "@ | Set-Content -LiteralPath "$bundleDir\RUN_UI.txt" -Encoding UTF8
 
 Compress-Archive -Path "$bundleDir\*" -DestinationPath $zipPath -CompressionLevel Optimal -Force
+$verifyPackage = Join-Path $repoRoot "scripts\verify_windows_ui_bundle.ps1"
+& powershell -ExecutionPolicy Bypass -File $verifyPackage -Package $zipPath
+if ($LASTEXITCODE -ne 0) { throw "Final UI package verification failed" }
 $uiSizeMb = [math]::Round((Get-Item "$bundleDir\pubg-highlight-trim-ui.exe").Length / 1MB, 1)
 $zipSizeMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
 Write-Host "Built $zipPath (UI: $uiSizeMb MB, package: $zipSizeMb MB)"
