@@ -16,7 +16,9 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 2. 将 zip 解压到任意目录。
 3. 压缩包内已包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg.exe` / `ffprobe.exe`，以及 OCR 检测所需的 PaddleOCR 模型。
 
-需要图形界面时，下载 `pubg-highlight-trim-ui-windows-x64.zip`。解压后运行 `pubg-highlight-trim-ui.exe`；同包的 `cli` 目录包含完整 CLI 和 OCR 运行时，请勿单独移动 UI exe。
+需要图形界面时，下载 `pubg-highlight-trim-ui-windows-x64.zip`。解压后运行 `pubg-highlight-trim-ui.exe`；同包的 `cli` 目录包含完整 CLI 和 OCR 运行时，必须与 UI exe 保持并列（即 `cli\\pubg-highlight-trim.exe`）。请勿将 UI exe 移出该目录，或在缺少 `cli` 的情况下单独复制它。
+
+GUI 发布包是 CLI 发布包之上的桌面外壳：WPF UI 通过参数、标准输出和最终的 `summary.json` 启动并监视 CLI，实际 OCR、FFmpeg 和视频处理仍由 `cli` 目录中的 CLI 完成。GUI 包已经自包含 .NET、Python、FFmpeg/FFprobe 和 OCR 模型，用户无需另行安装运行时。
 
 在解压目录下直接运行：
 
@@ -28,7 +30,20 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 
 ### 图形界面
 
-UI 支持选择文件夹或单个 MP4、检测目标和语言、剪辑范围、扫描模式、并行任务、仅扫描、合并输出及递归搜索。运行期间会显示逐文件进度、保留/跳过数量和原始 CLI 日志；完成后可直接打开输出目录或播放合并视频。
+解压 `pubg-highlight-trim-ui-windows-x64.zip` 后，双击 `pubg-highlight-trim-ui.exe` 启动。窗口顶部会先检查并显示 CLI 版本；若提示“未找到 CLI”，请确认 `cli` 文件夹与 UI exe 位于同一目录，且其中存在 `cli\\pubg-highlight-trim.exe`。
+
+主要操作如下：
+
+1. 在“输入”中选择一个 PUBG Highlight 文件夹，或通过文件选择器多选 MP4。多选输入只能包含 MP4；勾选“递归扫描子文件夹”后才会搜索所选文件夹的子目录。
+2. 可选填“输出目录”；留空时由 CLI 根据输入自动创建本次运行的目录。
+3. 在“检测目标”中选择“全部”“自己倒地”或“我的击杀”，并选择游戏语言（自动识别、简体中文、繁体中文、English）。
+4. 设置“扫描模式”（自动、快速、完整）和“剪辑范围”（事件前/后秒数）。
+5. 常用复选项包括“合并输出”“仅扫描”和“覆盖输出”。“仅扫描”只检测并写入记录，不生成视频；“覆盖输出”允许复用同名输出目录或合并文件。
+6. 展开“专家设置”可调整忽略开场事件秒数、燃烧瓶前置秒数、并行任务（`auto` 或正整数）以及亮色描边文字预筛选。命令预览会显示 GUI 将要执行的 CLI 命令，便于复核配置。
+
+运行时右侧面板显示当前阶段（OCR 扫描或整理输出）、已完成文件数/总数、已保留和已跳过计数以及耗时。点击“显示日志”可查看 CLI 原始运行日志，必要时可清空记录。点击停止按钮会终止 CLI 及其子进程；窗口关闭时若任务仍在运行，也会先询问是否停止。
+
+任务完成后，“打开输出”会在资源管理器中打开本次输出目录；当生成了合并视频时，“播放合并视频”会调用系统默认播放器打开该文件。没有匹配事件时仍会写入扫描记录和 `summary.json`，界面会显示“扫描完成，没有匹配事件”。
 
 UI 仅通过 CLI 参数、标准输出和最终 `summary.json` 与后端通信。可通过 `PUBG_HIGHLIGHT_TRIM_CLI` 环境变量覆盖 CLI 路径，便于开发或测试其他 CLI 版本。
 
@@ -104,6 +119,8 @@ OCR 选项（进阶）：
 | `--coarse-step` | `4.0` | 粗扫描帧间隔（秒） |
 | `--candidate-lookback` / `--candidate-lookahead` | `8.0` / `0.5` | 候选提示前后的时间窗口 |
 | `--candidate-step` | `4.0` | 候选扫描帧间隔（秒） |
+| `--adaptive-step` | `0.5` | 粗扫描命中后自适应采样间隔（秒） |
+| `--adaptive-window` | `2.0` | 粗扫描命中后的前向自适应采样窗口（秒） |
 | `--refine-before` / `--refine-after` | `6.0` / `0.4` | 粗命中后的精修窗口 |
 | `--refine-step` | `0.5` | 精修扫描帧间隔（秒） |
 | `--roi` | `0.30,0.66,0.70,0.75` | OCR 裁剪比例 `x1,y1,x2,y2` |
@@ -117,6 +134,8 @@ OCR 选项（进阶）：
 - 不带值使用 `--merge` 强制合并，Merge 默认写入 output 根目录；`--merge ".\merged.mp4"` 等显式路径继续遵循用户指定的位置，`--no-merge` 仅保留 `clips/` 中的逐段视频。
 - 使用 `--dry-run` / `--scan-only` 时只生成扫描记录和摘要，不生成 Trim 或 Merge 视频，也不要求创建空的 `clips/` 目录。
 - 使用 `--profile` 打印每个片段的 ffprobe、OCR 预测、视频帧定位 / 读取、裁剪编码及总耗时。同样的耗时列也会写入 `检测与裁剪记录.csv`。
+
+GUI 和 CLI 使用相同的输出结构。`<output>/clips/` 保存逐段 Trim 视频；根目录中的 `pubg_highlight_trim_merged.mp4`（如启用合并）是按时间顺序拼接的成片，旁边的 `.concat.txt` 是 FFmpeg 使用的拼接清单。`检测与裁剪记录.csv` 记录每个源视频的检测状态、事件时间、裁剪范围和耗时；`candidate_events.csv` 保存候选事件提示，`profile.json` 保存阶段耗时（启用 `--profile` 时还会额外打印 `PROFILE` 行）。`summary.json` 保存本次运行的源文件数、保留/跳过数量、输出路径、扫描模式、语言、合并状态及 OCR/缓存信息，GUI 用它更新最终结果。
 
 默认合并输出的目录结构如下（CSV、摘要和 concat 清单等非视频文件也会保留在根目录）：
 
@@ -159,6 +178,14 @@ Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` �
 3. `PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR`
 4. PATH
 5. 常见 Shutter Encoder 路径
+
+## 常见故障排查
+
+- **GUI 提示缺少 CLI**：确认使用的是完整的 `pubg-highlight-trim-ui-windows-x64.zip`，并保持 `pubg-highlight-trim-ui.exe` 与 `cli` 文件夹并列；不要只复制 UI exe。开发或测试时也可设置 `PUBG_HIGHLIGHT_TRIM_CLI` 指向另一份 CLI 可执行文件。
+- **CLI 启动失败或运行失败**：展开 GUI 的“运行记录”查看 `ERR` 行和退出码。命令行用户可加 `--verbose` 重试；确认输入路径存在、输出目录可写，并避免让合并文件覆盖输入视频。
+- **没有匹配事件**：确认输入是 NVIDIA Highlight 原始源文件而非“淘汰画面/击倒画面”回放文件；检查游戏语言和检测目标是否正确。可先用“仅扫描”或 CLI 的 `--scan-mode full` 生成 `candidate_events.csv`，必要时使用 `--no-brightness-gate` 或调整 `--roi`。
+- **OCR 模型或 FFmpeg 不可用**：优先使用官方 release 包（其中已捆绑模型和 `vendor/ffmpeg`）。源码运行时按“ffmpeg”章节配置 `--ffmpeg`/`--ffprobe` 或 `PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR`，并确保首次运行可联网下载 OCR 模型。
+- **任务很慢或内存不足**：首次 OCR 会加载模型；可在专家设置将并行任务设为 `1`，或使用 `--jobs 1`。快速扫描依赖候选提示，需确保候选 CSV 未被误删。
 
 ## 开发
 

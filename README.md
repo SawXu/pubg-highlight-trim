@@ -16,7 +16,7 @@ No Python install required.
 2. Extract the zip to any folder.
 3. The bundle includes `pubg-highlight-trim.exe`, bundled `ffmpeg.exe`/`ffprobe.exe`, and the PaddleOCR models needed by OCR detection.
 
-For the graphical app, download `pubg-highlight-trim-ui-windows-x64.zip`, extract it, and run `pubg-highlight-trim-ui.exe`. Keep the bundled `cli` directory beside the UI executable because it contains the complete CLI and OCR runtime.
+For the graphical app, download `pubg-highlight-trim-ui-windows-x64.zip`, extract it, and run `pubg-highlight-trim-ui.exe`. The GUI archive is a WPF desktop front end; the CLI archive is the command-line executable and runtime by itself. In the GUI archive, keep the bundled `cli` directory beside the UI executable (`pubg-highlight-trim-ui.exe` and `cli\pubg-highlight-trim.exe` at the same level). The UI starts that CLI as a child process, so moving or renaming `cli` makes the UI unavailable. Neither archive requires a separate Python or .NET installation.
 
 Run it from the extracted folder:
 
@@ -28,9 +28,29 @@ Run it from the extracted folder:
 
 ### Desktop UI
 
-The UI covers folder or single-MP4 selection, detection target and language, clip timing, scan mode, worker count, scan-only mode, merged output, and recursive search. During a run it shows per-file progress, include/skip counts, and the raw CLI log. On completion it can open the output folder or play the merged video.
+The GUI is intended for Windows users who prefer not to type CLI arguments. After launch it checks the side-by-side CLI and shows its version/status in the window's top status area. Choose either a PUBG NVIDIA Highlight folder or one or more `.mp4` files (multi-select is passed to the CLI as `--files`), then optionally choose an output directory. Leaving the output field empty uses the CLI's defaults.
+
+The controls map to these CLI settings:
+
+- **Detection target**: All, self knocked/eliminated (`self-death`), or your own knocks/eliminations (`own-kill`).
+- **Game language**: Auto, Simplified Chinese, Traditional Chinese, or English. Auto detects the profile from Highlight filenames.
+- **Scan mode**: Auto, Fast, or Full. Auto uses candidate hints when available; Full is the exhaustive choice when completeness matters.
+- **Clip range**: Seconds before and after the event (defaults 5 and 1).
+- **Merged output**: Create one merged MP4 in addition to individual clips. A single-file input defaults to no merge in the CLI; the GUI checkbox explicitly sends `--merge` or `--no-merge`.
+- **Recursive scan**: Include MP4 files in subdirectories when a folder is selected.
+- **Scan only**: Detect events and write records without creating trimmed or merged videos.
+- **Overwrite output**: Reuse/clean the selected output paths instead of choosing unique names.
+- **Expert settings**: Ignore events in the first N seconds (default 2), keep extra seconds before molotov/fire-bomb eliminations (default 10), choose OCR worker count (`auto` or a positive integer), and enable/disable the bright outlined-text prefilter.
+
+Click **Start** to run. The right-hand panel reports scan/trim progress, retained and skipped counts, elapsed time, and the current phase. Expand **Show log** to inspect the raw CLI records; this is the first place to look when a run fails. Click **Stop** to cancel the current task; the GUI terminates the CLI and its child processes. After a successful run, **Open output** opens the output root in Explorer and **Play merged video** launches the merged MP4 when one was produced.
 
 The UI communicates only through CLI arguments, standard output, and the final `summary.json`. Set `PUBG_HIGHLIGHT_TRIM_CLI` to override the CLI executable during development or compatibility testing.
+
+### GUI troubleshooting
+
+- **CLI not found / unavailable**: confirm that `cli\pubg-highlight-trim.exe` is present beside `pubg-highlight-trim-ui.exe` and that the archive was extracted completely. Do not copy only the UI executable out of the archive. For development or compatibility checks, set `PUBG_HIGHLIGHT_TRIM_CLI` to a valid CLI path.
+- **The run fails immediately**: verify that the input path exists, multi-select contains only MP4 files, the output folder is writable, and expert numeric fields are non-negative (`jobs` must be `auto` or a positive integer). Expand the log and note the CLI exit code.
+- **No matching events**: check the selected detection target and game language, try **Auto** or **Full** scan, and confirm the files are original NVIDIA Highlight clips rather than unsupported replay-perspective files. Use **Scan only** to inspect `检测与裁剪记录.csv`/`candidate_events.csv` before creating videos.
 
 ### Command line
 
@@ -118,6 +138,8 @@ OCR options (advanced):
 - Use `--merge` without a value to force merging, `--merge ".\merged.mp4"` to choose the merged output path, or `--no-merge` to keep only individual clips.
 - The selected output directory is the run's root. Trimmed clips are written under its `clips\` subdirectory; the default merged mp4, concat list, CSV, and summary remain in the root.
 - Use `--profile` to print per-clip timings for ffprobe, OCR predict, video frame seek/read, trim encoding, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
+
+GUI and CLI use the same output layout. `<output>\clips\` contains individual trimmed videos; the merged `pubg_highlight_trim_merged.mp4` (when enabled) and its `.concat.txt` FFmpeg list are in the output root. `检测与裁剪记录.csv` records per-source detection status, event time, clip range, and timings; `candidate_events.csv` stores candidate hints for later scans; `profile.json` stores phase timings. `summary.json` records source, retained/skipped counts, output paths, scan mode, language, merge state, and OCR/cache metadata, and the GUI uses it to populate the final result.
 
 ## Detection
 
