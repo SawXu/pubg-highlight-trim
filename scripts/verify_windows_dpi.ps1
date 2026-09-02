@@ -16,8 +16,11 @@ try {
     & $mt.Source -nologo "-inputresource:$inputResource" "-out:$tempManifest"
     if ($LASTEXITCODE -ne 0) { throw "Could not extract the manifest from $resolved" }
     $manifest = Get-Content -LiteralPath $tempManifest -Raw
-    if ($manifest -notmatch "PerMonitorV2") {
+    if ($manifest -notmatch "<dpiAwareness[^>]*>\s*PerMonitorV2\s*</dpiAwareness>") {
         throw "The executable manifest does not declare PerMonitorV2 DPI awareness."
+    }
+    if ($manifest -notmatch "<dpiAware[^>]*>\s*true/pm\s*</dpiAware>") {
+        throw "The executable manifest does not declare the legacy per-monitor DPI fallback."
     }
     Write-Host "Verified PerMonitorV2 manifest in $resolved"
 }
