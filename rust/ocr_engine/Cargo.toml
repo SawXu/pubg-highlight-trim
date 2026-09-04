@@ -1,0 +1,30 @@
+[package]
+name = "pubg-ocr-engine"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Offline OCR engine contract for PUBG Highlight Trim"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "ocr_engine"
+path = "src/bin/ocr_engine.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+onnx = ["dep:image", "dep:ppocr-rs"]
+directml = ["onnx", "dep:ort", "ort/directml"]
+onnx-test-runtime = ["onnx", "ppocr-rs/test-binaries"]
+cli = ["onnx", "dep:base64", "ppocr-rs/test-binaries"]
+
+[dependencies]
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = { version = "0.22", optional = true }
+image = { version = "0.25", optional = true }
+ppocr-rs = { version = "0.7.3", optional = true }
+ort = { version = "=2.0.0-rc.9", optional = true, default-features = false }

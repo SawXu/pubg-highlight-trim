@@ -504,6 +504,10 @@ def classify_target_text(text: str, target: str, profile: GameLanguageProfile | 
 
 def load_backend(profile: GameLanguageProfile | None = None, *, verbose: bool = False) -> tuple[Any, Any]:
     profile = _language(profile)
+    if os.environ.get("PUBG_OCR_BACKEND", "paddle").lower() == "rust":
+        from .rust_ocr import rust_backend_from_environment
+        import cv2  # type: ignore
+        return cv2, rust_backend_from_environment()
     configure_paddlex_cache()
     try:
         import cv2  # type: ignore
