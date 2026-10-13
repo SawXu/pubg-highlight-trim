@@ -782,7 +782,7 @@ def run(args: SimpleNamespace) -> int:
         print(f"jobs={effective_jobs}{' (auto)' if automatic_jobs else ''}", flush=True)
         print(f"fast_path={str(fast_path).lower()}", flush=True)
         print(
-            f"brightness_gate_mode={getattr(args, 'brightness_gate_mode', None) or ('light' if fast_path else 'full')}",
+            f"brightness_gate_mode={getattr(args, 'brightness_gate_mode', None) or 'light'}",
             flush=True,
         )
         print(f"cache_dir={cache_dir or ''}", flush=True)
@@ -821,7 +821,7 @@ def run(args: SimpleNamespace) -> int:
         sampling_mode = "adaptive" if fast_path else (
             "fixed" if bool(getattr(args, "no_fast_path", False)) else getattr(args, "sampling_mode", "fixed")
         )
-        gate_mode = getattr(args, "brightness_gate_mode", None) or ("light" if fast_path else "full")
+        gate_mode = getattr(args, "brightness_gate_mode", None) or "light"
         brightness_gate = not getattr(args, "no_brightness_gate", False) and gate_mode != "none"
         return OcrConfig(
             target=args.target,

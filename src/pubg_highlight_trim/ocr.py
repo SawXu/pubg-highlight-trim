@@ -98,7 +98,7 @@ class OcrConfig:
     assist_step: float = 0.5
     ocr_width: int = 768
     brightness_gate: bool = False
-    brightness_gate_mode: str = "full"
+    brightness_gate_mode: str = "light"
     brightness_gate_roi: tuple[float, float, float, float] = (0.26, 0.635, 0.74, 0.725)
     brightness_gate_width: int = 768
     sampling_mode: str = "fixed"
