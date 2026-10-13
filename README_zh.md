@@ -126,6 +126,7 @@ OCR 选项（进阶）：
 | `--roi` | `0.30,0.66,0.70,0.75` | OCR 裁剪比例 `x1,y1,x2,y2` |
 | `--ocr-width` | `768` | OCR ROI 降采样宽度；`0` 禁用 |
 | `--no-brightness-gate` | 关 | 禁用粗扫描前的 OpenCV 亮色描边文字门控 |
+| `--brightness-gate-mode` | `light` | 粗扫描前的门控严格度：`light` 仅跳过近乎全黑的帧，`full` 额外检查亮色描边字形和横向文字结构，`none` 完全不过滤 |
 
 ### 输出行为
 
@@ -152,7 +153,7 @@ pubg_highlight_trim_output/
 
 ## 检测
 
-由于 own-kill 与混合事件裁剪依赖 OCR，检测仅使用 OCR。默认 OCR 扫描 PUBG 事件文本所在的固定下方居中区域。粗扫描先在相对位置 `x=0.26–0.74, y=0.635–0.725` 使用 OpenCV 检查亮色、深色描边和水平文字结构；未发现疑似事件文字时跳过 PaddleOCR。该门控只用于粗扫描，事件精修仍使用完整 OCR；对局结束源文件会自动禁用门控，以免胜利结算遮罩压暗文字。所有区域均使用相对坐标，不依赖视频分辨率。若布局不同，可用 `--no-brightness-gate` 禁用门控，或用 `--roi x1,y1,x2,y2` 覆盖 OCR 裁剪区域。
+由于 own-kill 与混合事件裁剪依赖 OCR，检测仅使用 OCR。默认 OCR 扫描 PUBG 事件文本所在的固定下方居中区域。粗扫描前先在相对位置 `x=0.26–0.74, y=0.635–0.725` 用 OpenCV 做预筛：默认 `light` 模式仅在画面近乎全黑时跳过 PaddleOCR；`--brightness-gate-mode full` 可恢复更严格的亮色描边与横向文字结构检查（更省 OCR 调用，但可能误拦细单行事件文本）。该门控只用于粗扫描，事件精修仍使用完整 OCR；对局结束源文件会自动禁用门控，以免胜利结算遮罩压暗文字。所有区域均使用相对坐标，不依赖视频分辨率。若布局不同，可用 `--no-brightness-gate` 禁用门控，或用 `--roi x1,y1,x2,y2` 覆盖 OCR 裁剪区域。
 
 当前支持的游戏语言：`zh-Hans`、`zh-Hant`、`en`。默认的 `--game-lang auto` 模式会从 NVIDIA Highlight 文件名自动识别 PUBG 游戏语言，支持同一文件夹中混用不同语言标签的文件。仅当需要强制指定某一种语言时，才使用 `--game-lang zh-Hans`、`--game-lang zh-Hant` 或 `--game-lang en`。
 

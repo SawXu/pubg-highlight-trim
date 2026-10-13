@@ -175,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--gate-mode",
         choices=["full", "light", "none"],
         default=None,
-        help="Gate implementation: full morphology, cheap light statistics, or none",
+        help="Gate implementation: full morphology, cheap light statistics, or none (default: light)",
     )
     return parser
 

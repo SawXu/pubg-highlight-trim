@@ -131,6 +131,7 @@ OCR options (advanced):
 | `--roi` | `0.30,0.66,0.70,0.75` | OCR crop ratios `x1,y1,x2,y2` |
 | `--ocr-width` | `768` | Downscale OCR ROI to this width; `0` disables |
 | `--no-brightness-gate` | off | Disable the OpenCV bright outlined-text gate before coarse OCR |
+| `--brightness-gate-mode` | `light` | Gate strictness before coarse OCR: `light` only skips near-empty dark frames, `full` adds outlined-glyph and horizontal-structure checks, `none` disables filtering |
 
 ### Output behavior
 
@@ -143,7 +144,7 @@ GUI and CLI use the same output layout. `<output>\clips\` contains individual tr
 
 ## Detection
 
-Detection is OCR-only because own-kill and mixed-event trimming require OCR. Before coarse OCR, OpenCV checks the relative region `x=0.26–0.74, y=0.635–0.725` for bright glyphs, dark outlines, and horizontal text structure. Frames without likely event text skip PaddleOCR. The gate only applies to coarse scanning; event refinement still uses full OCR, and match-end sources automatically bypass the gate because victory overlays can dim the text. All regions use relative coordinates and do not depend on video resolution. Use `--no-brightness-gate` to disable the prefilter or `--roi x1,y1,x2,y2` to override the OCR crop.
+Detection is OCR-only because own-kill and mixed-event trimming require OCR. Before coarse OCR, OpenCV prefilters the relative region `x=0.26–0.74, y=0.635–0.725`; the default `light` mode skips PaddleOCR only on essentially dark frames, while `--brightness-gate-mode full` restores the stricter outlined-glyph and horizontal-structure checks (cheaper, but it can reject frames that contain thin single-line event text). The gate only applies to coarse scanning; event refinement still uses full OCR, and match-end sources automatically bypass the gate because victory overlays can dim the text. All regions use relative coordinates and do not depend on video resolution. Use `--no-brightness-gate` to disable the prefilter or `--roi x1,y1,x2,y2` to override the OCR crop.
 
 Current game-language support is `zh-Hans`, `zh-Hant`, and `en`. The default `--game-lang auto` mode detects the PUBG game language from NVIDIA Highlight filenames, including mixed folders where files have different language labels. Use `--game-lang zh-Hans`, `--game-lang zh-Hant`, or `--game-lang en` only when you want to force one profile.
 
