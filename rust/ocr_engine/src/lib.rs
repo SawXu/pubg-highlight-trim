@@ -11,6 +11,38 @@ pub enum Provider {
     DirectMl,
 }
 
+pub fn provider_name(provider: Provider) -> &'static str {
+    match provider {
+        Provider::Cpu => "cpu",
+        Provider::DirectMl => "directml",
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderInfo {
+    pub provider: Provider,
+    pub requested: Provider,
+    pub device_id: Option<i32>,
+    pub fallback_reason: Option<String>,
+}
+
+impl Default for ProviderInfo {
+    fn default() -> Self {
+        Self {
+            provider: Provider::Cpu,
+            requested: Provider::Cpu,
+            device_id: None,
+            fallback_reason: None,
+        }
+    }
+}
+
+impl ProviderInfo {
+    pub fn fell_back(&self) -> bool {
+        self.provider != self.requested || self.fallback_reason.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcrStatus {
     Ok,
@@ -30,6 +62,9 @@ pub struct OcrResult {
     pub method: String,
     pub inference_ms: f64,
     pub frame_ms: f64,
+    pub provider: Provider,
+    pub device_id: Option<i32>,
+    pub fallback_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +84,9 @@ impl OcrResult {
             method: method.into(),
             inference_ms: 0.0,
             frame_ms: 0.0,
+            provider: Provider::Cpu,
+            device_id: None,
+            fallback_reason: None,
         }
     }
 }
@@ -121,11 +159,119 @@ pub trait Recognizer: Send + Sync {
         self.recognize(roi, width, height)
             .map(|(text, scores)| (text, scores, Vec::new()))
     }
+
+    fn provider_info(&self) -> ProviderInfo {
+        ProviderInfo::default()
+    }
+}
+
+#[cfg(feature = "onnx")]
+struct PpOcrState {
+    pipeline: ppocr_rs::OcrLite,
+    info: ProviderInfo,
 }
 
 #[cfg(feature = "onnx")]
 pub struct PpOcrRecognizer {
-    pipeline: std::sync::Mutex<ppocr_rs::OcrLite>,
+    state: std::sync::Mutex<PpOcrState>,
+    detector: PathBuf,
+    recognizer: PathBuf,
+    dictionary: PathBuf,
+    threads: usize,
+    allow_provider_fallback: bool,
+}
+
+#[cfg(feature = "onnx")]
+fn utf8_path(path: &Path) -> Result<&str, String> {
+    path.to_str()
+        .ok_or_else(|| format!("{} is not UTF-8", path.display()))
+}
+
+#[cfg(feature = "onnx")]
+fn build_cpu_pipeline(
+    detector: &Path,
+    recognizer: &Path,
+    dictionary: &Path,
+    threads: usize,
+) -> Result<ppocr_rs::OcrLite, String> {
+    let mut pipeline = ppocr_rs::OcrLite::new();
+    pipeline
+        .init_models_no_angle(
+            utf8_path(detector)?,
+            utf8_path(recognizer)?,
+            utf8_path(dictionary)?,
+            threads,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(pipeline)
+}
+
+#[cfg(feature = "onnx")]
+fn directml_device_id() -> i32 {
+    std::env::var("PUBG_OCR_DIRECTML_DEVICE_ID")
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .unwrap_or(0)
+}
+
+#[cfg(feature = "directml")]
+static DIRECTML_DEVICE_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+#[cfg(feature = "directml")]
+static DIRECTML_INTRA_THREADS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(1);
+
+#[cfg(feature = "directml")]
+fn directml_session_builder(
+    session: ort::session::builder::SessionBuilder,
+) -> Result<ort::session::builder::SessionBuilder, ort::Error> {
+    use ort::execution_providers::DirectMLExecutionProvider;
+    use ort::session::builder::GraphOptimizationLevel;
+    use std::sync::atomic::Ordering;
+
+    session
+        .with_optimization_level(GraphOptimizationLevel::Level2)?
+        .with_intra_threads(DIRECTML_INTRA_THREADS.load(Ordering::Relaxed))?
+        .with_execution_providers([DirectMLExecutionProvider::default()
+            .with_device_id(DIRECTML_DEVICE_ID.load(Ordering::Relaxed))
+            .build()])?
+        .with_parallel_execution(false)?
+        .with_memory_pattern(false)
+}
+
+#[cfg(feature = "directml")]
+fn build_directml_pipeline(
+    detector: &Path,
+    recognizer: &Path,
+    dictionary: &Path,
+    threads: usize,
+    device_id: i32,
+) -> Result<ppocr_rs::OcrLite, String> {
+    use std::sync::atomic::Ordering;
+
+    DIRECTML_DEVICE_ID.store(device_id, Ordering::Relaxed);
+    DIRECTML_INTRA_THREADS.store(threads.max(1), Ordering::Relaxed);
+    let mut pipeline = ppocr_rs::OcrLite::new();
+    pipeline
+        .init_models_no_angle_with_builder(
+            utf8_path(detector)?,
+            utf8_path(recognizer)?,
+            utf8_path(dictionary)?,
+            threads,
+            Some(directml_session_builder),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(pipeline)
+}
+
+#[cfg(all(feature = "onnx", not(feature = "directml")))]
+fn build_directml_pipeline(
+    _detector: &Path,
+    _recognizer: &Path,
+    _dictionary: &Path,
+    _threads: usize,
+    _device_id: i32,
+) -> Result<ppocr_rs::OcrLite, String> {
+    Err("directml support is not enabled in this build".into())
 }
 
 #[cfg(feature = "onnx")]
@@ -136,18 +282,14 @@ impl PpOcrRecognizer {
         dictionary: &Path,
         threads: usize,
     ) -> Result<Self, String> {
-        let mut pipeline = ppocr_rs::OcrLite::new();
-        pipeline
-            .init_models_no_angle(
-                detector.to_str().ok_or("detector path is not UTF-8")?,
-                recognizer.to_str().ok_or("recognizer path is not UTF-8")?,
-                dictionary.to_str().ok_or("dictionary path is not UTF-8")?,
-                threads,
-            )
-            .map_err(|error| error.to_string())?;
-        Ok(Self {
-            pipeline: std::sync::Mutex::new(pipeline),
-        })
+        Self::for_provider(
+            detector,
+            recognizer,
+            dictionary,
+            threads,
+            Provider::Cpu,
+            false,
+        )
     }
 
     pub fn from_model_dir(
@@ -155,48 +297,79 @@ impl PpOcrRecognizer {
         manifest: &ModelManifest,
         threads: usize,
     ) -> Result<Self, String> {
-        Self::from_paths(
+        Self::from_model_dir_with_provider(model_dir, manifest, threads, Provider::Cpu, false)
+    }
+
+    pub fn from_model_dir_with_provider(
+        model_dir: &Path,
+        manifest: &ModelManifest,
+        threads: usize,
+        requested: Provider,
+        allow_provider_fallback: bool,
+    ) -> Result<Self, String> {
+        Self::for_provider(
             &model_dir.join(&manifest.detector_file),
             &model_dir.join(&manifest.recognizer_file),
             &model_dir.join(&manifest.dictionary_file),
             threads,
+            requested,
+            allow_provider_fallback,
         )
     }
 
-    #[cfg(feature = "directml")]
-    pub fn from_paths_directml(
+    fn for_provider(
         detector: &Path,
-        classifier: &Path,
         recognizer: &Path,
         dictionary: &Path,
         threads: usize,
+        requested: Provider,
+        allow_provider_fallback: bool,
     ) -> Result<Self, String> {
-        fn builder(
-            session: ort::session::builder::SessionBuilder,
-        ) -> Result<ort::session::builder::SessionBuilder, ort::Error> {
-            let device_id = std::env::var("PUBG_OCR_DIRECTML_DEVICE_ID")
-                .ok()
-                .and_then(|value| value.parse::<i32>().ok())
-                .unwrap_or(0);
-            session.with_execution_providers([
-                ort::execution_providers::DirectMLExecutionProvider::default()
-                    .with_device_id(device_id)
-                    .build(),
-            ])
-        }
-        let mut pipeline = ppocr_rs::OcrLite::new();
-        pipeline
-            .init_models_with_dict_and_builder(
-                detector.to_str().ok_or("detector path is not UTF-8")?,
-                classifier.to_str().ok_or("classifier path is not UTF-8")?,
-                recognizer.to_str().ok_or("recognizer path is not UTF-8")?,
-                dictionary.to_str().ok_or("dictionary path is not UTF-8")?,
-                threads,
-                Some(builder),
-            )
-            .map_err(|error| error.to_string())?;
+        let (pipeline, info) = match requested {
+            Provider::Cpu => (
+                build_cpu_pipeline(detector, recognizer, dictionary, threads)?,
+                ProviderInfo {
+                    provider: Provider::Cpu,
+                    requested: Provider::Cpu,
+                    device_id: None,
+                    fallback_reason: None,
+                },
+            ),
+            Provider::DirectMl => {
+                let device_id = directml_device_id();
+                match build_directml_pipeline(detector, recognizer, dictionary, threads, device_id)
+                {
+                    Ok(pipeline) => (
+                        pipeline,
+                        ProviderInfo {
+                            provider: Provider::DirectMl,
+                            requested: Provider::DirectMl,
+                            device_id: Some(device_id),
+                            fallback_reason: None,
+                        },
+                    ),
+                    Err(error) if allow_provider_fallback => (
+                        build_cpu_pipeline(detector, recognizer, dictionary, threads)?,
+                        ProviderInfo {
+                            provider: Provider::Cpu,
+                            requested: Provider::DirectMl,
+                            device_id: Some(device_id),
+                            fallback_reason: Some(format!("directml-init-failed: {error}")),
+                        },
+                    ),
+                    Err(error) => {
+                        return Err(format!("directml-init-failed: {error}"));
+                    }
+                }
+            }
+        };
         Ok(Self {
-            pipeline: std::sync::Mutex::new(pipeline),
+            state: std::sync::Mutex::new(PpOcrState { pipeline, info }),
+            detector: detector.to_path_buf(),
+            recognizer: recognizer.to_path_buf(),
+            dictionary: dictionary.to_path_buf(),
+            threads,
+            allow_provider_fallback,
         })
     }
 }
@@ -211,13 +384,31 @@ impl PpOcrRecognizer {
     ) -> Result<(String, Vec<f32>, Vec<[u32; 4]>), String> {
         let image = image::RgbImage::from_raw(width, height, roi.to_vec())
             .ok_or("ROI buffer size does not match dimensions")?;
-        let mut pipeline = self
+        let mut state = self.state.lock().map_err(|_| "OCR session lock poisoned")?;
+        let result = state
             .pipeline
-            .lock()
-            .map_err(|_| "OCR session lock poisoned")?;
-        let result = pipeline
             .detect(&image, 0, 960, 0.3, 0.6, 1.6, false, false)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| error.to_string());
+        let result = match result {
+            Err(error)
+                if state.info.provider == Provider::DirectMl && self.allow_provider_fallback =>
+            {
+                let pipeline = build_cpu_pipeline(
+                    &self.detector,
+                    &self.recognizer,
+                    &self.dictionary,
+                    self.threads,
+                )?;
+                state.pipeline = pipeline;
+                state.info.provider = Provider::Cpu;
+                state.info.fallback_reason = Some(format!("directml-inference-failed: {error}"));
+                state
+                    .pipeline
+                    .detect(&image, 0, 960, 0.3, 0.6, 1.6, false, false)
+                    .map_err(|error| error.to_string())?
+            }
+            other => other?,
+        };
         let mut blocks = result.text_blocks;
         blocks.sort_by_key(|block| {
             let min_y = block
@@ -290,55 +481,83 @@ impl Recognizer for PpOcrRecognizer {
     ) -> Result<(String, Vec<f32>, Vec<[u32; 4]>), String> {
         self.detect_roi(roi, width, height)
     }
+
+    fn provider_info(&self) -> ProviderInfo {
+        self.state
+            .lock()
+            .map(|state| state.info.clone())
+            .unwrap_or_default()
+    }
 }
 
 pub struct OcrEngine<R> {
-    provider: Provider,
+    requested: Provider,
     recognizer: R,
-    provider_fallback: bool,
 }
 
 impl<R: Recognizer> OcrEngine<R> {
     pub fn new(config: OcrEngineConfig, recognizer: R) -> Result<Self, EngineError> {
         validate_manifest(&config.model_dir, &config.manifest)?;
-        let (provider, fallback) = match config.provider {
-            Provider::Cpu => (Provider::Cpu, false),
-            Provider::DirectMl if directml_available() => (Provider::DirectMl, false),
-            Provider::DirectMl if config.allow_provider_fallback => (Provider::Cpu, true),
-            Provider::DirectMl => return Err(EngineError::ProviderUnavailable),
-        };
+        let info = recognizer.provider_info();
+        if config.provider == Provider::DirectMl
+            && info.provider == Provider::Cpu
+            && info.requested != Provider::DirectMl
+            && !config.allow_provider_fallback
+        {
+            return Err(EngineError::ProviderUnavailable);
+        }
         Ok(Self {
-            provider,
+            requested: config.provider,
             recognizer,
-            provider_fallback: fallback,
         })
     }
 
     pub fn provider(&self) -> Provider {
-        self.provider
+        self.recognizer.provider_info().provider
+    }
+
+    pub fn provider_info(&self) -> ProviderInfo {
+        self.recognizer.provider_info()
+    }
+
+    fn runtime_info(&self) -> ProviderInfo {
+        let mut info = self.recognizer.provider_info();
+        info.requested = self.requested;
+        if self.requested == Provider::DirectMl
+            && info.provider == Provider::Cpu
+            && info.fallback_reason.is_none()
+        {
+            info.fallback_reason = Some("directml-unavailable".into());
+        }
+        info
     }
 
     pub fn recognize(&self, roi: Roi<'_>) -> OcrResult {
         let frame_start = Instant::now();
         if roi.width == 0 || roi.height == 0 || roi.pixels.is_empty() {
-            return OcrResult::empty(OcrStatus::EmptyRoi, self.method());
+            let mut result = OcrResult::empty(OcrStatus::EmptyRoi, self.method());
+            result.provider = self.provider();
+            return result;
         }
         let expected_len = (roi.width as usize)
             .checked_mul(roi.height as usize)
             .and_then(|value| value.checked_mul(3));
         if expected_len != Some(roi.pixels.len()) {
-            return OcrResult::empty(OcrStatus::InvalidRoi, self.method());
+            let mut result = OcrResult::empty(OcrStatus::InvalidRoi, self.method());
+            result.provider = self.provider();
+            return result;
         }
         let inference_start = Instant::now();
-        match self
+        let outcome = self
             .recognizer
-            .recognize_with_boxes(roi.pixels, roi.width, roi.height)
-        {
+            .recognize_with_boxes(roi.pixels, roi.width, roi.height);
+        let info = self.runtime_info();
+        match outcome {
             Ok((text, scores, boxes)) => OcrResult {
                 text,
                 scores,
                 boxes,
-                status: if self.provider_fallback {
+                status: if info.fell_back() {
                     OcrStatus::ProviderFallback
                 } else {
                     OcrStatus::Ok
@@ -346,6 +565,9 @@ impl<R: Recognizer> OcrEngine<R> {
                 method: self.method(),
                 inference_ms: inference_start.elapsed().as_secs_f64() * 1000.0,
                 frame_ms: frame_start.elapsed().as_secs_f64() * 1000.0,
+                provider: info.provider,
+                device_id: info.device_id,
+                fallback_reason: info.fallback_reason,
             },
             Err(_) => OcrResult {
                 text: String::new(),
@@ -355,18 +577,15 @@ impl<R: Recognizer> OcrEngine<R> {
                 method: self.method(),
                 inference_ms: inference_start.elapsed().as_secs_f64() * 1000.0,
                 frame_ms: frame_start.elapsed().as_secs_f64() * 1000.0,
+                provider: info.provider,
+                device_id: info.device_id,
+                fallback_reason: info.fallback_reason,
             },
         }
     }
 
     fn method(&self) -> String {
-        format!(
-            "onnx-{}",
-            match self.provider {
-                Provider::Cpu => "cpu",
-                Provider::DirectMl => "directml",
-            }
-        )
+        format!("onnx-{}", provider_name(self.provider()))
     }
 }
 
@@ -388,22 +607,6 @@ impl fmt::Display for EngineError {
     }
 }
 impl std::error::Error for EngineError {}
-
-#[cfg(feature = "directml")]
-fn directml_available() -> bool {
-    use ort::execution_providers::{DirectMLExecutionProvider, ExecutionProvider};
-
-    cfg!(target_os = "windows")
-        && std::env::var_os("PUBG_OCR_DIRECTML").is_some()
-        && DirectMLExecutionProvider::default()
-            .is_available()
-            .unwrap_or(false)
-}
-
-#[cfg(not(feature = "directml"))]
-fn directml_available() -> bool {
-    false
-}
 
 fn validate_manifest(dir: &Path, manifest: &ModelManifest) -> Result<(), EngineError> {
     for (name, expected) in [
@@ -436,6 +639,34 @@ mod tests {
             Ok(("击倒了你 Enemy".into(), vec![0.99]))
         }
     }
+    fn config(provider: Provider, allow_provider_fallback: bool) -> OcrEngineConfig {
+        static TEST_DIR_ID: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "pubg-ocr-engine-cfg-{}-{}",
+            std::process::id(),
+            TEST_DIR_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::create_dir_all(&dir);
+        for n in ["det.onnx", "rec.onnx", "dict.txt"] {
+            fs::write(dir.join(n), b"fixture").unwrap();
+        }
+        let digest = format!("{:x}", Sha256::digest(b"fixture"));
+        OcrEngineConfig {
+            provider,
+            model_dir: dir,
+            manifest: ModelManifest {
+                model_version: "test".into(),
+                detector_file: "det.onnx".into(),
+                recognizer_file: "rec.onnx".into(),
+                dictionary_file: "dict.txt".into(),
+                detector_sha256: digest.clone(),
+                recognizer_sha256: digest.clone(),
+                dictionary_sha256: digest,
+            },
+            allow_provider_fallback,
+        }
+    }
+
     fn engine() -> OcrEngine<Fake> {
         let dir = std::env::temp_dir().join(format!(
             "pubg-ocr-engine-test-{}-{}",
@@ -514,6 +745,29 @@ mod tests {
         assert!(matches!(
             OcrEngine::new(c, Fake),
             Err(EngineError::MissingModel(_))
+        ));
+    }
+
+    #[test]
+    fn directml_request_falls_back_to_cpu_when_allowed() {
+        let engine = OcrEngine::new(config(Provider::DirectMl, true), Fake).unwrap();
+        assert_eq!(engine.provider(), Provider::Cpu);
+        let result = engine.recognize(Roi {
+            pixels: &[0; 60],
+            width: 10,
+            height: 2,
+        });
+        assert_eq!(result.status, OcrStatus::ProviderFallback);
+        assert_eq!(result.provider, Provider::Cpu);
+        assert_eq!(result.method, "onnx-cpu");
+        assert!(result.fallback_reason.is_some());
+    }
+
+    #[test]
+    fn directml_request_without_fallback_is_rejected() {
+        assert!(matches!(
+            OcrEngine::new(config(Provider::DirectMl, false), Fake),
+            Err(EngineError::ProviderUnavailable)
         ));
     }
 

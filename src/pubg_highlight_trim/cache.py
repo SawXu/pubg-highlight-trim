@@ -15,6 +15,19 @@ CACHE_VERSION = "1"
 OCR_MODEL_VERSION = "paddleocr-3.7.0"
 
 
+def ocr_engine_descriptor() -> str:
+    backend = os.environ.get("PUBG_OCR_BACKEND", "paddle").strip().lower()
+    if backend != "rust":
+        return "paddle"
+    from .rust_ocr import normalize_provider
+
+    try:
+        provider = normalize_provider(os.environ.get("PUBG_OCR_PROVIDER"))
+    except ValueError:
+        provider = "invalid"
+    return f"rust-onnx:{provider}"
+
+
 def content_fingerprint(path: Path, chunk_size: int = 1024 * 1024) -> str:
     digest = hashlib.blake2b(digest_size=20)
     with path.open("rb") as handle:
@@ -35,6 +48,7 @@ def cache_key(
         "cache_version": CACHE_VERSION,
         "algorithm_version": algorithm_version,
         "model_version": OCR_MODEL_VERSION,
+        "engine": ocr_engine_descriptor(),
         "content": content_fingerprint(path),
         "size": stat.st_size,
         "target": config.target,

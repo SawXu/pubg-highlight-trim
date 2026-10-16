@@ -508,7 +508,10 @@ def load_backend(profile: GameLanguageProfile | None = None, *, verbose: bool = 
     if os.environ.get("PUBG_OCR_BACKEND", "paddle").lower() == "rust":
         from .rust_ocr import rust_backend_from_environment
         import cv2  # type: ignore
-        return cv2, rust_backend_from_environment()
+        backend = rust_backend_from_environment()
+        if verbose:
+            print(f"Rust OCR backend requested provider={backend.provider}", flush=True)
+        return cv2, backend
     configure_paddlex_cache()
     try:
         import cv2  # type: ignore

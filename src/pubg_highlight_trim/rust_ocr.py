@@ -8,11 +8,39 @@ import subprocess
 from typing import Any
 
 
+_PROVIDER_ALIASES = {
+    "": "cpu",
+    "cpu": "cpu",
+    "default": "cpu",
+    "auto": "cpu",
+    "directml": "directml",
+    "dml": "directml",
+    "directml-only": "directml-only",
+    "dml-only": "directml-only",
+}
+
+
+def normalize_provider(value: str | None) -> str:
+    provider = _PROVIDER_ALIASES.get((value or "").strip().lower())
+    if provider is None:
+        raise ValueError(
+            f"unknown OCR provider {value!r}; expected cpu, directml or directml-only"
+        )
+    return provider
+
+
 class RustOcrBackend:
-    def __init__(self, executable: str, model_dir: str, threads: int = 1) -> None:
+    def __init__(
+        self,
+        executable: str,
+        model_dir: str,
+        threads: int = 1,
+        provider: str = "cpu",
+    ) -> None:
         self.last_result: dict[str, Any] | None = None
+        self.provider = normalize_provider(provider)
         self._process = subprocess.Popen(
-            [executable, model_dir, str(max(1, threads))],
+            [executable, model_dir, str(max(1, threads)), self.provider],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
@@ -63,6 +91,10 @@ def _response_to_paddle_result(response: dict[str, Any]) -> dict[str, Any]:
         "method": response.get("method", ""),
         "inference_ms": response.get("inference_ms", 0.0),
         "frame_ms": response.get("frame_ms", 0.0),
+        "provider": response.get("provider", ""),
+        "device_id": response.get("device_id"),
+        "fallback_reason": response.get("fallback_reason"),
+        "model_version": response.get("model_version", ""),
     }
 
 
@@ -99,4 +131,5 @@ def rust_backend_from_environment() -> RustOcrBackend:
             "PUBG_OCR_ENGINE and PUBG_OCR_MODEL_DIR are required for Rust OCR"
         )
     threads = int(os.environ.get("PUBG_OCR_THREADS", "1"))
-    return RustOcrBackend(executable, model_dir, threads)
+    provider = normalize_provider(os.environ.get("PUBG_OCR_PROVIDER"))
+    return RustOcrBackend(executable, model_dir, threads, provider)

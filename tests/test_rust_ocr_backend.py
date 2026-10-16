@@ -1,4 +1,6 @@
-from pubg_highlight_trim.rust_ocr import _response_to_paddle_result
+import pytest
+
+from pubg_highlight_trim.rust_ocr import _response_to_paddle_result, normalize_provider
 
 
 def test_engine_response_maps_to_paddle_result_shape():
@@ -10,12 +12,18 @@ def test_engine_response_maps_to_paddle_result_shape():
         "method": "onnx-cpu",
         "inference_ms": 12.5,
         "frame_ms": 13.0,
+        "provider": "cpu",
+        "device_id": None,
+        "fallback_reason": None,
+        "model_version": "PP-OCRv6_medium_onnx",
     }
     item = _response_to_paddle_result(response)
     assert item["rec_texts"] == ["您以M24擊倒enemy1"]
     assert item["rec_scores"] == [0.99, 0.97]
     assert item["boxes"] == [[1, 2, 30, 10]]
     assert item["status"] == "ok"
+    assert item["provider"] == "cpu"
+    assert item["model_version"] == "PP-OCRv6_medium_onnx"
     assert "res" not in item
 
 
@@ -37,3 +45,22 @@ def test_predict_text_consumes_rust_backend_output():
     text, scores, _elapsed = _predict_text(_FakeRustBackend(), object())
     assert text == "abc"
     assert scores == "0.900"
+
+
+def test_normalize_provider_defaults_to_cpu():
+    assert normalize_provider(None) == "cpu"
+    assert normalize_provider("") == "cpu"
+    assert normalize_provider("default") == "cpu"
+    assert normalize_provider("auto") == "cpu"
+
+
+def test_normalize_provider_directml_variants():
+    assert normalize_provider("DirectML") == "directml"
+    assert normalize_provider("dml") == "directml"
+    assert normalize_provider("directml-only") == "directml-only"
+    assert normalize_provider("dml-only") == "directml-only"
+
+
+def test_normalize_provider_rejects_unknown_values():
+    with pytest.raises(ValueError):
+        normalize_provider("cuda")
