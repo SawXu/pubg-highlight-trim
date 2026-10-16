@@ -1,0 +1,6 @@
+[workspace]
+members = ["ocr_engine"]
+resolver = "2"
+
+[patch.crates-io]
+ppocr-rs = { path = "../vendor/ppocr-rs" }

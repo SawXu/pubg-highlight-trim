@@ -1,0 +1,37 @@
+{
+  "model_version": "PP-OCRv6_medium_onnx",
+  "license": "Apache-2.0",
+  "detector": {
+    "file": "det.onnx",
+    "repository": "PaddlePaddle/PP-OCRv6_medium_det_onnx",
+    "revision": "61323801669c338b7891481ec7bac61ce31b576a",
+    "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.onnx",
+    "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1"
+  },
+  "recognizer": {
+    "file": "rec.onnx",
+    "repository": "PaddlePaddle/PP-OCRv6_medium_rec_onnx",
+    "revision": "50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+    "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.onnx",
+    "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba"
+  },
+  "dictionary": {
+    "file": "dict.txt",
+    "revision": "50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+    "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.yml",
+    "extract": "PostProcess.character_dict",
+    "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"
+  },
+  "contract": {
+    "detector_input": "x",
+    "detector_output": "fetch_name_0",
+    "recognizer_output": "fetch_name_0",
+    "recognizer_input": "x",
+    "max_side_len": 960,
+    "box_score_threshold": 0.3,
+    "box_threshold": 0.6,
+    "unclip_ratio": 1.6,
+    "recognition_height": 48,
+    "languages": ["zh-Hans", "zh-Hant", "en"]
+  }
+}
