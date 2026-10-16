@@ -1,0 +1,9 @@
+{"frame_id":1,"language":"zh-Hans","text":"你击倒了Enemy_01","action":"knock","target":"own-kill","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":2,"language":"zh-Hant","text":"您擊殺了敵人-02","action":"eliminate","target":"own-kill","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":3,"language":"en","text":"YOU KNOCKED OUT Enemy-03","action":"knock","target":"own-kill","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":4,"language":"zh-Hans","text":"你被击倒了PlayerA","action":"knock","target":"self-death","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":5,"language":"zh-Hant","text":"您終於擊殺了PlayerB","action":"eliminate","target":"self-death","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":6,"language":"en","text":"YOU WERE KILLED BY Player_C","action":"eliminate","target":"self-death","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":7,"language":"zh-Hans","text":"协助次数 1","action":"ignored","target":"none","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":8,"language":"en","text":"YOU FINALLY ELIMINATED Player_D","action":"ignored","target":"none","boxes":[[10,20,100,40]],"inference_ms":12.0}
+{"frame_id":9,"language":"en","text":"2 KILLS 1 ASSIST","action":"ignored","target":"none","boxes":[[10,20,100,40]],"inference_ms":12.0}
