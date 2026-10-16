@@ -10,6 +10,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 
+from .frame_source import Cv2FrameSource, FrameSource, FrameSourceFactory
 from .game_languages import GameLanguageProfile, default_game_language_profile
 from .models import EventDetection
 from .runtime import first_existing_runtime_path
@@ -676,7 +677,7 @@ def _predict_text(ocr: Any, crop: Any) -> tuple[str, str, float]:
 
 def _ocr_crop_at(
     cv2_module: Any,
-    cap: Any,
+    source: FrameSource,
     ocr: Any,
     sec: float,
     config: OcrConfig,
@@ -712,9 +713,8 @@ def _ocr_crop_at(
     frame_started = time.time()
     frame = config.decoded_frame_cache.get(frame_key)
     if frame is None:
-        cap.set(cv2_module.CAP_PROP_POS_MSEC, max(0.0, sec) * 1000)
-        ok, frame = cap.read()
-        if not ok or frame is None:
+        frame = source.read_at(sec)
+        if frame is None:
             config.runtime.ocr_skipped += 1
             config.runtime.last_skip_reason = "frame-read-failed"
             return "", "", 0.0, time.time() - frame_started, False, False
@@ -788,22 +788,22 @@ def _classify_ocr_result(result: OcrResult, config: OcrConfig) -> OcrResult:
 
 def ocr_at(
     cv2_module: Any,
-    cap: Any,
+    source: FrameSource,
     ocr: Any,
     sec: float,
     config: OcrConfig,
     apply_brightness_gate: bool = False,
 ) -> OcrResult:
     text, scores, elapsed, frame_elapsed, available, gate_skipped = _ocr_crop_at(
-        cv2_module, cap, ocr, sec, config, config.roi, "primary", apply_brightness_gate
+        cv2_module, source, ocr, sec, config, config.roi, "primary", apply_brightness_gate
     )
     result = _result_from_crop(text, scores, elapsed, frame_elapsed, available, gate_skipped, config)
     return _classify_ocr_result(result, config)
 
 
-def ocr_assist_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrConfig) -> OcrResult:
+def ocr_assist_at(cv2_module: Any, source: FrameSource, ocr: Any, sec: float, config: OcrConfig) -> OcrResult:
     text, scores, elapsed, frame_elapsed, available, gate_skipped = _ocr_crop_at(
-        cv2_module, cap, ocr, sec, config, config.assist_roi, "assist"
+        cv2_module, source, ocr, sec, config, config.assist_roi, "assist"
     )
     result = _result_from_crop(text, scores, elapsed, frame_elapsed, available, gate_skipped, config)
     if result.method in {"", "paddle-not-target-text"}:
@@ -813,7 +813,7 @@ def ocr_assist_at(cv2_module: Any, cap: Any, ocr: Any, sec: float, config: OcrCo
 
 def detect_assist_nearby(
     cv2_module: Any,
-    cap: Any,
+    source: FrameSource,
     ocr: Any,
     event_sec: float,
     duration: float,
@@ -837,7 +837,7 @@ def detect_assist_nearby(
         config.runtime.assist_budget_used += 1
         config.runtime.assist_calls += 1
         sampled += 1
-        result = ocr_assist_at(cv2_module, cap, ocr, sec, config)
+        result = ocr_assist_at(cv2_module, source, ocr, sec, config)
         config.runtime.assist_ocr_seconds += result.seconds
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
@@ -851,7 +851,7 @@ def detect_assist_nearby(
 
 def _refine_with_matcher(
     cv2_module: Any,
-    cap: Any,
+    source: FrameSource,
     ocr: Any,
     coarse_sec: float,
     duration: float,
@@ -875,7 +875,7 @@ def _refine_with_matcher(
         refine_used += 1
         config.runtime.refine_budget_used += 1
         config.runtime.refine_calls += 1
-        result = ocr_at(cv2_module, cap, ocr, coarse_sec, config)
+        result = ocr_at(cv2_module, source, ocr, coarse_sec, config)
         config.runtime.refine_ocr_seconds += result.seconds
         sampled += 1
         total_ocr_seconds += result.seconds
@@ -902,7 +902,7 @@ def _refine_with_matcher(
         config.runtime.refine_budget_used += 1
         config.runtime.refine_calls += 1
         sampled += 1
-        result = ocr_at(cv2_module, cap, ocr, t, config)
+        result = ocr_at(cv2_module, source, ocr, t, config)
         config.runtime.refine_ocr_seconds += result.seconds
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
@@ -931,7 +931,7 @@ def _refine_with_matcher(
         config.runtime.refine_budget_used += 1
         config.runtime.refine_calls += 1
         sampled += 1
-        result = ocr_at(cv2_module, cap, ocr, mid, config)
+        result = ocr_at(cv2_module, source, ocr, mid, config)
         config.runtime.refine_ocr_seconds += result.seconds
         total_ocr_seconds += result.seconds
         total_frame_seconds += result.frame_seconds
@@ -945,7 +945,7 @@ def _refine_with_matcher(
 
 def refine_event(
     cv2_module: Any,
-    cap: Any,
+    source: FrameSource,
     ocr: Any,
     coarse_sec: float,
     duration: float,
@@ -954,7 +954,7 @@ def refine_event(
 ) -> tuple[float, OcrResult, int, float, float]:
     return _refine_with_matcher(
         cv2_module,
-        cap,
+        source,
         ocr,
         coarse_sec,
         duration,
@@ -966,7 +966,7 @@ def refine_event(
 
 def refine_text_event(
     cv2_module: Any,
-    cap: Any,
+    source: FrameSource,
     ocr: Any,
     coarse_sec: float,
     duration: float,
@@ -976,7 +976,7 @@ def refine_text_event(
 ) -> tuple[float, OcrResult, int, float, float]:
     return _refine_with_matcher(
         cv2_module,
-        cap,
+        source,
         ocr,
         coarse_sec,
         duration,
@@ -993,12 +993,21 @@ def detect_event(path: Path, cv2_module: Any, ocr: Any, duration: float, candida
     return detect_events(path, cv2_module, ocr, duration, candidate_times, config)[0]
 
 
-def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candidate_times: list[float], config: OcrConfig) -> list[EventDetection]:
+def detect_events(
+    path: Path,
+    cv2_module: Any,
+    ocr: Any,
+    duration: float,
+    candidate_times: list[float],
+    config: OcrConfig,
+    frame_source_factory: FrameSourceFactory | None = None,
+) -> list[EventDetection]:
     detect_started = time.time()
     config.reset_runtime()
     config.frame_cache.clear()
     config.decoded_frame_cache.clear()
-    cap = cv2_module.VideoCapture(str(path))
+    factory = frame_source_factory or (lambda p: Cv2FrameSource(p, cv2_module))
+    source = factory(path)
     sampled_count = 0
     coarse_count = 0
     refine_count = 0
@@ -1028,9 +1037,9 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
             if is_adaptive_seed or config.sampling_mode != "adaptive":
                 coarse_count += 1
             result = (
-                ocr_at(cv2_module, cap, ocr, sec, config, apply_brightness_gate=True)
+                ocr_at(cv2_module, source, ocr, sec, config, apply_brightness_gate=True)
                 if config.brightness_gate
-                else ocr_at(cv2_module, cap, ocr, sec, config)
+                else ocr_at(cv2_module, source, ocr, sec, config)
             )
             total_ocr_seconds += result.seconds
             total_frame_seconds += result.frame_seconds
@@ -1065,7 +1074,7 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                     continue
                 target_config = replace(config, target=event.target)
                 event_sec, refined, refined_count, refined_seconds, refined_frame_seconds = refine_text_event(
-                    cv2_module, cap, ocr, sec, duration, target_config, event, result
+                    cv2_module, source, ocr, sec, duration, target_config, event, result
                 )
                 sampled_count += refined_count
                 refine_count += refined_count
@@ -1098,7 +1107,7 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                 method = refined_event.method
                 if event.target == "own-kill":
                     assist_result, assist_count, assist_seconds, assist_frame_seconds = detect_assist_nearby(
-                        cv2_module, cap, ocr, event_sec, duration, target_config, refined_event
+                        cv2_module, source, ocr, event_sec, duration, target_config, refined_event
                     )
                     sampled_count += assist_count
                     total_ocr_seconds += assist_seconds
@@ -1143,7 +1152,7 @@ def detect_events(path: Path, cv2_module: Any, ocr: Any, duration: float, candid
                 )
                 seen_events.append((refined_event, event_sec))
     finally:
-        cap.release()
+        source.close()
 
     if detections:
         return detections

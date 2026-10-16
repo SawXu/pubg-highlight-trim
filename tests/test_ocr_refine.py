@@ -7,6 +7,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
+from pubg_highlight_trim.frame_source import Cv2FrameSource
 from pubg_highlight_trim.game_languages import get_game_language_profile
 from pubg_highlight_trim.ocr import (
     OcrConfig,
@@ -63,11 +64,19 @@ class OcrRefineTests(unittest.TestCase):
             CAP_PROP_POS_MSEC = 0
             INTER_AREA = 0
 
+            def __init__(self, cap):
+                self._cap = cap
+
+            def VideoCapture(self, _path):
+                return self._cap
+
         config = OcrConfig(target="both", ocr_width=0)
         cap = FakeCap()
+        cv2 = FakeCv2(cap)
+        source = Cv2FrameSource("dummy.mp4", cv2)
         with patch("pubg_highlight_trim.ocr._predict_text", return_value=("你用M416淘汰了Enemy", "0.99", 1.25)) as predict:
-            first = ocr_at(FakeCv2(), cap, None, 30.5, config)
-            second = ocr_at(FakeCv2(), cap, None, 30.5, config)
+            first = ocr_at(cv2, source, None, 30.5, config)
+            second = ocr_at(cv2, source, None, 30.5, config)
 
         self.assertEqual(first.text, second.text)
         self.assertEqual(first.seconds, 1.25)
