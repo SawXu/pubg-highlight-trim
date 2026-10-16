@@ -20,7 +20,8 @@ class FrameSource(Protocol):
     def read_at(self, sec: float) -> Any | None:
         """Frame nearest/at sec, BGR uint8 HxWx3, or None on per-frame failure."""
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release the source; must be exception-safe (may run while an error propagates)."""
 
     def __enter__(self) -> "FrameSource": ...
 
@@ -31,11 +32,21 @@ FrameSourceFactory = Callable[[Path], FrameSource]
 
 
 class Cv2FrameSource:
-    """FrameSource backed by cv2_module.VideoCapture; keeps existing seek+read semantics."""
+    """FrameSource backed by cv2_module.VideoCapture; keeps existing seek+read semantics.
+
+    Opening is eager: construction raises VideoUnreadable when the capture
+    cannot be opened at all (cv2's silent ``isOpened() == False`` included).
+    Captures without ``isOpened()`` (test fakes) are treated as open, and
+    per-frame read failures still surface as ``None`` from ``read_at`` rather
+    than raising — only a real open failure raises here.
+    """
 
     def __init__(self, path: Path, cv2_module: Any) -> None:
         self._cv2 = cv2_module
         self._cap = cv2_module.VideoCapture(str(path))
+        if not self.is_open:
+            self.close()
+            raise VideoUnreadable(f"cv2 could not open video source: {path}")
 
     @property
     def is_open(self) -> bool:
@@ -45,6 +56,8 @@ class Cv2FrameSource:
         return True if is_opened is None else bool(is_opened())
 
     def read_at(self, sec: float) -> Any | None:
+        if self._cap is None:
+            return None
         self._cap.set(self._cv2.CAP_PROP_POS_MSEC, max(0.0, sec) * 1000)
         ok, frame = self._cap.read()
         if not ok or frame is None:
@@ -52,9 +65,12 @@ class Cv2FrameSource:
         return frame
 
     def close(self) -> None:
-        if self._cap is not None:
-            self._cap.release()
-            self._cap = None
+        cap, self._cap = self._cap, None
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
 
     def __enter__(self) -> "Cv2FrameSource":
         return self

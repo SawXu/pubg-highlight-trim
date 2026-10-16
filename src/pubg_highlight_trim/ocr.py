@@ -10,7 +10,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 
-from .frame_source import Cv2FrameSource, FrameSource, FrameSourceFactory
+from .frame_source import Cv2FrameSource, FrameSource, FrameSourceFactory, VideoUnreadable
 from .game_languages import GameLanguageProfile, default_game_language_profile
 from .models import EventDetection
 from .runtime import first_existing_runtime_path
@@ -1008,6 +1008,17 @@ def detect_events(
     config.decoded_frame_cache.clear()
     factory = frame_source_factory or (lambda p: Cv2FrameSource(p, cv2_module))
     source = factory(path)
+    # A source that fails to open at all is a first-class failure, not a clean
+    # zero-event scan. Cv2FrameSource already raises VideoUnreadable on open
+    # failure; this guard normalizes any other factory source that reports
+    # is_open=False instead of raising. Sources without is_open are treated
+    # as open (test fakes).
+    if not getattr(source, "is_open", True):
+        try:
+            source.close()
+        except Exception:
+            pass
+        raise VideoUnreadable(f"video source is not readable: {path}")
     sampled_count = 0
     coarse_count = 0
     refine_count = 0
@@ -1152,7 +1163,11 @@ def detect_events(
                 )
                 seen_events.append((refined_event, event_sec))
     finally:
-        source.close()
+        # close() must never mask a propagating error (e.g. VideoUnreadable).
+        try:
+            source.close()
+        except Exception:
+            pass
 
     if detections:
         return detections

@@ -81,7 +81,7 @@ class Cv2FrameSourceTests(unittest.TestCase):
         self.assertTrue(source.is_open)
         self.assertIsNone(source.read_at(1.0))
 
-    def test_is_open_reflects_failed_open(self):
+    def test_failed_open_raises_video_unreadable(self):
         class DeadCap:
             def isOpened(self):
                 return False
@@ -95,7 +95,8 @@ class Cv2FrameSourceTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return DeadCap()
 
-        self.assertFalse(Cv2FrameSource("clip.mp4", FakeCv2()).is_open)
+        with self.assertRaises(VideoUnreadable):
+            Cv2FrameSource("clip.mp4", FakeCv2())
 
     def test_video_unreadable_is_runtime_error(self):
         self.assertTrue(issubclass(VideoUnreadable, RuntimeError))
