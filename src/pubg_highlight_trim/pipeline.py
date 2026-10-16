@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .ffmpeg_tools import concat_clips, duration_sec, find_ffmpeg_pair, trim_clip
-from .frame_source import FfmpegFrameSource, VideoUnreadable
+from .frame_source import FfmpegFrameSource, FrameSourceFactory, VideoUnreadable
 from .cache import cache_key, load_detection_cache, save_detection_cache
 from .game_languages import (
     AUTO_GAME_LANGUAGE,
@@ -32,6 +32,23 @@ from .source_files import infer_source_file_languages, iter_source_file_language
 
 
 _WORKER_OCR_BACKENDS: dict[str, tuple[object, object]] = {}
+
+# Frame-grab decode acceleration (#52): measured on the OCR read pattern
+# (sparse ascending seeks + backward refine grabs), per-spawn hardware decode
+# (-hwaccel cuda/d3d11va/d3d12va, *_cuvid) is slower than libdav1d software
+# decode, and a sequential single-pass decoder loses to random-access seeks at
+# the ~4 s coarse-scan spacing — so the production default stays software.
+# PUBG_HIGHLIGHT_TRIM_FFMPEG_HWACCEL opts into an ffmpeg -hwaccel method for
+# experimentation; FfmpegFrameSource auto-falls back to software when the
+# hardware path cannot decode.
+DEFAULT_FFMPEG_HWACCEL: str | None = None
+
+
+def _ffmpeg_frame_source_factory(ffmpeg: str | None, ffprobe: str | Path) -> FrameSourceFactory | None:
+    if not ffmpeg:
+        return None
+    hwaccel = os.environ.get("PUBG_HIGHLIGHT_TRIM_FFMPEG_HWACCEL") or DEFAULT_FFMPEG_HWACCEL
+    return lambda p: FfmpegFrameSource(p, ffmpeg, str(ffprobe), hwaccel=hwaccel)
 
 
 def unique_path(path: Path) -> Path:
@@ -735,9 +752,7 @@ def _scan_source_worker(
     probe_started = time.time()
     duration = duration_sec(src, ffprobe)
     probe_seconds = time.time() - probe_started
-    frame_source_factory = (
-        (lambda p: FfmpegFrameSource(p, ffmpeg, str(ffprobe))) if ffmpeg else None
-    )
+    frame_source_factory = _ffmpeg_frame_source_factory(ffmpeg, ffprobe)
     with suppress_process_output(suppress_worker_output):
         detections = detect_ocr_events(
             src, cv2_module, ocr_engine, duration, candidate_times, config, frame_source_factory=frame_source_factory
@@ -958,7 +973,7 @@ def run(args: SimpleNamespace) -> int:
                             dur,
                             candidates.get(src.name, []),
                             source_ocr_config,
-                            frame_source_factory=lambda p: FfmpegFrameSource(p, ffmpeg, ffprobe),
+                            frame_source_factory=_ffmpeg_frame_source_factory(ffmpeg, ffprobe),
                         )
                 except VideoUnreadable as exc:
                     unreadable_sources[src] = str(exc)

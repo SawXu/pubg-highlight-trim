@@ -80,7 +80,16 @@ class Cv2FrameSource:
 
 
 class FfmpegFrameSource:
-    """FrameSource decoding one BGR frame per read via ffmpeg rawvideo/bgr24."""
+    """FrameSource decoding one BGR frame per read via ffmpeg rawvideo/bgr24.
+
+    ``hwaccel`` names an ffmpeg ``-hwaccel`` method (e.g. ``"cuda"``,
+    ``"d3d11va"``). It is opt-in: measured on the seek-grab OCR pattern,
+    per-spawn hardware decode costs more than it saves versus libdav1d
+    software decode, so production wiring leaves it off. When it is set and
+    the hardware path fails to decode, the source transparently retries once
+    in software and disables hwaccel for the rest of its lifetime — a missing
+    or incompatible GPU can never turn a decodable file into a read failure.
+    """
 
     _STDERR_TAIL = 400
 
@@ -143,11 +152,23 @@ class FfmpegFrameSource:
         return width, height
 
     def _decode(self, sec: float) -> Any | None:
+        frame = self._grab(sec, self._hwaccel)
+        if frame is None and self._hwaccel is not None:
+            # First hardware-path failure (no such GPU/driver, unsupported
+            # codec, broken hwdownload — or simply an out-of-range seek):
+            # disable hwaccel permanently and retry in software. Correctness
+            # is unaffected either way; a spurious disable only costs the
+            # opt-in speedup for the rest of this source.
+            self._hwaccel = None
+            frame = self._grab(sec, None)
+        return frame
+
+    def _grab(self, sec: float, hwaccel: str | None) -> Any | None:
         import numpy as np
 
         cmd = [self._ffmpeg, "-hide_banner", "-loglevel", "error"]
-        if self._hwaccel:
-            cmd += ["-hwaccel", self._hwaccel]
+        if hwaccel:
+            cmd += ["-hwaccel", hwaccel]
         cmd += [
             "-ss",
             f"{max(0.0, sec):.3f}",

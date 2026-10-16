@@ -1,5 +1,7 @@
+import statistics
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -196,6 +198,51 @@ class FfmpegFrameSourceTests(unittest.TestCase):
         argv = run.call_args[0][0]
         self.assertEqual(argv[argv.index("-hwaccel") + 1], "auto")
 
+    def test_hwaccel_failure_falls_back_to_software_and_disables_it(self):
+        good = _completed(bytes(18))
+        bad = _completed(rc=1, stderr=b"no device available")
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n"), patch(
+            "pubg_highlight_trim.frame_source.subprocess.run", side_effect=[bad, good, good]
+        ) as run:
+            source = FfmpegFrameSource(Path("clip.mp4"), "ffmpeg.exe", "ffprobe.exe", hwaccel="cuda")
+            self.assertIsNotNone(source.read_at(1.0))
+            self.assertIsNotNone(source.read_at(2.0))
+
+        argv = [call[0][0] for call in run.call_args_list]
+        self.assertIn("-hwaccel", argv[0])
+        self.assertNotIn("-hwaccel", argv[1])
+        self.assertNotIn("-hwaccel", argv[2])
+        self.assertIsNone(source._hwaccel)
+
+    def test_hwaccel_disabled_after_first_hardware_failure(self):
+        # A failed hwaccel read is retried in software once, then hwaccel is
+        # off for good — even when that software retry also fails.
+        good = _completed(bytes(18))
+        bad = _completed(rc=1, stderr=b"past eof")
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n"), patch(
+            "pubg_highlight_trim.frame_source.subprocess.run", side_effect=[bad, bad, good, good]
+        ) as run:
+            source = FfmpegFrameSource(Path("clip.mp4"), "ffmpeg.exe", "ffprobe.exe", hwaccel="cuda")
+            self.assertIsNone(source.read_at(999.0))
+            self.assertIsNotNone(source.read_at(1.0))
+
+        argv = [call[0][0] for call in run.call_args_list]
+        self.assertIn("-hwaccel", argv[0])
+        for later in argv[1:]:
+            self.assertNotIn("-hwaccel", later)
+
+    def test_undecodable_file_with_hwaccel_still_raises_video_unreadable(self):
+        bad = _completed(rc=1, stderr=b"broken")
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n"), patch(
+            "pubg_highlight_trim.frame_source.subprocess.run", side_effect=[bad, bad, bad]
+        ) as run:
+            source = FfmpegFrameSource(Path("clip.mp4"), "ffmpeg.exe", "ffprobe.exe", hwaccel="cuda")
+            with self.assertRaises(VideoUnreadable):
+                source.read_at(1.0)
+
+        # hwaccel + software at the requested ts, then software-only at 0.0.
+        self.assertEqual(run.call_count, 3)
+
     def test_decode_failure_returns_none_once_a_frame_decoded(self):
         good = _completed(bytes(18))
         bad = _completed(rc=1, stderr=b"boom")
@@ -299,6 +346,38 @@ class FfmpegFrameSourceIntegrationTests(unittest.TestCase):
         bad.write_bytes(b"not a video")
         with self.assertRaises(VideoUnreadable):
             FfmpegFrameSource(bad, self.ffmpeg, self.ffprobe)
+
+    def test_unavailable_hwaccel_falls_back_to_software_decode(self):
+        clip = self._synthesize("clip_hwfallback.mp4", "-c:v", "libx264")
+        with FfmpegFrameSource(clip, self.ffmpeg, self.ffprobe, hwaccel="not-a-real-hwaccel") as source:
+            frame = source.read_at(1.0)
+            self.assertIsNotNone(frame)
+            self.assertEqual(frame.shape, (240, 320, 3))
+            self.assertIsNone(source._hwaccel)
+            self.assertIsNotNone(source.read_at(1.5))
+
+    def test_av1_read_at_latency_within_h264_bound(self):
+        try:
+            av1 = self._synthesize("clip_av1_perf.mp4", "-c:v", "libaom-av1", "-cpu-used", "8", "-crf", "40")
+        except subprocess.CalledProcessError:
+            self.skipTest("libaom-av1 encoder unavailable")
+        h264 = self._synthesize("clip_h264_perf.mp4", "-c:v", "libx264")
+
+        def median_read_ms(clip: Path) -> float:
+            latencies = []
+            with FfmpegFrameSource(clip, self.ffmpeg, self.ffprobe) as source:
+                for sec in (0.2, 0.8, 1.4, 0.5, 1.0):
+                    started = time.perf_counter()
+                    self.assertIsNotNone(source.read_at(sec))
+                    latencies.append((time.perf_counter() - started) * 1000)
+            return statistics.median(latencies)
+
+        av1_ms = median_read_ms(av1)
+        h264_ms = median_read_ms(h264)
+        # Smoke bound, not the real benchmark (scripts/bench_frame_read.py):
+        # catches a gross AV1 regression while staying flake-safe on tiny
+        # synthesized clips where process spawn dominates.
+        self.assertLessEqual(av1_ms, h264_ms * 4.0)
 
 
 if __name__ == "__main__":
