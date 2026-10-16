@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .ffmpeg_tools import find_binary
+from .ffmpeg_tools import find_binary, run_stdout
 
 
 class VideoUnreadable(RuntimeError):
@@ -41,7 +41,7 @@ class Cv2FrameSource:
     than raising — only a real open failure raises here.
     """
 
-    def __init__(self, path: Path, cv2_module: Any) -> None:
+    def __init__(self, path: str | Path, cv2_module: Any) -> None:
         self._cv2 = cv2_module
         self._cap = cv2_module.VideoCapture(str(path))
         if not self.is_open:
@@ -92,8 +92,11 @@ class FfmpegFrameSource:
     """
 
     _STDERR_TAIL = 400
+    # Upper bound for one frame-grab spawn; a hung ffmpeg must not stall a
+    # worker forever. Generous relative to measured grab latency (~0.1-0.5 s).
+    _DECODE_TIMEOUT_SEC = 60.0
 
-    def __init__(self, path: Path, ffmpeg: str, ffprobe: str | None = None, hwaccel: str | None = None) -> None:
+    def __init__(self, path: str | Path, ffmpeg: str, ffprobe: str | None = None, hwaccel: str | None = None) -> None:
         self._path = Path(path)
         self._ffmpeg = str(ffmpeg)
         self._ffprobe = str(ffprobe) if ffprobe else find_binary("ffprobe.exe")
@@ -116,6 +119,8 @@ class FfmpegFrameSource:
         return self._height
 
     def read_at(self, sec: float) -> Any | None:
+        if self._closed:
+            return None
         frame = self._decode(sec)
         if frame is not None:
             self._decoded_any = True
@@ -128,7 +133,7 @@ class FfmpegFrameSource:
 
     def _probe_dimensions(self) -> tuple[int, int]:
         try:
-            out = subprocess.check_output(
+            out = run_stdout(
                 [
                     self._ffprobe,
                     "-v",
@@ -140,10 +145,8 @@ class FfmpegFrameSource:
                     "-of",
                     "csv=p=0",
                     str(self._path),
-                ],
-                text=True,
-                stderr=subprocess.PIPE,
-            ).strip()
+                ]
+            )
             width, height = (int(part) for part in out.splitlines()[0].split(",")[:2])
         except Exception as exc:
             raise VideoUnreadable(f"ffprobe cannot read {self._path}: {exc}") from exc
@@ -183,7 +186,14 @@ class FfmpegFrameSource:
             "-",
         ]
         try:
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=self._DECODE_TIMEOUT_SEC
+            )
+        except subprocess.TimeoutExpired:
+            # Treat a hung ffmpeg like any other decode failure; the first-read
+            # rules in read_at still escalate to VideoUnreadable.
+            self._stderr_tail = f"ffmpeg timed out after {self._DECODE_TIMEOUT_SEC:.0f}s"
+            return None
         except OSError as exc:
             raise VideoUnreadable(f"cannot run {self._ffmpeg}: {exc}") from exc
         self._stderr_tail = proc.stderr[-self._STDERR_TAIL :].decode("utf-8", "replace").strip()

@@ -1,5 +1,9 @@
 # ADR-0002: AV1 OCR frame reads stay on per-seek software decode
 
+## Status
+
+Accepted
+
 ## Context
 
 Ticket #52 asked to bring AV1 OCR scan time near H.264 levels via hardware
@@ -18,7 +22,7 @@ refine schedule; `scripts/bench_frame_read.py`):
 | `-hwaccel d3d12va` | ~349 | ~554 |
 | `*_cuvid` decoder | ~191 | ~335 |
 
-Per-spread breakdown: process spawn ~30 ms, so seek+decode dominates.
+Per-spawn breakdown: process spawn ~30 ms, so seek+decode dominates.
 Hardware paths *lose* because every spawn pays GPU context init +
 hwdownload. A sequential decoder loses worse: coarse-scan gaps are ~4 s
 (~240 frames at 60 fps) and software AV1 sustains only ~330 fps of sequential

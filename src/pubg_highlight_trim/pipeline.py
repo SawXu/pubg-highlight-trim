@@ -5,6 +5,7 @@ import ctypes
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -732,6 +733,11 @@ def _progress_line(phase: str, current: int, total: int, workers: int) -> str:
     return "PROGRESS " + json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 
+def _duration_probe_failure_reason(src: Path, exc: Exception) -> str:
+    """Reason text for an unreadable record when ffprobe cannot probe a source."""
+    return f"ffprobe duration probe failed for {src.name}: {exc}"
+
+
 def _scan_source_worker(
     src: Path,
     ffprobe: Path,
@@ -740,7 +746,17 @@ def _scan_source_worker(
     config: OcrConfig,
     verbose: bool = False,
     ffmpeg: str | None = None,
-) -> tuple[float, float, list[EventDetection]]:
+) -> tuple[float, float, list[EventDetection] | None, str | None]:
+    """Scan one source inside a ProcessPoolExecutor.
+
+    Returns ``(duration, probe_seconds, detections, error)``. When the source
+    is unreadable — the duration probe itself failed or decode raised
+    ``VideoUnreadable`` — ``detections`` is ``None`` and ``error`` carries the
+    reason, so a single bad file cannot abort the batch and the measured
+    duration/probe timings still reach the report. Only per-file probe
+    failures are mapped here: a missing/broken ffprobe executable surfaces
+    earlier via ``find_ffmpeg_pair`` (or as OSError, which still aborts).
+    """
     language = get_game_language_profile(language_code)
     suppress_worker_output = not verbose
     backend = _WORKER_OCR_BACKENDS.get(language.paddle_lang)
@@ -750,14 +766,20 @@ def _scan_source_worker(
         _WORKER_OCR_BACKENDS[language.paddle_lang] = backend
     cv2_module, ocr_engine = backend
     probe_started = time.time()
-    duration = duration_sec(src, ffprobe)
+    try:
+        duration = duration_sec(src, ffprobe)
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        return 0.0, time.time() - probe_started, None, _duration_probe_failure_reason(src, exc)
     probe_seconds = time.time() - probe_started
     frame_source_factory = _ffmpeg_frame_source_factory(ffmpeg, ffprobe)
-    with suppress_process_output(suppress_worker_output):
-        detections = detect_ocr_events(
-            src, cv2_module, ocr_engine, duration, candidate_times, config, frame_source_factory=frame_source_factory
-        )
-    return duration, probe_seconds, detections
+    try:
+        with suppress_process_output(suppress_worker_output):
+            detections = detect_ocr_events(
+                src, cv2_module, ocr_engine, duration, candidate_times, config, frame_source_factory=frame_source_factory
+            )
+    except VideoUnreadable as exc:
+        return duration, probe_seconds, None, str(exc)
+    return duration, probe_seconds, detections, None
 
 
 def run(args: SimpleNamespace) -> int:
@@ -893,8 +915,10 @@ def run(args: SimpleNamespace) -> int:
     jobs, _ = _effective_jobs(getattr(args, "jobs", None), len(files))
     print(_progress_line("scan", 0, len(files), jobs), flush=True)
     scan_started = time.time()
-    parallel_results: dict[Path, tuple[float, float, list[EventDetection]]] = {}
-    unreadable_sources: dict[Path, str] = {}
+    parallel_results: dict[Path, tuple[float, float, list[EventDetection] | None]] = {}
+    # src -> (duration, probe_seconds, reason) so unreadable files keep their
+    # measured timings in the report instead of placeholder zeros.
+    unreadable_sources: dict[Path, tuple[float, float, str]] = {}
     uncached_files: list[Path] = []
     for src in files:
         if cache_enabled:
@@ -904,7 +928,17 @@ def run(args: SimpleNamespace) -> int:
             cached_detections = load_detection_cache(cache_dir, key)
             cache_read_seconds += time.time() - cache_read_started
             if cached_detections is not None:
-                duration = cached_detections[0].duration_sec if cached_detections else duration_sec(src, ffprobe)
+                duration = cached_detections[0].duration_sec if cached_detections else None
+                if duration is None:
+                    probe_started = time.time()
+                    try:
+                        duration = duration_sec(src, ffprobe)
+                    except (subprocess.CalledProcessError, ValueError) as exc:
+                        probe_seconds = time.time() - probe_started
+                        unreadable_sources[src] = (0.0, probe_seconds, _duration_probe_failure_reason(src, exc))
+                        cache_status[src.name] = "hit"
+                        cache_hit_count += 1
+                        continue
                 parallel_results[src] = (duration, 0.0, cached_detections)
                 cache_status[src.name] = "hit"
                 cache_hit_count += 1
@@ -933,15 +967,22 @@ def run(args: SimpleNamespace) -> int:
             for future_index, future in enumerate(as_completed(futures), 1):
                 src = futures[future]
                 try:
-                    parallel_results[src] = future.result()
+                    duration, probe_seconds, detections, error = future.result()
                 except VideoUnreadable as exc:
-                    # A single unreadable file must not abort the batch.
-                    unreadable_sources[src] = str(exc)
+                    # Defensive: workers report unreadable sources through the
+                    # error channel, but a re-raised VideoUnreadable must still
+                    # not abort the batch.
+                    unreadable_sources[src] = (0.0, 0.0, str(exc))
                 else:
-                    if cache_enabled:
-                        cache_write_started = time.time()
-                        save_detection_cache(cache_dir, cache_keys[src], parallel_results[src][2])
-                        cache_write_seconds += time.time() - cache_write_started
+                    if error is None:
+                        parallel_results[src] = (duration, probe_seconds, detections)
+                        if cache_enabled:
+                            cache_write_started = time.time()
+                            save_detection_cache(cache_dir, cache_keys[src], detections)
+                            cache_write_seconds += time.time() - cache_write_started
+                    else:
+                        # A single unreadable file must not abort the batch.
+                        unreadable_sources[src] = (duration, probe_seconds, error)
                 print(_progress_line("scan", completed + future_index, len(files), jobs), flush=True)
 
     for idx, src in enumerate(files, 1):
@@ -953,7 +994,8 @@ def run(args: SimpleNamespace) -> int:
         if source_ocr_config.no_full_scan != ocr_config.no_full_scan:
             print(f"[{idx:02d}/{len(files)}] full_scan=true multi-kill-source | {src.name}", flush=True)
         if src in unreadable_sources:
-            dur, probe_seconds, detections = 0.0, 0.0, None
+            dur, probe_seconds, _reason = unreadable_sources[src]
+            detections = None
         elif jobs > 1:
             dur, probe_seconds, detections = parallel_results[src]
         else:
@@ -962,31 +1004,40 @@ def run(args: SimpleNamespace) -> int:
             else:
                 cv2_module, ocr_engine = backend_for(language_profile)
                 probe_started = time.time()
-                dur = duration_sec(src, ffprobe)
-                probe_seconds = time.time() - probe_started
                 try:
-                    with suppress_process_output(not verbose):
-                        detections = detect_ocr_events(
-                            src,
-                            cv2_module,
-                            ocr_engine,
-                            dur,
-                            candidates.get(src.name, []),
-                            source_ocr_config,
-                            frame_source_factory=_ffmpeg_frame_source_factory(ffmpeg, ffprobe),
-                        )
-                except VideoUnreadable as exc:
-                    unreadable_sources[src] = str(exc)
+                    dur = duration_sec(src, ffprobe)
+                except (subprocess.CalledProcessError, ValueError) as exc:
+                    # Per-file probe failure: same unreadable outcome as a
+                    # decode-dead file, not a batch-aborting crash.
+                    dur = 0.0
+                    probe_seconds = time.time() - probe_started
+                    unreadable_sources[src] = (dur, probe_seconds, _duration_probe_failure_reason(src, exc))
                     detections = None
                 else:
-                    if cache_enabled:
-                        cache_write_started = time.time()
-                        save_detection_cache(cache_dir, cache_keys[src], detections)
-                        cache_write_seconds += time.time() - cache_write_started
+                    probe_seconds = time.time() - probe_started
+                    try:
+                        with suppress_process_output(not verbose):
+                            detections = detect_ocr_events(
+                                src,
+                                cv2_module,
+                                ocr_engine,
+                                dur,
+                                candidates.get(src.name, []),
+                                source_ocr_config,
+                                frame_source_factory=_ffmpeg_frame_source_factory(ffmpeg, ffprobe),
+                            )
+                    except VideoUnreadable as exc:
+                        unreadable_sources[src] = (dur, probe_seconds, str(exc))
+                        detections = None
+                    else:
+                        if cache_enabled:
+                            cache_write_started = time.time()
+                            save_detection_cache(cache_dir, cache_keys[src], detections)
+                            cache_write_seconds += time.time() - cache_write_started
         if detections is None:
             # VideoUnreadable: the file could not be decoded at all. Report a
             # first-class outcome instead of a misleading "no events" skip.
-            reason = " ".join(str(unreadable_sources[src]).split())
+            reason = " ".join(unreadable_sources[src][2].split())
             methods["video-unreadable"] += 1
             detectors["ocr"] += 1
             total_seconds = time.time() - clip_started
@@ -1172,7 +1223,7 @@ def run(args: SimpleNamespace) -> int:
     summary = {
         "source_count": len(files),
         "included_count": included_count,
-        "skipped_count": sum(1 for row in records if row["Status"] == "skipped"),
+        "skipped_count": sum(1 for row in records if row["Status"] in {"skipped", "unreadable"}),
         "unreadable_count": sum(1 for row in records if row["Status"] == "unreadable"),
         "dry_run": args.dry_run,
         "detector": "ocr",

@@ -84,12 +84,14 @@ class Cv2FrameSourceTests(unittest.TestCase):
         self.assertIsNone(source.read_at(1.0))
 
     def test_failed_open_raises_video_unreadable(self):
+        released = []
+
         class DeadCap:
             def isOpened(self):
                 return False
 
             def release(self):
-                pass
+                released.append(True)
 
         class FakeCv2:
             CAP_PROP_POS_MSEC = 0
@@ -99,6 +101,26 @@ class Cv2FrameSourceTests(unittest.TestCase):
 
         with self.assertRaises(VideoUnreadable):
             Cv2FrameSource("clip.mp4", FakeCv2())
+        self.assertEqual(released, [True])
+
+    def test_cap_without_isopened_is_treated_as_open(self):
+        class FakeCap:
+            def set(self, *_args):
+                pass
+
+            def read(self):
+                return False, None
+
+        class FakeCv2:
+            CAP_PROP_POS_MSEC = 0
+
+            def VideoCapture(self, _path):
+                return FakeCap()
+
+        source = Cv2FrameSource("clip.mp4", FakeCv2())
+
+        self.assertTrue(source.is_open)
+        self.assertIsNone(source.read_at(1.0))
 
     def test_video_unreadable_is_runtime_error(self):
         self.assertTrue(issubclass(VideoUnreadable, RuntimeError))
@@ -281,6 +303,39 @@ class FfmpegFrameSourceTests(unittest.TestCase):
             source = FfmpegFrameSource(Path("clip.mp4"), "ffmpeg.exe", "ffprobe.exe")
         source.close()
         self.assertFalse(source.is_open)
+
+    def test_read_at_returns_none_after_close(self):
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n"), patch(
+            "pubg_highlight_trim.frame_source.subprocess.run"
+        ) as run:
+            source = FfmpegFrameSource(Path("clip.mp4"), "ffmpeg.exe", "ffprobe.exe")
+            source.close()
+            self.assertIsNone(source.read_at(1.0))
+
+        run.assert_not_called()
+
+    def test_decode_timeout_is_a_decode_failure(self):
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n"), patch(
+            "pubg_highlight_trim.frame_source.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["ffmpeg.exe"], 60.0),
+        ) as run:
+            source = FfmpegFrameSource(Path("clip.mp4"), "ffmpeg.exe", "ffprobe.exe")
+            with self.assertRaises(VideoUnreadable) as ctx:
+                source.read_at(1.0)
+
+        # First-read rules: requested ts plus the 0.0 fallback probe, then raise.
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("timed out", str(ctx.exception))
+
+    def test_decode_timeout_after_successful_frame_returns_none(self):
+        good = _completed(bytes(18))
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n"), patch(
+            "pubg_highlight_trim.frame_source.subprocess.run",
+            side_effect=[good, subprocess.TimeoutExpired(["ffmpeg.exe"], 60.0)],
+        ):
+            source = FfmpegFrameSource(Path("clip.mp4"), "ffmpeg.exe", "ffprobe.exe")
+            self.assertIsNotNone(source.read_at(1.0))
+            self.assertIsNone(source.read_at(2.0))
 
 
 class FfmpegFrameSourceIntegrationTests(unittest.TestCase):

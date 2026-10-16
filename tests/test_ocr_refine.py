@@ -158,7 +158,7 @@ class OcrRefineTests(unittest.TestCase):
     def test_refine_walks_backward_from_coarse_hit(self):
         seen: list[float] = []
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             seen.append(sec)
             if sec >= 30.5:
                 return OcrResult("击倒了你", "", 0.01, "paddle-strict-self-text")
@@ -179,7 +179,7 @@ class OcrRefineTests(unittest.TestCase):
     def test_detect_assist_nearby_checks_after_event(self):
         seen: list[float] = []
 
-        def fake_ocr_assist_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_assist_at(_cv2, _source, _ocr, sec, _config):
             seen.append(sec)
             if sec >= 31.0:
                 return OcrResult("1助攻", "0.99", 0.02, "paddle-own-kill-assist-skipped", 0.01)
@@ -197,7 +197,7 @@ class OcrRefineTests(unittest.TestCase):
         self.assertEqual(seen, [30.5, 31.0, 31.5])
 
     def test_detect_assist_nearby_skips_same_subject_assist(self):
-        def fake_ocr_assist_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_assist_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 31.0:
                 return OcrResult("你用M416淘汰了Player123助攻", "0.99", 0.02, "paddle-own-kill-assist-skipped", 0.01)
             return OcrResult("", "", 0.01, "paddle-not-assist-text", 0.01)
@@ -222,7 +222,7 @@ class OcrRefineTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return FakeCap()
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 32.0:
                 text = "你用BerylM762击倒了EnemyA你用BerylM762击倒了EnemyB"
             elif sec >= 30.0:
@@ -262,13 +262,13 @@ class OcrRefineTests(unittest.TestCase):
         seen: list[float] = []
         event = extract_text_events("你用M416击倒了EnemyA", "both")[0]
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             seen.append(sec)
             if 2.0 <= sec <= 6.0:
                 return OcrResult("你用M416击倒了EnemyA", "", 0.01, "paddle-own-kill-text")
             return OcrResult("普通HUD文字", "", 0.01, "paddle-not-target-text")
 
-        def fake_refine(_cv2, _cap, _ocr, sec, _duration, _config, _event, coarse_result=None):
+        def fake_refine(_cv2, _source, _ocr, sec, _duration, _config, _event, coarse_result=None):
             return sec, coarse_result or OcrResult("", "", 0.0, "paddle-refine-missed"), 0, 0.0, 0.0
 
         config = OcrConfig(
@@ -300,7 +300,7 @@ class OcrRefineTests(unittest.TestCase):
 
         seen: list[float] = []
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             seen.append(sec)
             return OcrResult("普通HUD文字", "", 0.01, "paddle-not-target-text")
 
@@ -327,7 +327,7 @@ class OcrRefineTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return FakeCap()
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 34.0:
                 text = "你用M416淘汰了EnemyA"
             elif sec >= 30.0:
@@ -376,7 +376,7 @@ class OcrRefineTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return FakeCap()
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 34.0:
                 text = "YOU KILLED Terminatorwlfx with Dragunov 1 KILL"
             elif sec >= 30.0:
@@ -414,7 +414,7 @@ class OcrRefineTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return FakeCap()
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 34.0:
                 text = "EnemyA用AKM淘汰了你"
             elif sec >= 30.0:
@@ -449,7 +449,7 @@ class OcrRefineTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return FakeCap()
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 34.0:
                 text = "EnemyB用AKM淘汰了你"
             elif sec >= 30.0:
@@ -484,7 +484,7 @@ class OcrRefineTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return FakeCap()
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 34.0:
                 text = "你用M416淘汰了EnemyB"
             elif sec >= 30.0:
@@ -520,7 +520,7 @@ class OcrRefineTests(unittest.TestCase):
             def VideoCapture(self, _path):
                 return FakeCap()
 
-        def fake_ocr_at(_cv2, _cap, _ocr, sec, _config):
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
             if sec >= 45.0:
                 text = "你用自动装填步枪击倒了ASKKZMPNC2020"
             elif sec >= 43.0:
