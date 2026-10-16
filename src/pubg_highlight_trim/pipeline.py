@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .ffmpeg_tools import concat_clips, duration_sec, find_ffmpeg_pair, trim_clip
-from .frame_source import FfmpegFrameSource
+from .frame_source import FfmpegFrameSource, VideoUnreadable
 from .cache import cache_key, load_detection_cache, save_detection_cache
 from .game_languages import (
     AUTO_GAME_LANGUAGE,
@@ -879,6 +879,7 @@ def run(args: SimpleNamespace) -> int:
     print(_progress_line("scan", 0, len(files), jobs), flush=True)
     scan_started = time.time()
     parallel_results: dict[Path, tuple[float, float, list[EventDetection]]] = {}
+    unreadable_sources: dict[Path, str] = {}
     uncached_files: list[Path] = []
     for src in files:
         if cache_enabled:
@@ -916,11 +917,16 @@ def run(args: SimpleNamespace) -> int:
                 print(_progress_line("scan", progress, len(files), jobs), flush=True)
             for future_index, future in enumerate(as_completed(futures), 1):
                 src = futures[future]
-                parallel_results[src] = future.result()
-                if cache_enabled:
-                    cache_write_started = time.time()
-                    save_detection_cache(cache_dir, cache_keys[src], parallel_results[src][2])
-                    cache_write_seconds += time.time() - cache_write_started
+                try:
+                    parallel_results[src] = future.result()
+                except VideoUnreadable as exc:
+                    # A single unreadable file must not abort the batch.
+                    unreadable_sources[src] = str(exc)
+                else:
+                    if cache_enabled:
+                        cache_write_started = time.time()
+                        save_detection_cache(cache_dir, cache_keys[src], parallel_results[src][2])
+                        cache_write_seconds += time.time() - cache_write_started
                 print(_progress_line("scan", completed + future_index, len(files), jobs), flush=True)
 
     for idx, src in enumerate(files, 1):
@@ -931,7 +937,9 @@ def run(args: SimpleNamespace) -> int:
         source_ocr_config = source_configs[src]
         if source_ocr_config.no_full_scan != ocr_config.no_full_scan:
             print(f"[{idx:02d}/{len(files)}] full_scan=true multi-kill-source | {src.name}", flush=True)
-        if jobs > 1:
+        if src in unreadable_sources:
+            dur, probe_seconds, detections = 0.0, 0.0, None
+        elif jobs > 1:
             dur, probe_seconds, detections = parallel_results[src]
         else:
             if src in parallel_results:
@@ -941,20 +949,45 @@ def run(args: SimpleNamespace) -> int:
                 probe_started = time.time()
                 dur = duration_sec(src, ffprobe)
                 probe_seconds = time.time() - probe_started
-                with suppress_process_output(not verbose):
-                    detections = detect_ocr_events(
-                        src,
-                        cv2_module,
-                        ocr_engine,
-                        dur,
-                        candidates.get(src.name, []),
-                        source_ocr_config,
-                        frame_source_factory=lambda p: FfmpegFrameSource(p, ffmpeg, ffprobe),
-                    )
-                if cache_enabled:
-                    cache_write_started = time.time()
-                    save_detection_cache(cache_dir, cache_keys[src], detections)
-                    cache_write_seconds += time.time() - cache_write_started
+                try:
+                    with suppress_process_output(not verbose):
+                        detections = detect_ocr_events(
+                            src,
+                            cv2_module,
+                            ocr_engine,
+                            dur,
+                            candidates.get(src.name, []),
+                            source_ocr_config,
+                            frame_source_factory=lambda p: FfmpegFrameSource(p, ffmpeg, ffprobe),
+                        )
+                except VideoUnreadable as exc:
+                    unreadable_sources[src] = str(exc)
+                    detections = None
+                else:
+                    if cache_enabled:
+                        cache_write_started = time.time()
+                        save_detection_cache(cache_dir, cache_keys[src], detections)
+                        cache_write_seconds += time.time() - cache_write_started
+        if detections is None:
+            # VideoUnreadable: the file could not be decoded at all. Report a
+            # first-class outcome instead of a misleading "no events" skip.
+            reason = " ".join(str(unreadable_sources[src]).split())
+            methods["video-unreadable"] += 1
+            detectors["ocr"] += 1
+            total_seconds = time.time() - clip_started
+            print(
+                f"[{idx:02d}/{len(files)}] SKIP {args.target} video-unreadable "
+                f"lang={language_profile.code} | {src.name}"
+                + (f" | {reason}" if verbose and reason else ""),
+                flush=True,
+            )
+            detection = EventDetection(dur, None, "video-unreadable", "ocr")
+            _profile_clip(args, idx, len(files), src, "SKIP", detection, probe_seconds, 0.0, total_seconds)
+            record = _blank_record(idx, src, dur, "unreadable", "video-unreadable", "ocr")
+            record["ProbeSeconds"] = f"{probe_seconds:.3f}"
+            record["TotalSeconds"] = f"{total_seconds:.3f}"
+            records.append(record)
+            continue
         if len(detections) == 1 and detections[0].event_sec is None:
             detection = detections[0]
             if detection.detect_seconds == 0.0:
@@ -1125,6 +1158,7 @@ def run(args: SimpleNamespace) -> int:
         "source_count": len(files),
         "included_count": included_count,
         "skipped_count": sum(1 for row in records if row["Status"] == "skipped"),
+        "unreadable_count": sum(1 for row in records if row["Status"] == "unreadable"),
         "dry_run": args.dry_run,
         "detector": "ocr",
         "game_lang": _requested_game_language(args),
