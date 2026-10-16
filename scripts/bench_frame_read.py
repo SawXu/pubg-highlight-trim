@@ -4,7 +4,10 @@ Measures ffmpeg single-frame grab latency on an AV1 source vs its H.264 twin
 under several decode strategies (software, -hwaccel X, -c:v <dec>).
 
 Usage:
-    PYTHONPATH=src PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR=<dir> python scripts/bench_frame_read.py
+    PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR=<dir> python scripts/bench_frame_read.py
+
+The script inserts <repo>/src into sys.path itself, so PYTHONPATH is not
+needed.
 """
 
 from __future__ import annotations
@@ -67,7 +70,6 @@ def build_cmd(ffmpeg: str, path: Path, sec: float, extra: list[str]) -> list[str
 def run_variant(name: str, ffmpeg: str, path: Path, times: list[float], extra: list[str], expect_bytes: int) -> dict:
     lat = []
     bad = 0
-    ref_hash = None
     for t in times:
         started = time.perf_counter()
         proc = subprocess.run(
@@ -79,8 +81,6 @@ def run_variant(name: str, ffmpeg: str, path: Path, times: list[float], extra: l
             bad += 1
             if bad == 1:
                 print(f"    ! fail rc={proc.returncode} bytes={len(proc.stdout)} stderr={proc.stderr[-200:]!r}")
-        elif ref_hash is None and t == times[0]:
-            ref_hash = hash(proc.stdout[:4096])
     return {
         "name": name,
         "n": len(times),
@@ -89,7 +89,6 @@ def run_variant(name: str, ffmpeg: str, path: Path, times: list[float], extra: l
         "mean_ms": statistics.mean(lat),
         "median_ms": statistics.median(lat),
         "p90_ms": sorted(lat)[int(len(lat) * 0.9)],
-        "frame_hash": ref_hash,
     }
 
 
