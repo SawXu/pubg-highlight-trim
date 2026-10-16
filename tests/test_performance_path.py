@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from pubg_highlight_trim.cache import cache_key, load_detection_cache, save_detection_cache
 from pubg_highlight_trim.cli import build_parser
+from pubg_highlight_trim.frame_source import Cv2FrameSource
 from pubg_highlight_trim.models import EventDetection
 from pubg_highlight_trim.ocr import OcrConfig, build_adaptive_scan_times, ocr_assist_at, ocr_at
 from pubg_highlight_trim.pipeline import CANDIDATE_CSV_COLUMNS, _candidate_row, _write_candidate_csv
@@ -125,11 +126,19 @@ class PerformancePathTests(unittest.TestCase):
             CAP_PROP_POS_MSEC = 0
             INTER_AREA = 0
 
+            def __init__(self, cap):
+                self._cap = cap
+
+            def VideoCapture(self, _path):
+                return self._cap
+
         config = OcrConfig(ocr_width=0, brightness_gate=False)
         capture = Capture()
+        cv2 = Cv2(capture)
+        source = Cv2FrameSource("dummy.mp4", cv2)
         with patch("pubg_highlight_trim.ocr._predict_text", return_value=("", "", 0.01)):
-            ocr_at(Cv2(), capture, None, 10.0, config)
-            ocr_assist_at(Cv2(), capture, None, 10.0, config)
+            ocr_at(cv2, source, None, 10.0, config)
+            ocr_assist_at(cv2, source, None, 10.0, config)
         self.assertEqual(capture.read_count, 1)
 
     def test_cache_requires_completion_marker_and_invalidates_key(self):
