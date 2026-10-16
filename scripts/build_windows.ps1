@@ -1,5 +1,6 @@
 param(
     [switch]$SkipInstall,
+    [switch]$WithRustOcr,
     [string]$Python = "python"
 )
 
@@ -54,6 +55,20 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCOD
 & $Python scripts\prune_windows_bundle.py "dist\pubg-highlight-trim"
 if ($LASTEXITCODE -ne 0) { throw "Bundle prune failed with exit code $LASTEXITCODE" }
 
+if ($WithRustOcr) {
+    cargo build --manifest-path rust\Cargo.toml --features cli --release
+    if ($LASTEXITCODE -ne 0) { throw "Rust OCR engine build failed with exit code $LASTEXITCODE" }
+    Copy-Item -LiteralPath "rust\target\release\ocr_engine.exe" -Destination "dist\pubg-highlight-trim\ocr_engine.exe" -Force
+    & $Python scripts\download_ocr_models.py --output-dir dist\pubg-highlight-trim\ocr_models
+    if ($LASTEXITCODE -ne 0) { throw "Rust OCR model download failed with exit code $LASTEXITCODE" }
+    Copy-Item -LiteralPath "rust\ocr_engine\models\pp_ocrv6_medium.json" -Destination "dist\pubg-highlight-trim\ocr_models\pp_ocrv6_medium.json" -Force
+    @"
+@echo off
+set PUBG_OCR_BACKEND=rust
+"%~dp0pubg-highlight-trim.exe" %*
+"@ | Set-Content -LiteralPath "dist\pubg-highlight-trim\pubg-highlight-trim-rust.cmd" -Encoding ASCII
+}
+
 Copy-Item -LiteralPath "README.md" -Destination "dist\pubg-highlight-trim\README.md" -Force
 Copy-Item -LiteralPath "LICENSE" -Destination "dist\pubg-highlight-trim\LICENSE" -Force
 Copy-Item -LiteralPath "THIRD_PARTY_NOTICES.md" -Destination "dist\pubg-highlight-trim\THIRD_PARTY_NOTICES.md" -Force
@@ -66,7 +81,8 @@ Run examples:
 The bundle includes ffmpeg/ffprobe and PaddleOCR models. No Python install is required.
 License: GPL-3.0-or-later. See LICENSE and THIRD_PARTY_NOTICES.md.
 "@ | Set-Content -LiteralPath "dist\pubg-highlight-trim\RUN_EXAMPLES.txt" -Encoding UTF8
-$zipPath = "dist\pubg-highlight-trim-windows-x64.zip"
+$zipName = if ($WithRustOcr) { "pubg-highlight-trim-rust-windows-x64.zip" } else { "pubg-highlight-trim-windows-x64.zip" }
+$zipPath = "dist\$zipName"
 Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path "dist\pubg-highlight-trim\*" -DestinationPath $zipPath -CompressionLevel Optimal -Force
 & $Python scripts\report_bundle_size.py "dist\pubg-highlight-trim" --zip $zipPath
