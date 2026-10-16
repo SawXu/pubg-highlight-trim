@@ -2,7 +2,8 @@ import csv
 import json
 import unittest
 import tempfile
-from contextlib import nullcontext
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import call, patch
@@ -288,6 +289,74 @@ class PipelineMergeTests(unittest.TestCase):
         self.assertEqual(load_backend.call_count, 1)
         self.assertEqual(suppress.call_args_list, [call(True), call(True), call(True)])
         _WORKER_OCR_BACKENDS.clear()
+
+    def test_scan_worker_threads_ffmpeg_into_frame_source_factory(self):
+        from pubg_highlight_trim.frame_source import FfmpegFrameSource
+
+        captured = {}
+
+        def fake_detect(*_args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        _WORKER_OCR_BACKENDS.clear()
+        with patch("pubg_highlight_trim.pipeline.load_backend", return_value=(object(), object())), patch(
+            "pubg_highlight_trim.pipeline.duration_sec", return_value=60.0
+        ), patch("pubg_highlight_trim.pipeline.detect_ocr_events", side_effect=fake_detect):
+            _scan_source_worker(Path("video.mp4"), "ffprobe.exe", "en", [], OcrConfig(), False, ffmpeg="ffmpeg.exe")
+        _WORKER_OCR_BACKENDS.clear()
+
+        factory = captured["frame_source_factory"]
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n") as probe:
+            source = factory(Path("video.mp4"))
+
+        self.assertIsInstance(source, FfmpegFrameSource)
+        self.assertEqual(probe.call_args[0][0][0], "ffprobe.exe")
+
+    def test_scan_worker_without_ffmpeg_keeps_default_factory(self):
+        captured = {}
+
+        def fake_detect(*_args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        _WORKER_OCR_BACKENDS.clear()
+        with patch("pubg_highlight_trim.pipeline.load_backend", return_value=(object(), object())), patch(
+            "pubg_highlight_trim.pipeline.duration_sec", return_value=60.0
+        ), patch("pubg_highlight_trim.pipeline.detect_ocr_events", side_effect=fake_detect):
+            _scan_source_worker(Path("video.mp4"), "ffprobe.exe", "en", [], OcrConfig())
+        _WORKER_OCR_BACKENDS.clear()
+
+        self.assertIsNone(captured["frame_source_factory"])
+
+    def test_run_uses_ffmpeg_frame_source_factory_for_sequential_scan(self):
+        from pubg_highlight_trim.frame_source import FfmpegFrameSource
+
+        captured = {}
+
+        def fake_detect(*_args, **kwargs):
+            captured.update(kwargs)
+            return [EventDetection(60.0, None, "no-event", "ocr")]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.mp4"
+            source.touch()
+            args = build_parser().parse_args([str(source), "--game-lang", "en", "-y", "--jobs", "1"])
+            with patch(
+                "pubg_highlight_trim.pipeline.find_ffmpeg_pair", return_value=("ffmpeg-path", "ffprobe-path")
+            ), patch("pubg_highlight_trim.pipeline.load_backend", return_value=(object(), object())), patch(
+                "pubg_highlight_trim.pipeline.duration_sec", return_value=60.0
+            ), patch("pubg_highlight_trim.pipeline.detect_ocr_events", side_effect=fake_detect), redirect_stdout(
+                StringIO()
+            ):
+                run(args)
+
+        factory = captured["frame_source_factory"]
+        with patch("pubg_highlight_trim.frame_source.subprocess.check_output", return_value="2,3\n") as probe:
+            frame_source = factory(Path("video.mp4"))
+
+        self.assertIsInstance(frame_source, FfmpegFrameSource)
+        self.assertEqual(probe.call_args[0][0][0], "ffprobe-path")
 
     def test_automatic_jobs_is_one_for_single_source(self):
         self.assertEqual(_automatic_jobs(1, cpu_count=16, available_memory_gb=32.0), 1)

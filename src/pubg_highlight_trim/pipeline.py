@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .ffmpeg_tools import concat_clips, duration_sec, find_ffmpeg_pair, trim_clip
+from .frame_source import FfmpegFrameSource
 from .cache import cache_key, load_detection_cache, save_detection_cache
 from .game_languages import (
     AUTO_GAME_LANGUAGE,
@@ -721,6 +722,7 @@ def _scan_source_worker(
     candidate_times: list[float],
     config: OcrConfig,
     verbose: bool = False,
+    ffmpeg: str | None = None,
 ) -> tuple[float, float, list[EventDetection]]:
     language = get_game_language_profile(language_code)
     suppress_worker_output = not verbose
@@ -733,8 +735,13 @@ def _scan_source_worker(
     probe_started = time.time()
     duration = duration_sec(src, ffprobe)
     probe_seconds = time.time() - probe_started
+    frame_source_factory = (
+        (lambda p: FfmpegFrameSource(p, ffmpeg, str(ffprobe))) if ffmpeg else None
+    )
     with suppress_process_output(suppress_worker_output):
-        detections = detect_ocr_events(src, cv2_module, ocr_engine, duration, candidate_times, config)
+        detections = detect_ocr_events(
+            src, cv2_module, ocr_engine, duration, candidate_times, config, frame_source_factory=frame_source_factory
+        )
     return duration, probe_seconds, detections
 
 
@@ -900,6 +907,7 @@ def run(args: SimpleNamespace) -> int:
                     candidates.get(src.name, []),
                     source_configs[src],
                     verbose,
+                    ffmpeg,
                 ): src
                 for src in uncached_files
             }
@@ -934,7 +942,15 @@ def run(args: SimpleNamespace) -> int:
                 dur = duration_sec(src, ffprobe)
                 probe_seconds = time.time() - probe_started
                 with suppress_process_output(not verbose):
-                    detections = detect_ocr_events(src, cv2_module, ocr_engine, dur, candidates.get(src.name, []), source_ocr_config)
+                    detections = detect_ocr_events(
+                        src,
+                        cv2_module,
+                        ocr_engine,
+                        dur,
+                        candidates.get(src.name, []),
+                        source_ocr_config,
+                        frame_source_factory=lambda p: FfmpegFrameSource(p, ffmpeg, ffprobe),
+                    )
                 if cache_enabled:
                     cache_write_started = time.time()
                     save_detection_cache(cache_dir, cache_keys[src], detections)
