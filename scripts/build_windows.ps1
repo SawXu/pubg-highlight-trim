@@ -56,7 +56,7 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCOD
 if ($LASTEXITCODE -ne 0) { throw "Bundle prune failed with exit code $LASTEXITCODE" }
 
 if ($WithRustOcr) {
-    cargo build --manifest-path rust\Cargo.toml --features cli --release
+    cargo build --manifest-path rust\Cargo.toml --features cli,directml --release
     if ($LASTEXITCODE -ne 0) { throw "Rust OCR engine build failed with exit code $LASTEXITCODE" }
     Copy-Item -LiteralPath "rust\target\release\ocr_engine.exe" -Destination "dist\pubg-highlight-trim\ocr_engine.exe" -Force
     & $Python scripts\download_ocr_models.py --output-dir dist\pubg-highlight-trim\ocr_models

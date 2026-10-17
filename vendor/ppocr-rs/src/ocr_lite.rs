@@ -182,6 +182,24 @@ impl OcrLite {
         Ok(())
     }
 
+    /// Variante di `init_models_no_angle` che accetta un `builder_fn` custom
+    /// applicato ai `Session::builder()` di det+rec. Usato per registrare
+    /// execution provider hardware-accelerated (DirectML) senza caricare il
+    /// modello cls.
+    pub fn init_models_no_angle_with_builder(
+        &mut self,
+        det_path: &str,
+        rec_path: &str,
+        dict_path: &str,
+        num_thread: usize,
+        builder_fn: Option<fn(ort::session::builder::SessionBuilder) -> Result<ort::session::builder::SessionBuilder, ort::Error>>,
+    ) -> Result<(), OcrError> {
+        self.db_net.init_model(det_path, num_thread, builder_fn)?;
+        self.crnn_net
+            .init_model_dict_file(rec_path, num_thread, builder_fn, dict_path)?;
+        Ok(())
+    }
+
     /// Variante di `init_models_with_dict` che accetta un `builder_fn`
     /// custom da applicare a tutti e 3 i `Session::builder()` (det+cls+rec).
     /// Usato dai consumer (Edge) per registrare execution provider
