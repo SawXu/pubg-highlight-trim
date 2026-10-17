@@ -132,6 +132,8 @@
                                       ToolTip="勾选后搜索所选文件夹内的所有子文件夹；默认只扫描当前文件夹" />
                             <CheckBox x:Name="ScanOnlyCheckBox" Content="仅扫描" Margin="0,0,18,8" />
                             <CheckBox x:Name="OverwriteCheckBox" Content="覆盖输出" Margin="0,0,18,8" />
+                            <CheckBox x:Name="MoveOriginalsCheckBox" Content="归档原片" Margin="0,0,18,8"
+                                      ToolTip="勾选后把产出过片段的源 mp4 移动到输出目录的 originals 子文件夹（会写 moved_sources.csv 清单）；源文件将从原目录移走" />
                         </WrapPanel>
 
                         <Expander Header="专家设置" Margin="0,10,0,0" Expanded="AdvancedExpander_Expanded">

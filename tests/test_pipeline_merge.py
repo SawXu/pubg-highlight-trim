@@ -670,6 +670,105 @@ class PipelineMergeTests(unittest.TestCase):
 
         self.assertEqual(path, new)
 
+    def test_move_originals_archives_included_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "first.mp4"
+            second = root / "second.mp4"
+            output_dir = root / "output"
+            first.touch()
+            second.touch()
+            args = build_parser().parse_args(
+                [
+                    "--files",
+                    str(first),
+                    str(second),
+                    "--game-lang",
+                    "en",
+                    "--output-dir",
+                    str(output_dir),
+                    "-y",
+                    "--jobs",
+                    "1",
+                    "--move-originals",
+                ]
+            )
+
+            included = EventDetection(60.0, 30.0, "paddle-own-kill-text", "ocr", target="own-kill")
+            skipped = EventDetection(60.0, None, "paddle-not-target-text", "ocr", target="own-kill")
+            code, _t, _c = self._run_with_mocked_video_pipeline_multi(args, [included, skipped])
+
+            self.assertEqual(code, 0)
+            archived = output_dir / "originals" / "first.mp4"
+            self.assertTrue(archived.is_file())
+            self.assertFalse(first.exists())
+            self.assertTrue(second.is_file(), "skipped source must stay in place")
+            manifest = output_dir / "moved_sources.csv"
+            rows = list(csv.DictReader(manifest.open(encoding="utf-8-sig")))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["Name"], "first.mp4")
+            # Temp paths may surface as 8.3 names (e.g. RUNNER~1) on CI; compare resolved.
+            self.assertEqual(Path(rows[0]["SourcePath"]).resolve(), first.resolve())
+            self.assertEqual(Path(rows[0]["ArchivePath"]).resolve(), archived.resolve())
+            summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["originals_moved"], 1)
+            self.assertEqual(summary["originals_failed"], 0)
+
+    def test_move_originals_dry_run_keeps_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "first.mp4"
+            output_dir = root / "output"
+            first.touch()
+            args = build_parser().parse_args(
+                [
+                    "--files",
+                    str(first),
+                    "--game-lang",
+                    "en",
+                    "--output-dir",
+                    str(output_dir),
+                    "-y",
+                    "--jobs",
+                    "1",
+                    "--move-originals",
+                    "--dry-run",
+                ]
+            )
+
+            detection = EventDetection(60.0, 30.0, "paddle-own-kill-text", "ocr", target="own-kill")
+            code, _t, _c = self._run_with_mocked_video_pipeline(args, detection)
+
+            self.assertEqual(code, 0)
+            self.assertTrue(first.is_file())
+            self.assertFalse((output_dir / "originals").exists())
+            summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["originals_moved"], 0)
+
+    def _run_with_mocked_video_pipeline_multi(self, args, detections):
+        def write_trim(_src, out, _start, _length, _ffmpeg):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"trim")
+            return "mock-encoder"
+
+        def write_merge(clips, final, _ffmpeg):
+            final.parent.mkdir(parents=True, exist_ok=True)
+            final.write_bytes(b"merged")
+            list_path = final.with_suffix(".concat.txt")
+            list_path.write_text("\n".join(str(clip) for clip in clips), encoding="utf-8")
+            return list_path
+
+        queue = iter(detections)
+        with patch("pubg_highlight_trim.pipeline.find_ffmpeg_pair", return_value=(Path("ffmpeg"), Path("ffprobe"))), patch(
+            "pubg_highlight_trim.pipeline.load_backend", return_value=(object(), object())
+        ), patch("pubg_highlight_trim.pipeline.duration_sec", return_value=60.0), patch(
+            "pubg_highlight_trim.pipeline.detect_ocr_events", side_effect=lambda *a, **k: [next(queue)]
+        ), patch("pubg_highlight_trim.pipeline.trim_clip", side_effect=write_trim), patch(
+            "pubg_highlight_trim.pipeline.concat_clips", side_effect=write_merge
+        ):
+            code = run(args)
+        return code, None, None
+
 
 if __name__ == "__main__":
     unittest.main()

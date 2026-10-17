@@ -46,6 +46,7 @@ public static class CliCommandBuilder
         AddFlag(arguments, options.ScanOnly, "--scan-only");
         AddFlag(arguments, options.Overwrite, "--overwrite");
         AddFlag(arguments, !options.BrightnessGate, "--no-brightness-gate");
+        AddFlag(arguments, options.MoveOriginals, "--move-originals");
         return arguments;
     }
 

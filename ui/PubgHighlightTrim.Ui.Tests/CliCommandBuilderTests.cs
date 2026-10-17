@@ -23,7 +23,8 @@ public sealed class CliCommandBuilderTests
             false,
             true,
             true,
-            false);
+            false,
+            true);
 
         var arguments = CliCommandBuilder.Build(options);
 
@@ -37,6 +38,7 @@ public sealed class CliCommandBuilderTests
         CollectionAssert.Contains(arguments.ToList(), "--scan-only");
         CollectionAssert.Contains(arguments.ToList(), "--overwrite");
         CollectionAssert.Contains(arguments.ToList(), "--no-brightness-gate");
+        CollectionAssert.Contains(arguments.ToList(), "--move-originals");
     }
 
     [TestMethod]
@@ -57,7 +59,8 @@ public sealed class CliCommandBuilderTests
             true,
             false,
             false,
-            true);
+            true,
+            false);
 
         var arguments = CliCommandBuilder.Build(options);
 
@@ -84,7 +87,8 @@ public sealed class CliCommandBuilderTests
             true,
             false,
             false,
-            true);
+            true,
+            false);
 
         var arguments = CliCommandBuilder.Build(options);
 

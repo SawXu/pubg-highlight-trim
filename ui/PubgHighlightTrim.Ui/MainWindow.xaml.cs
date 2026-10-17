@@ -370,7 +370,8 @@ public partial class MainWindow : Window
             MergeCheckBox.IsChecked == true,
             ScanOnlyCheckBox.IsChecked == true,
             OverwriteCheckBox.IsChecked == true,
-            BrightnessGateCheckBox.IsChecked == true);
+            BrightnessGateCheckBox.IsChecked == true,
+            MoveOriginalsCheckBox.IsChecked == true);
         return true;
     }
 
@@ -429,6 +430,7 @@ public partial class MainWindow : Window
         RecursiveCheckBox.IsEnabled = !running;
         ScanOnlyCheckBox.IsEnabled = !running;
         OverwriteCheckBox.IsEnabled = !running;
+        MoveOriginalsCheckBox.IsEnabled = !running;
         BrightnessGateCheckBox.IsEnabled = !running;
     }
 
@@ -478,7 +480,7 @@ public partial class MainWindow : Window
         {
             comboBox.SelectionChanged += (_, _) => UpdateCommandPreview();
         }
-        foreach (var checkBox in new[] { MergeCheckBox, RecursiveCheckBox, ScanOnlyCheckBox, OverwriteCheckBox, BrightnessGateCheckBox })
+        foreach (var checkBox in new[] { MergeCheckBox, RecursiveCheckBox, ScanOnlyCheckBox, OverwriteCheckBox, MoveOriginalsCheckBox, BrightnessGateCheckBox })
         {
             checkBox.Checked += (_, _) => UpdateCommandPreview();
             checkBox.Unchecked += (_, _) => UpdateCommandPreview();

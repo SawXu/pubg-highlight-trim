@@ -125,6 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     merge.add_argument("--no-merge", dest="merge", action="store_false", default=None, help="Skip merged mp4 output; default for single-file input")
     parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/merged file instead of creating unique names")
+    parser.add_argument(
+        "--move-originals",
+        action="store_true",
+        help="Move source mp4s that produced clips into <output>/originals after the run; writes moved_sources.csv",
+    )
     parser.add_argument("--verbose", action="store_true", help="Print startup settings and third-party OCR diagnostics")
     parser.add_argument("--profile", action="store_true", help="Print per-clip timing breakdown for OCR, frame reads, and trimming")
     fast_path = parser.add_mutually_exclusive_group()
