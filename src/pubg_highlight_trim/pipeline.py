@@ -488,6 +488,39 @@ def _candidate_row(run_id: str, record: dict[str, str], cache_status: str = "mis
     return row
 
 
+def _archive_original_sources(
+    files: list[Path], records: list[dict[str, str]], outdir: Path
+) -> tuple[str, int, int]:
+    """Move sources that produced clips into outdir/originals; write moved_sources.csv.
+
+    Returns (originals_dir, moved, failed). Per-file move failures warn and
+    continue so a locked/readonly source never discards finished trim output.
+    """
+    included = {row.get("Name", "") for row in records if row.get("Status") == "included"}
+    originals = outdir / "originals"
+    originals.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, str]] = []
+    failed = 0
+    for src in files:
+        if src.name not in included or not src.is_file():
+            continue
+        destination = unique_path(originals / src.name)
+        try:
+            shutil.move(str(src), str(destination))
+        except OSError as exc:
+            failed += 1
+            print(f"WARNING could not archive {src.name} to {originals}: {exc}", flush=True)
+            continue
+        rows.append({"Name": src.name, "SourcePath": str(src), "ArchivePath": str(destination)})
+        print(f"ARCHIVE {src.name} -> {destination}", flush=True)
+    moved_csv = outdir / "moved_sources.csv"
+    with moved_csv.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["Name", "SourcePath", "ArchivePath"])
+        writer.writeheader()
+        writer.writerows(rows)
+    return str(originals), len(rows), failed
+
+
 def _write_candidate_csv(path: Path, run_id: str, records: list[dict[str, str]], cache_status: dict[str, str] | None = None) -> None:
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=CANDIDATE_CSV_COLUMNS)
@@ -1153,6 +1186,12 @@ def run(args: SimpleNamespace) -> int:
         if args.profile:
             print(f"PROFILE merge={time.time() - merge_started:.3f}s clips={len(clips)}", flush=True)
 
+    originals_dir = ""
+    originals_moved = 0
+    originals_failed = 0
+    if getattr(args, "move_originals", False) and not args.dry_run:
+        originals_dir, originals_moved, originals_failed = _archive_original_sources(files, records, outdir)
+
     included_count = sum(1 for row in records if row["Status"] == "included")
     profile_total_sec = time.time() - run_started
 
@@ -1245,6 +1284,9 @@ def run(args: SimpleNamespace) -> int:
         "cache_hits": cache_hit_count,
         "cache_misses": cache_miss_count,
         "concat_list": "" if concat_list is None else str(concat_list),
+        "originals_dir": originals_dir,
+        "originals_moved": originals_moved,
+        "originals_failed": originals_failed,
         "csv": str(csv_path),
         "merge_duration_sec": round(merge_duration, 3),
         "merge_size_mb": round(merge_size, 1),

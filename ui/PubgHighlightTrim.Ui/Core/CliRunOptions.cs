@@ -15,7 +15,8 @@ public sealed record CliRunOptions(
     bool Merge,
     bool ScanOnly,
     bool Overwrite,
-    bool BrightnessGate)
+    bool BrightnessGate,
+    bool MoveOriginals)
 {
     public string PrimaryInputPath => InputPaths.FirstOrDefault() ?? string.Empty;
 }
