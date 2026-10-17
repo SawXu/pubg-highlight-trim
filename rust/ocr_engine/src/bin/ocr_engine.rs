@@ -58,7 +58,11 @@ fn resolve_manifest_path(model_dir: &std::path::Path) -> PathBuf {
     if bundled.is_file() {
         return bundled;
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/pp_ocrv6_medium.json")
+    let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/pp_ocrv6_medium.json");
+    if fallback.is_file() {
+        return fallback;
+    }
+    bundled
 }
 
 fn parse_provider(value: Option<&str>) -> Result<(Provider, bool), String> {
@@ -98,7 +102,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|value| value.to_str().map(str::to_owned))
         .or_else(|| std::env::var("PUBG_OCR_PROVIDER").ok());
     let (requested_provider, allow_provider_fallback) = parse_provider(provider_arg.as_deref())?;
-    let manifest = ModelManifest::from_json_file(&resolve_manifest_path(&model_dir))?;
+    let manifest = ModelManifest::from_json_file(&resolve_manifest_path(&model_dir))
+        .map_err(|error| error.to_string())?;
     let model_version = manifest.model_version.clone();
     let engine = match PpOcrRecognizer::from_model_dir_with_provider(
         &model_dir,

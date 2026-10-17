@@ -220,6 +220,37 @@ static DIRECTML_DEVICE_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::Ato
 static DIRECTML_INTRA_THREADS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(1);
 
+#[cfg(all(feature = "directml", windows))]
+fn directml_runtime_available() -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    extern "system" {
+        fn LoadLibraryW(name: *const u16) -> *mut std::ffi::c_void;
+        fn FreeLibrary(handle: *mut std::ffi::c_void) -> i32;
+    }
+
+    let name: Vec<u16> = std::ffi::OsStr::new("directml.dll")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let handle = LoadLibraryW(name.as_ptr());
+        if handle.is_null() {
+            return Err(format!(
+                "directml.dll unavailable: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        FreeLibrary(handle);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "directml", not(windows)))]
+fn directml_runtime_available() -> Result<(), String> {
+    Err("directml is only available on windows".into())
+}
+
 #[cfg(feature = "directml")]
 fn directml_session_builder(
     session: ort::session::builder::SessionBuilder,
@@ -248,6 +279,7 @@ fn build_directml_pipeline(
 ) -> Result<ppocr_rs::OcrLite, String> {
     use std::sync::atomic::Ordering;
 
+    directml_runtime_available()?;
     DIRECTML_DEVICE_ID.store(device_id, Ordering::Relaxed);
     DIRECTML_INTRA_THREADS.store(threads.max(1), Ordering::Relaxed);
     let mut pipeline = ppocr_rs::OcrLite::new();
@@ -307,6 +339,7 @@ impl PpOcrRecognizer {
         requested: Provider,
         allow_provider_fallback: bool,
     ) -> Result<Self, String> {
+        validate_manifest(model_dir, manifest).map_err(|error| error.to_string())?;
         Self::for_provider(
             &model_dir.join(&manifest.detector_file),
             &model_dir.join(&manifest.recognizer_file),
@@ -603,7 +636,22 @@ pub enum EngineError {
 
 impl fmt::Display for EngineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            Self::MissingModel(path) => {
+                write!(f, "model file missing or unreadable: {}", path.display())
+            }
+            Self::HashMismatch {
+                path,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "model file sha256 mismatch for {}: expected {expected}, got {actual}",
+                path.display()
+            ),
+            Self::ProviderUnavailable => write!(f, "requested provider is unavailable"),
+            Self::InvalidManifest(reason) => write!(f, "invalid model manifest: {reason}"),
+        }
     }
 }
 impl std::error::Error for EngineError {}

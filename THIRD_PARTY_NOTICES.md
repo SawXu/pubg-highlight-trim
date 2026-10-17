@@ -16,9 +16,11 @@ This project is licensed as `GPL-3.0-or-later`. Release archives also include th
 | Shapely | 2.1.2 | BSD-3-Clause | PaddleOCR/PaddleX dependency. |
 | pypdfium2 | 5.11.0 | BSD-3-Clause, Apache-2.0, dependency licenses | PaddleOCR/PaddleX dependency. |
 | python-bidi | 0.6.10 | LGPL | PaddleOCR/PaddleX dependency. |
-| ppocr-rs | 0.7.3, vendored under `vendor/ppocr-rs` | Apache-2.0 | Rust PP-OCR ONNX pipeline. The vendored Cargo manifest is patched to enable the CPU ORT provider only. |
+| ppocr-rs | 0.7.3, vendored under `vendor/ppocr-rs` | Apache-2.0 | Rust PP-OCR ONNX pipeline. The vendored copy adds a session-builder hook used to configure CPU and DirectML execution providers. |
 | ort / ort-sys | 2.0.0-rc.9 | MIT/Apache-2.0 | Rust ONNX Runtime bindings used by the optional OCR engine. |
-| ONNX Runtime | Loaded by `ort` at build/test time | MIT | CPU execution provider for the Rust OCR engine; no runtime model or dependency download is performed by the CLI. |
+| ONNX Runtime | 1.20.0, statically linked into `ocr_engine.exe` via `ort-sys` (`ortrs_static-v1.20.0-x86_64-pc-windows-msvc.tgz` from `https://parcel.pyke.io`, sha256 `BB02D856F2747E4863C344BE38AF2A645E660E9055C871EE9984907497BE590A`) | MIT | CPU execution provider is the default; DirectML is an optional opt-in provider. No runtime model or dependency download is performed by the CLI. |
+| DirectML | Windows inbox component (`directml.dll`, Windows 10 1903+) | Proprietary, Microsoft Windows | Optional GPU execution provider for `ocr_engine.exe`. The DLL is delay-loaded and probed before use; when absent or unloadable the engine stays on CPU. `d3d12.dll`, `dxgi.dll` and `dxcore.dll` are inbox Windows components. |
+| Visual C++ runtime | `vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`, `msvcp140_1.dll` next to `ocr_engine.exe` | Microsoft software license terms (redistributable) | Required by `ocr_engine.exe`; copied from the build machine's installed Visual C++ 2015-2022 x64 redistributable. Hashes are recorded in `SUPPLY_CHAIN_MANIFEST.json`. |
 | PP-OCRv6 medium ONNX assets | Pinned revisions in `rust/ocr_engine/models/pp_ocrv6_medium.json` | Apache-2.0 | Detector, recognizer, and PaddleOCR character dictionary; hashes are verified before use. |
 
 ## Source links
@@ -36,4 +38,8 @@ This project is licensed as `GPL-3.0-or-later`. Release archives also include th
 
 ## No third-party binary changes
 
-The release workflow downloads and redistributes the FFmpeg runtime as-is. This project does not patch FFmpeg, PaddleOCR, PaddlePaddle, PaddleX, or PyInstaller. The vendored `ppocr-rs` Cargo feature selection is limited to CPU ONNX Runtime support; its upstream source remains otherwise unchanged.
+The release workflow downloads and redistributes the FFmpeg runtime as-is. This project does not patch FFmpeg, PaddleOCR, PaddlePaddle, PaddleX, or PyInstaller. The vendored `ppocr-rs` adds a session-builder hook for execution-provider configuration; its upstream OCR logic remains otherwise unchanged.
+
+## Supply chain manifest
+
+Every file shipped in the release zip is hashed in `SUPPLY_CHAIN_MANIFEST.json`, which also records component versions, sources and licenses. The runtime never downloads models, binaries, or OCR caches; model files are re-hashed by `ocr_engine.exe` at load time and a mismatch fails explicitly.

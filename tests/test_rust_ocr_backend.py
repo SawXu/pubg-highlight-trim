@@ -1,6 +1,10 @@
 import pytest
 
-from pubg_highlight_trim.rust_ocr import _response_to_paddle_result, normalize_provider
+from pubg_highlight_trim.rust_ocr import (
+    _describe_exit,
+    _response_to_paddle_result,
+    normalize_provider,
+)
 
 
 def test_engine_response_maps_to_paddle_result_shape():
@@ -64,3 +68,13 @@ def test_normalize_provider_directml_variants():
 def test_normalize_provider_rejects_unknown_values():
     with pytest.raises(ValueError):
         normalize_provider("cuda")
+
+
+def test_describe_exit_hints_for_missing_dll():
+    message = _describe_exit(-1073741515)
+    assert "code -1073741515" in message
+    assert "vcruntime140.dll" in message
+
+
+def test_describe_exit_plain_code_when_unmapped():
+    assert _describe_exit(1) == "Rust OCR exited with code 1"
