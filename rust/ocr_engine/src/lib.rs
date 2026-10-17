@@ -147,6 +147,44 @@ pub struct OcrEngineConfig {
     pub allow_provider_fallback: bool,
 }
 
+#[cfg(any(feature = "onnx", test))]
+#[derive(Debug, Clone, PartialEq)]
+struct ReadingBlock {
+    text: String,
+    score: f32,
+    bbox: [u32; 4],
+}
+
+/// Order OCR blocks by visual reading order: rows first, then left-to-right.
+/// A row's anchor is never moved by later blocks, preventing a small noise box
+/// from chaining two otherwise separate rows together.
+#[cfg(any(feature = "onnx", test))]
+fn order_reading_blocks(mut blocks: Vec<ReadingBlock>) -> Vec<ReadingBlock> {
+    let mut rows: Vec<(u32, u32, Vec<ReadingBlock>)> = Vec::new();
+    blocks.sort_by_key(|block| (block.bbox[1], block.bbox[0]));
+    for block in blocks {
+        let height = block.bbox[3].saturating_sub(block.bbox[1]).max(1);
+        let center = block.bbox[1] + height / 2;
+        // Use the smaller height so a tall box cannot absorb an adjacent
+        // short row. The fixed anchor also prevents noise from chaining rows.
+        let row = rows.iter().position(|(anchor, row_height, _)| {
+            center.abs_diff(*anchor) <= height.min(*row_height) / 2
+        });
+        if let Some(index) = row {
+            rows[index].2.push(block);
+        } else {
+            rows.push((center, height, vec![block]));
+        }
+    }
+    rows.sort_by_key(|(anchor, _, _)| *anchor);
+    let mut ordered = Vec::with_capacity(rows.iter().map(|row| row.2.len()).sum());
+    for (_, _, mut row) in rows {
+        row.sort_by_key(|block| block.bbox[0]);
+        ordered.extend(row);
+    }
+    ordered
+}
+
 pub trait Recognizer: Send + Sync {
     fn recognize(&self, roi: &[u8], width: u32, height: u32) -> Result<(String, Vec<f32>), String>;
 
@@ -442,59 +480,50 @@ impl PpOcrRecognizer {
             }
             other => other?,
         };
-        let mut blocks = result.text_blocks;
-        blocks.sort_by_key(|block| {
-            let min_y = block
-                .box_points
-                .iter()
-                .map(|point| point.y)
-                .min()
-                .unwrap_or(0);
-            let min_x = block
-                .box_points
-                .iter()
-                .map(|point| point.x)
-                .min()
-                .unwrap_or(0);
-            (min_y, min_x)
-        });
+        let blocks = order_reading_blocks(
+            result
+                .text_blocks
+                .into_iter()
+                .map(|block| {
+                    let min_x = block
+                        .box_points
+                        .iter()
+                        .map(|point| point.x)
+                        .min()
+                        .unwrap_or(0);
+                    let min_y = block
+                        .box_points
+                        .iter()
+                        .map(|point| point.y)
+                        .min()
+                        .unwrap_or(0);
+                    let max_x = block
+                        .box_points
+                        .iter()
+                        .map(|point| point.x)
+                        .max()
+                        .unwrap_or(0);
+                    let max_y = block
+                        .box_points
+                        .iter()
+                        .map(|point| point.y)
+                        .max()
+                        .unwrap_or(0);
+                    ReadingBlock {
+                        text: block.text,
+                        score: block.text_score,
+                        bbox: [min_x, min_y, max_x, max_y],
+                    }
+                })
+                .collect(),
+        );
         let text = blocks
             .iter()
             .map(|block| block.text.as_str())
             .collect::<Vec<_>>()
             .join(" ");
-        let scores = blocks.iter().map(|block| block.text_score).collect();
-
-        let boxes = blocks
-            .iter()
-            .map(|block| {
-                let min_x = block
-                    .box_points
-                    .iter()
-                    .map(|point| point.x)
-                    .min()
-                    .unwrap_or(0);
-                let min_y = block
-                    .box_points
-                    .iter()
-                    .map(|point| point.y)
-                    .min()
-                    .unwrap_or(0);
-                let max_x = block
-                    .box_points
-                    .iter()
-                    .map(|point| point.x)
-                    .max()
-                    .unwrap_or(0);
-                let max_y = block
-                    .box_points
-                    .iter()
-                    .map(|point| point.y)
-                    .max()
-                    .unwrap_or(0);
-                [min_x, min_y, max_x, max_y]
-            })
-            .collect();
+        let scores = blocks.iter().map(|block| block.score).collect();
+        let boxes = blocks.iter().map(|block| block.bbox).collect();
         Ok((text, scores, boxes))
     }
 }
@@ -678,6 +707,91 @@ fn validate_manifest(dir: &Path, manifest: &ModelManifest) -> Result<(), EngineE
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reading_order_sorts_left_to_right_within_rows() {
+        let blocks = vec![
+            ReadingBlock {
+                text: "B".into(),
+                score: 0.8,
+                bbox: [100, 20, 130, 40],
+            },
+            ReadingBlock {
+                text: "row2".into(),
+                score: 0.8,
+                bbox: [5, 60, 80, 80],
+            },
+            ReadingBlock {
+                text: "A".into(),
+                score: 0.8,
+                bbox: [10, 22, 40, 42],
+            },
+        ];
+        let ordered = order_reading_blocks(blocks);
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|block| block.text.as_str())
+                .collect::<Vec<_>>(),
+            ["A", "B", "row2"]
+        );
+        assert_eq!(
+            ordered.iter().map(|block| block.bbox).collect::<Vec<_>>(),
+            [[10, 22, 40, 42], [100, 20, 130, 40], [5, 60, 80, 80]]
+        );
+    }
+
+    #[test]
+    fn tall_box_does_not_absorb_adjacent_short_row() {
+        let blocks = vec![
+            ReadingBlock {
+                text: "top".into(),
+                score: 0.9,
+                bbox: [100, 0, 140, 100],
+            },
+            ReadingBlock {
+                text: "bottom".into(),
+                score: 0.8,
+                bbox: [0, 95, 40, 105],
+            },
+        ];
+        let ordered = order_reading_blocks(blocks);
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|block| block.text.as_str())
+                .collect::<Vec<_>>(),
+            ["top", "bottom"]
+        );
+    }
+
+    #[test]
+    fn small_noise_does_not_chain_rows() {
+        let blocks = vec![
+            ReadingBlock {
+                text: "top".into(),
+                score: 1.0,
+                bbox: [100, 10, 140, 30],
+            },
+            ReadingBlock {
+                text: "noise".into(),
+                score: 1.0,
+                bbox: [0, 35, 4, 36],
+            },
+            ReadingBlock {
+                text: "bottom".into(),
+                score: 1.0,
+                bbox: [10, 45, 80, 65],
+            },
+        ];
+        let ordered = order_reading_blocks(blocks);
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|block| block.text.as_str())
+                .collect::<Vec<_>>(),
+            ["top", "noise", "bottom"]
+        );
+    }
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     static TEST_ENGINE_ID: AtomicUsize = AtomicUsize::new(0);

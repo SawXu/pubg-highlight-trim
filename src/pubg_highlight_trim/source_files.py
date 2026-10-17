@@ -67,12 +67,21 @@ def _source_term_score(name: str, target: str, profile: GameLanguageProfile) -> 
     return score
 
 
-def _candidate_language_scores(path: Path, target: str) -> list[tuple[GameLanguageProfile, int]]:
+def _candidate_language_scores(
+    path: Path, target: str, *, explicit: bool = False,
+) -> list[tuple[GameLanguageProfile, int]]:
     candidates: list[tuple[GameLanguageProfile, int]] = []
+    if explicit and any(profile.view_replay_re.search(path.name) for profile in GAME_LANGUAGE_PROFILES.values()):
+        return candidates
     for profile in GAME_LANGUAGE_PROFILES.values():
-        if not _source_file_matches_profile(path.name, target, profile):
+        score = _source_term_score(path.name, target, profile)
+        if explicit:
+            # Explicit filenames need not carry the recorder's .DVR suffix.
+            if not score:
+                continue
+        elif not _source_file_matches_profile(path.name, target, profile):
             continue
-        candidates.append((profile, max(1, _source_term_score(path.name, target, profile))))
+        candidates.append((profile, max(1, score)))
     return sorted(candidates, key=lambda item: (-item[1], _PROFILE_ORDER[item[0].code]))
 
 
@@ -85,6 +94,11 @@ def infer_source_file_languages(paths: list[Path], target: str = "self-death") -
     for path in paths:
         candidates = _candidate_language_scores(path, target)
         if not candidates:
+            # Explicit inputs may not belong to the requested target. Infer their
+            # language independently, without letting them vote on target inputs.
+            fallback_candidates = _candidate_language_scores(path, "both", explicit=True)
+            if fallback_candidates:
+                selected[path] = fallback_candidates[0][0]
             continue
         top_score = candidates[0][1]
         top_candidates = [candidate for candidate in candidates if candidate[1] == top_score]
@@ -121,7 +135,17 @@ def iter_source_file_languages(
     recursive: bool = False,
     target: str = "self-death",
 ) -> list[tuple[Path, GameLanguageProfile]]:
-    matches = infer_source_file_languages(_iter_mp4_files(folder, recursive), target)
+    # Directory discovery remains target-specific; only explicit paths may use
+    # language inference for source types outside the requested target.
+    paths = [
+        path
+        for path in _iter_mp4_files(folder, recursive)
+        if any(
+            _source_file_matches_profile(path.name, target, profile)
+            for profile in GAME_LANGUAGE_PROFILES.values()
+        )
+    ]
+    matches = infer_source_file_languages(paths, target)
     return list(matches.items())
 
 

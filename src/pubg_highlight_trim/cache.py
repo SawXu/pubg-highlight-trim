@@ -11,7 +11,8 @@ from typing import Any
 from .models import EventDetection
 
 
-CACHE_VERSION = "1"
+# Invalidate detections suppressed by the old unbounded follow-up kill rule.
+CACHE_VERSION = "2"
 OCR_MODEL_VERSION = "paddleocr-3.7.0"
 
 
@@ -25,7 +26,9 @@ def ocr_engine_descriptor() -> str:
         provider = normalize_provider(os.environ.get("PUBG_OCR_PROVIDER"))
     except ValueError:
         provider = "invalid"
-    return f"rust-onnx:{provider}"
+    # Reading-order changes alter detections even with identical ONNX assets.
+    # Do not reuse pre-fix cached misses after upgrading the Rust engine.
+    return f"rust-onnx:reading-order-v2:{provider}"
 
 
 def content_fingerprint(path: Path, chunk_size: int = 1024 * 1024) -> str:
