@@ -355,6 +355,39 @@ class OcrRefineTests(unittest.TestCase):
         self.assertEqual(detections[0].event_key, "own-kill:knock:enemya")
         self.assertEqual(detections[0].event_sec, 30.0)
 
+    def test_detect_events_keeps_later_direct_kill_after_knock(self):
+        class FakeCap:
+            def release(self):
+                pass
+
+        class FakeCv2:
+            def VideoCapture(self, _path):
+                return FakeCap()
+
+        language = get_game_language_profile("zh-Hant")
+
+        def fake_ocr_at(_cv2, _source, _ocr, sec, _config):
+            texts = {
+                30.5: "您以M249擊倒[CSYL]Lc10op",
+                64.0: "您以P92擊殺[CSYL]Lc100p3擊殺數",
+                78.0: "您終於擊殺OtherEnemy",
+            }
+            text = texts.get(sec, "")
+            return OcrResult(text, "", 0.01, "paddle-own-kill-text" if text else "paddle-not-target-text")
+
+        config = OcrConfig(
+            target="own-kill", language=language, no_full_scan=True,
+            priority_window=[(30.5, 31.0), (64.0, 64.5), (78.0, 78.5)],
+            refine_before=0.0,
+        )
+        with patch("pubg_highlight_trim.ocr.ocr_at", fake_ocr_at), patch(
+            "pubg_highlight_trim.ocr.detect_assist_nearby", return_value=(None, 0, 0.0, 0.0)
+        ):
+            detections = detect_events("dummy.mp4", FakeCv2(), None, 80.0, [], config)
+
+        self.assertEqual([d.event_sec for d in detections], [30.5, 64.0])
+        self.assertEqual([d.event_key.split(":")[1] for d in detections], ["knock", "eliminate"])
+
     def test_strips_english_headshot_suffix_from_own_kill_subject(self):
         language = get_game_language_profile("en")
         event = extract_text_events(

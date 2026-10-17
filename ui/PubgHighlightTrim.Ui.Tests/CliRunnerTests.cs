@@ -43,4 +43,47 @@ public sealed class CliRunnerTests
         Assert.AreEqual(0, result.ExitCode);
         CollectionAssert.Contains(lines, "utf-8|1|utf-8|中文日志");
     }
+
+    [TestMethod]
+    public async Task RunAsync_UsesBundledRustBackendWhenCliBundleContainsRustEngine()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pubg-ui-rust-test-" + Guid.NewGuid().ToString("N"));
+        var cliDirectory = Path.Combine(root, "cli");
+        var modelDirectory = Path.Combine(cliDirectory, "ocr_models");
+        Directory.CreateDirectory(modelDirectory);
+        File.Copy(
+            Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+            Path.Combine(cliDirectory, "pubg-highlight-trim.exe"));
+        File.WriteAllText(Path.Combine(cliDirectory, "ocr_engine.exe"), string.Empty);
+        foreach (var file in new[] { "pp_ocrv6_medium.json", "det.onnx", "rec.onnx", "dict.txt" })
+        {
+            File.WriteAllText(Path.Combine(modelDirectory, file), string.Empty);
+        }
+
+        try
+        {
+            var lines = new List<string>();
+            var runner = new CliRunner();
+            var cli = Path.Combine(cliDirectory, "pubg-highlight-trim.exe");
+            var result = await runner.RunAsync(
+                cli,
+                [
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Write-Output ($env:PUBG_OCR_BACKEND + '|' + $env:PUBG_OCR_ENGINE + '|' + $env:PUBG_OCR_MODEL_DIR)",
+                ],
+                (line, _) => lines.Add(line),
+                CancellationToken.None);
+
+            Assert.AreEqual(0, result.ExitCode);
+            CollectionAssert.Contains(
+                lines,
+                $"rust|{Path.Combine(cliDirectory, "ocr_engine.exe")}|{modelDirectory}");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

@@ -429,6 +429,7 @@ def _followup_elimination_skip_method(
     seen_events: list[tuple[TextEvent, float]],
     profile: GameLanguageProfile | None = None,
     event_sec: float | None = None,
+    dedupe_seconds: float = 5.0,
 ) -> str | None:
     if event.action != "eliminate":
         return None
@@ -440,6 +441,9 @@ def _followup_elimination_skip_method(
     if any(
         seen.action == "knock"
         and _is_prior_event(seen_sec, event_sec)
+        # A later direct own-kill is a new highlight, not merely the knock
+        # notification changing to an elimination on adjacent frames.
+        and (event.target != "own-kill" or event_sec is None or event_sec - seen_sec <= dedupe_seconds)
         and _same_followup_subject(event, seen, profile)
         for seen, seen_sec in seen_events
     ):
@@ -1115,6 +1119,7 @@ def detect_events(
                     seen_events,
                     config.language,
                     event_sec,
+                    config.event_dedupe_seconds,
                 )
                 if followup_skip_method:
                     last_text = refined.text or result.text

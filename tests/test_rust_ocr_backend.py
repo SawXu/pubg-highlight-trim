@@ -7,6 +7,17 @@ from pubg_highlight_trim.rust_ocr import (
 )
 
 
+def test_reading_order_fix_invalidates_old_rust_detection_cache():
+    from unittest.mock import patch
+
+    from pubg_highlight_trim.cache import ocr_engine_descriptor
+
+    with patch.dict("os.environ", {"PUBG_OCR_BACKEND": "rust", "PUBG_OCR_PROVIDER": "cpu"}):
+        assert ocr_engine_descriptor() != "rust-onnx:cpu"
+    with patch.dict("os.environ", {"PUBG_OCR_BACKEND": "paddle"}):
+        assert ocr_engine_descriptor() == "paddle"
+
+
 def test_engine_response_maps_to_paddle_result_shape():
     response = {
         "text": "您以M24擊倒enemy1",
