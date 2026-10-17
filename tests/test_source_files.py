@@ -95,6 +95,69 @@ class SourceFilesTests(unittest.TestCase):
 
         self.assertEqual(selections[ambiguous].code, "zh-Hans")
 
+    def test_auto_language_detection_uses_explicit_match_end_for_self_death(self):
+        for filename, language in [
+            ("a.對戰結束.mp4", "zh-Hant"),
+            ("a.對戰結束.DVR.mp4", "zh-Hant"),
+            ("b.End of match.DVR.mp4", "en"),
+            ("c.比赛结束.DVR.mp4", "zh-Hans"),
+        ]:
+            with self.subTest(filename=filename):
+                path = Path(filename)
+
+                selections = infer_source_file_languages([path], target="self-death")
+
+                self.assertIn(path, selections)
+                self.assertEqual(selections[path].code, language)
+
+    def test_self_death_directory_detection_does_not_include_other_source_types(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            death = root / "a.淘汰.DVR.mp4"
+            match_end = root / "b.對戰結束.DVR.mp4"
+            own_kill = root / "c.Single kill.DVR.mp4"
+            for path in [death, match_end, own_kill]:
+                self.touch(path)
+
+            selections = iter_source_file_languages(root, target="self-death")
+
+        self.assertEqual([(path, profile.code) for path, profile in selections], [(death, "zh-Hans")])
+
+    def test_out_of_target_sources_do_not_vote_on_ambiguous_self_death(self):
+        ambiguous = Path("a.淘汰.DVR.mp4")
+        match_end = Path("b.對戰結束.mp4")
+        own_kill = Path("c.單次擊殺.DVR.mp4")
+
+        for paths in ([match_end, own_kill, ambiguous], [ambiguous, own_kill, match_end]):
+            with self.subTest(paths=paths):
+                selections = infer_source_file_languages(paths, target="self-death")
+
+                self.assertEqual(selections[ambiguous].code, "zh-Hans")
+                self.assertEqual(selections[match_end].code, "zh-Hant")
+                self.assertEqual(selections[own_kill].code, "zh-Hant")
+
+    def test_target_self_death_context_still_resolves_ambiguous_names(self):
+        death = Path("a.死亡.DVR.mp4")
+        ambiguous = Path("b.淘汰.DVR.mp4")
+        other_end = Path("c.比赛结束.mp4")
+
+        selections = infer_source_file_languages([other_end, ambiguous, death], target="self-death")
+
+        self.assertEqual(selections[ambiguous].code, "zh-Hant")
+        self.assertEqual(selections[death].code, "zh-Hant")
+        self.assertEqual(selections[other_end].code, "zh-Hans")
+
+    def test_match_end_language_inference_still_excludes_replays(self):
+        replay_paths = [
+            Path("a.對戰結束.死亡畫面.mp4"),
+            Path("b.End of match.Death cam.mp4"),
+            Path("c.比赛结束.淘汰画面.mp4"),
+        ]
+
+        for target in ("self-death", "own-kill", "both"):
+            with self.subTest(target=target):
+                self.assertEqual(infer_source_file_languages(replay_paths, target=target), {})
+
     def test_auto_language_detection_uses_match_end_for_own_kill(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
