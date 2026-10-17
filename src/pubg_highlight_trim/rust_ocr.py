@@ -64,7 +64,7 @@ class RustOcrBackend:
         self._process.stdin.write(json.dumps(request) + "\n")
         self._process.stdin.flush()
         if self._process.poll() is not None:
-            raise RuntimeError(f"Rust OCR exited with code {self._process.returncode}")
+            raise RuntimeError(_describe_exit(self._process.returncode))
         line = self._process.stdout.readline()
         if not line:
             raise RuntimeError("Rust OCR closed stdout before returning a response")
@@ -80,6 +80,22 @@ class RustOcrBackend:
     def close(self) -> None:
         self._process.terminate()
         self._process.wait(timeout=5)
+
+
+_EXIT_CODE_HINTS = {
+    0xC0000135: "a required DLL is missing; ensure vcruntime140.dll, vcruntime140_1.dll, "
+    "msvcp140.dll and msvcp140_1.dll sit next to ocr_engine.exe",
+    0xC000007B: "the executable could not load a DLL (bad image); the bundle may be corrupt",
+    0xC0000142: "the process failed to initialize a required DLL",
+}
+
+
+def _describe_exit(returncode: int | None) -> str:
+    message = f"Rust OCR exited with code {returncode}"
+    if returncode is None:
+        return message
+    hint = _EXIT_CODE_HINTS.get(returncode & 0xFFFFFFFF)
+    return f"{message}; {hint}" if hint else message
 
 
 def _response_to_paddle_result(response: dict[str, Any]) -> dict[str, Any]:
@@ -127,8 +143,14 @@ def rust_backend_from_environment() -> RustOcrBackend:
     executable = os.environ.get("PUBG_OCR_ENGINE") or _find_bundled_engine()
     model_dir = os.environ.get("PUBG_OCR_MODEL_DIR") or _find_bundled_models()
     if not executable or not model_dir:
+        from .runtime import runtime_roots
+
+        missing = "ocr_engine executable" if not executable else "ocr_models directory"
+        searched = ", ".join(str(root) for root in runtime_roots())
         raise RuntimeError(
-            "PUBG_OCR_ENGINE and PUBG_OCR_MODEL_DIR are required for Rust OCR"
+            f"Rust OCR {missing} not found (searched: {searched}). "
+            "Use the pubg-highlight-trim-rust release bundle, or set "
+            "PUBG_OCR_ENGINE and PUBG_OCR_MODEL_DIR explicitly."
         )
     threads = int(os.environ.get("PUBG_OCR_THREADS", "1"))
     provider = normalize_provider(os.environ.get("PUBG_OCR_PROVIDER"))
