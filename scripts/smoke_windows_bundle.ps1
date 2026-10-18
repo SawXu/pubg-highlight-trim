@@ -59,14 +59,17 @@ try {
     $startInfo.RedirectStandardInput = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    $startInfo.StandardInputEncoding = New-Object System.Text.UTF8Encoding($false)
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
     try {
         $null = $process.Start()
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.StandardInput.WriteLine($requestJson)
+        # StandardInputEncoding is unavailable on Windows PowerShell's .NET
+        # Framework. Write bytes to BaseStream instead of using its text writer.
+        $requestBytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($requestJson + "`n")
+        $process.StandardInput.BaseStream.Write($requestBytes, 0, $requestBytes.Length)
+        $process.StandardInput.BaseStream.Flush()
         $process.StandardInput.Close()
         if (-not $process.WaitForExit(120000)) {
             $process.Kill()
