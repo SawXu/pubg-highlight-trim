@@ -22,3 +22,6 @@ def test_paddle_artifact_and_smoke_contract():
     assert "icacls" in smoke
     assert "--scan-only" in smoke
     assert "PUBG_OCR_BACKEND" in smoke
+    assert "StandardInputEncoding = New-Object System.Text.UTF8Encoding($false)" in smoke
+    assert "StandardInput.WriteLine($requestJson)" in smoke
+    assert "$input | & $engine" not in smoke
