@@ -25,12 +25,12 @@ class ConfigureProcessOutputEncodingTests(unittest.TestCase):
         stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
         stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
 
-    def test_leaves_streams_unchanged_without_contract(self):
+    def test_preserves_encoding_but_replaces_unencodable_output_without_contract(self):
         stdout = Mock()
         with patch.dict(os.environ, {}, clear=True), patch.object(sys, "stdout", stdout):
             configure_process_output_encoding()
 
-        stdout.reconfigure.assert_not_called()
+        stdout.reconfigure.assert_called_once_with(errors="replace")
 
 
 class SuppressProcessOutputTests(unittest.TestCase):
