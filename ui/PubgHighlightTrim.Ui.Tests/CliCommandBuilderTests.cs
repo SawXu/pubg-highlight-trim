@@ -96,6 +96,30 @@ public sealed class CliCommandBuilderTests
     }
 
     [TestMethod]
+    [DataRow("both", true, true, true)]
+    [DataRow("both", true, false, false)]
+    [DataRow("both", false, true, false)]
+    [DataRow("both", false, false, false)]
+    [DataRow("self-death", true, false, false)]
+    [DataRow("self-death", false, false, false)]
+    [DataRow("own-kill", true, false, false)]
+    [DataRow("own-kill", false, false, false)]
+    [DataRow("self-death", true, true, false)]
+    [DataRow("own-kill", true, true, false)]
+    public void Build_SplitsOnlyWhenMergingBothSpecificTargets(string target, bool merge, bool split, bool expected)
+    {
+        var options = new CliRunOptions(
+            [@"C:\Videos\highlights"], null, target, "auto", 5, 1, 2, 10, "auto", "auto",
+            false, merge, false, false, true, false, split);
+
+        var arguments = CliCommandBuilder.Build(options).ToList();
+
+        Assert.AreEqual(expected, arguments.Contains("--split-merge-by-target"));
+        Assert.AreEqual(target, arguments[arguments.IndexOf("--target") + 1]);
+        CollectionAssert.Contains(arguments, merge ? "--merge" : "--no-merge");
+    }
+
+    [TestMethod]
     public void Preview_QuotesPathsContainingSpaces()
     {
         var preview = CliCommandBuilder.Preview(@"C:\Program Files\PUBG Trim\pubg-highlight-trim.exe", [@"C:\Video Clips", "--merge"]);

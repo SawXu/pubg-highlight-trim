@@ -157,6 +157,28 @@ def _merge_output_override(args: SimpleNamespace) -> Path | None:
     return None
 
 
+def _split_merge_by_target(args: SimpleNamespace) -> bool:
+    return bool(getattr(args, "split_merge_by_target", False)) and args.target == "both"
+
+
+def _chinese_windows_ui() -> bool:
+    """Use the Windows user UI language, never encode filesystem paths manually."""
+    if os.name != "nt":
+        return False
+    try:
+        return ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x04
+    except (AttributeError, OSError):
+        return False
+
+
+def _target_merge_path(args: SimpleNamespace, outdir: Path, target: str) -> Path:
+    override = _merge_output_override(args)
+    if override is not None:
+        return override.with_name(f"{override.stem}_{target}{override.suffix}")
+    name = {"self-death": "被击杀集锦", "own-kill": "击杀集锦"}[target] if _chinese_windows_ui() else target
+    return outdir / f"{name}.mp4"
+
+
 def _requested_game_language(args: SimpleNamespace) -> str:
     return getattr(args, "game_lang", AUTO_GAME_LANGUAGE)
 
@@ -247,6 +269,10 @@ def _prepare_output_paths(
         outdir = unique_dir(outdir)
 
     merged = merge_output_override or outdir / merged_name
+    if _split_merge_by_target(args):
+        # This path is only a naming base; do not delete or uniquify it.
+        outdir.mkdir(parents=True, exist_ok=True)
+        return outdir, merged
     if merged.resolve() in {path.resolve() for path in input_files}:
         raise SystemExit(f"Merge output must not overwrite an input file: {merged}")
 
@@ -931,6 +957,8 @@ def run(args: SimpleNamespace) -> int:
 
     records: list[dict[str, str]] = []
     clips: list[Path] = []
+    target_clips: dict[str, list[Path]] = {"self-death": [], "own-kill": []}
+    split_targets = _split_merge_by_target(args)
     methods: Counter[str] = Counter()
     detectors: Counter[str] = Counter()
     encoders: Counter[str] = Counter()
@@ -1122,7 +1150,12 @@ def run(args: SimpleNamespace) -> int:
             continue
         detections = [_apply_context_rules(detection, args, language_profile) for detection in detections]
 
-        for detection, start, end in _merged_clip_plans(detections, args.seconds_before, args.seconds_after):
+        groups = (
+            [[d for d in detections if d.target == target] for target in target_clips]
+            if split_targets else [detections]
+        )
+        plans = [plan for group in groups for plan in _merged_clip_plans(group, args.seconds_before, args.seconds_after)]
+        for detection, start, end in plans:
             if detection.detect_seconds == 0.0:
                 detection.detect_seconds = time.time() - detect_started
 
@@ -1137,6 +1170,8 @@ def run(args: SimpleNamespace) -> int:
                 trim_seconds = time.time() - trim_started
                 encoders[encoder] += 1
                 clips.append(output_path)
+                if split_targets:
+                    target_clips[detection.target].append(output_path)
                 output = str(output_path)
 
             methods[detection.method] += 1
@@ -1178,11 +1213,30 @@ def run(args: SimpleNamespace) -> int:
     merge_duration = 0.0
     merge_size = 0.0
     trim_total_seconds = sum(float(row.get("TrimSeconds", "0") or 0.0) for row in records)
+    merge_outputs: list[dict[str, str]] = []
     if clips and not no_merge and not args.dry_run:
         merge_started = time.time()
-        concat_list = concat_clips(clips, merged, ffmpeg)
-        merge_duration = duration_sec(merged, ffprobe)
-        merge_size = merged.stat().st_size / 1024 / 1024
+        outputs = (
+            [(target, paths, _target_merge_path(args, outdir, target)) for target, paths in target_clips.items() if paths]
+            if split_targets else [(args.target, clips, merged)]
+        )
+        inputs = {path.resolve() for path in files}
+        for _, _, destination in outputs:
+            if destination.resolve() in inputs:
+                raise SystemExit(f"Merge output must not overwrite an input file: {destination}")
+        for target, paths, destination in outputs:
+            if split_targets:
+                if args.overwrite:
+                    destination.unlink(missing_ok=True)
+                else:
+                    destination = unique_path(destination)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+            target_concat_list = concat_clips(paths, destination, ffmpeg)
+            merge_duration += duration_sec(destination, ffprobe)
+            merge_size += destination.stat().st_size / 1024 / 1024
+            merge_outputs.append({"target": target, "path": str(destination), "concat_list": str(target_concat_list)})
+        merged = Path(merge_outputs[0]["path"])
+        concat_list = Path(merge_outputs[0]["concat_list"])
         if args.profile:
             print(f"PROFILE merge={time.time() - merge_started:.3f}s clips={len(clips)}", flush=True)
 
@@ -1273,6 +1327,8 @@ def run(args: SimpleNamespace) -> int:
         "ocr_unavailable_reason": ocr_error,
         "output_dir": str(outdir),
         "merge": not no_merge,
+        "split_merge_by_target": split_targets,
+        "merge_outputs": merge_outputs,
         "merge_output": "" if args.dry_run or no_merge or not clips else str(merged),
         "scan_mode": getattr(args, "scan_mode", "auto"),
         "full_scan": not no_full_scan,

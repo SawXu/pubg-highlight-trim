@@ -52,11 +52,13 @@ class PipelineMergeTests(unittest.TestCase):
         with patch("pubg_highlight_trim.pipeline.find_ffmpeg_pair", return_value=(Path("ffmpeg"), Path("ffprobe"))), patch(
             "pubg_highlight_trim.pipeline.load_backend", return_value=(object(), object())
         ), patch("pubg_highlight_trim.pipeline.duration_sec", return_value=60.0), patch(
-            "pubg_highlight_trim.pipeline.detect_ocr_events", return_value=[detection]
-        ), patch("pubg_highlight_trim.pipeline.trim_clip", side_effect=write_trim) as trim_clip, patch(
+            "pubg_highlight_trim.pipeline.detect_ocr_events", return_value=detection if isinstance(detection, list) else [detection]
+        ) as detect_events, patch("pubg_highlight_trim.pipeline.trim_clip", side_effect=write_trim) as trim_clip, patch(
             "pubg_highlight_trim.pipeline.concat_clips", side_effect=write_merge
         ) as concat_clips:
             code = run(args)
+        self.assertEqual(detect_events.call_count, len(args.files or [args.input]))
+        self.assertTrue(all(call.args[5].target == args.target for call in detect_events.call_args_list))
         return code, trim_clip, concat_clips
 
     def test_run_places_trimmed_clips_under_clips_and_merge_at_output_root(self):
@@ -113,6 +115,171 @@ class PipelineMergeTests(unittest.TestCase):
             self.assertEqual(summary["csv"], str(output_dir / "检测与裁剪记录.csv"))
             self.assertTrue(Path(summary["csv"]).is_file())
             self.assertTrue(Path(summary["concat_list"]).is_file())
+
+    def test_split_run_keeps_overlapping_targets_in_separate_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.mp4"
+            source.touch()
+            outdir = root / "output"
+            args = build_parser().parse_args([
+                str(source), "--game-lang", "en", "-o", str(outdir),
+                "--merge", "--split-merge-by-target", "--jobs", "1",
+            ])
+            detections = [
+                EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill"),
+                EventDetection(60.0, 31.0, "death", "ocr", target="self-death"),
+                EventDetection(60.0, 32.0, "kill", "ocr", target="own-kill"),
+            ]
+            code, trim, concat = self._run_with_mocked_video_pipeline(args, detections)
+            self.assertEqual(code, 0)
+            self.assertEqual(trim.call_count, 2)
+            self.assertEqual(concat.call_count, 2)
+            summary = json.loads((outdir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual([item["target"] for item in summary["merge_outputs"]], ["self-death", "own-kill"])
+            for item in summary["merge_outputs"]:
+                self.assertTrue(Path(item["path"]).is_file())
+                entries = Path(item["concat_list"]).read_text(encoding="utf-8").splitlines()
+                self.assertEqual(len(entries), 1)
+                self.assertIn(item["target"], Path(entries[0]).name)
+            self.assertEqual(summary["merge_output"], summary["merge_outputs"][0]["path"])
+            self.assertEqual(summary["concat_list"], summary["merge_outputs"][0]["concat_list"])
+            with (outdir / "检测与裁剪记录.csv").open(encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual({row["Target"] for row in rows}, {"self-death", "own-kill"})
+            self.assertEqual(sorted(row["EventCount"] for row in rows), ["1", "2"])
+
+    def test_split_outputs_respect_missing_targets_and_merge_switches(self):
+        scenarios = [
+            ([], [], 2),
+            ([], [EventDetection(60.0, None, "no-event", "ocr")], 2),
+            ([], [EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill")], 0),
+            (["--no-merge"], [EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill")], 0),
+            (["--dry-run"], [EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill")], 0),
+        ]
+        for switches, detections, expected_code in scenarios:
+            with self.subTest(switches=switches, events=len(detections)), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source.mp4"
+                source.touch()
+                outdir = root / "output"
+                args = build_parser().parse_args([
+                    str(source), "--game-lang", "en", "-o", str(outdir),
+                    "--split-merge-by-target", "--jobs", "1", *switches,
+                ])
+                if "--no-merge" not in switches:
+                    args.merge = True
+                code, trim, concat = self._run_with_mocked_video_pipeline(args, detections)
+                self.assertEqual(code, expected_code)
+                summary = json.loads((outdir / "summary.json").read_text(encoding="utf-8"))
+                if expected_code == 2 or switches:
+                    self.assertEqual(summary["merge_outputs"], [])
+                    self.assertEqual(summary["merge_output"], "")
+                    self.assertEqual(summary["concat_list"], "")
+                    concat.assert_not_called()
+                    self.assertEqual(list(outdir.glob("*.concat.txt")), [])
+                else:
+                    self.assertEqual([item["target"] for item in summary["merge_outputs"]], ["own-kill"])
+                if "--dry-run" in switches:
+                    trim.assert_not_called()
+
+    def test_explicit_split_paths_preserve_base_and_handle_existing_outputs(self):
+        for overwrite in (False, True):
+            with self.subTest(overwrite=overwrite), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source.mp4"
+                source.touch()
+                base = root / "自定义.mp4"
+                base.write_bytes(b"base")
+                death = root / "自定义_self-death.mp4"
+                kill = root / "自定义_own-kill.mp4"
+                death.write_bytes(b"old")
+                kill.write_bytes(b"old")
+                outdir = root / "output"
+                args = build_parser().parse_args([
+                    str(source), "--game-lang", "en", "-o", str(outdir),
+                    "--merge", str(base), "--split-merge-by-target", "--jobs", "1",
+                    *(["-y"] if overwrite else []),
+                ])
+                detections = [
+                    EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill"),
+                    EventDetection(60.0, 31.0, "death", "ocr", target="self-death"),
+                ]
+                self._run_with_mocked_video_pipeline(args, detections)
+                summary = json.loads((outdir / "summary.json").read_text(encoding="utf-8"))
+                suffix = "" if overwrite else "_1"
+                self.assertEqual([Path(item["path"]).name for item in summary["merge_outputs"]], [
+                    f"自定义_self-death{suffix}.mp4", f"自定义_own-kill{suffix}.mp4",
+                ])
+                self.assertEqual(base.read_bytes(), b"base")
+                self.assertEqual(death.read_bytes(), b"merged" if overwrite else b"old")
+                self.assertEqual(kill.read_bytes(), b"merged" if overwrite else b"old")
+
+    def test_split_paths_cannot_overwrite_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "custom_own-kill.mp4"
+            source.write_bytes(b"original")
+            args = build_parser().parse_args([
+                str(source), "--game-lang", "en", "-o", str(root / "output"),
+                "--merge", str(root / "custom.mp4"), "--split-merge-by-target", "--jobs", "1", "-y",
+            ])
+            with self.assertRaisesRegex(SystemExit, "must not overwrite an input file"):
+                self._run_with_mocked_video_pipeline(
+                    args, EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill")
+                )
+            self.assertEqual(source.read_bytes(), b"original")
+
+    def test_split_default_names_follow_windows_ui_language(self):
+        for language_id, expected in [(0x0804, ["被击杀集锦.mp4", "击杀集锦.mp4"]),
+                                      (0x0409, ["self-death.mp4", "own-kill.mp4"])]:
+            with self.subTest(language_id=language_id), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "源视频.mp4"
+                source.touch()
+                outdir = root / "输出"
+                args = build_parser().parse_args([
+                    str(source), "--game-lang", "en", "-o", str(outdir),
+                    "--merge", "--split-merge-by-target", "--jobs", "1",
+                ])
+                with patch("pubg_highlight_trim.pipeline.ctypes.windll", create=True) as windll:
+                    windll.kernel32.GetUserDefaultUILanguage.return_value = language_id
+                    self._run_with_mocked_video_pipeline(args, [
+                        EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill"),
+                        EventDetection(60.0, 31.0, "death", "ocr", target="self-death"),
+                    ])
+                summary = json.loads((outdir / "summary.json").read_text(encoding="utf-8"))
+                # On non-Windows the documented fallback is English.
+                import os
+                names = expected if os.name == "nt" else ["self-death.mp4", "own-kill.mp4"]
+                self.assertEqual([Path(item["path"]).name for item in summary["merge_outputs"]], names)
+
+    def test_single_target_ignores_split_and_all_mode_still_mixes(self):
+        for target in ("self-death", "own-kill", "both"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source.mp4"
+                source.touch()
+                outdir = root / "output"
+                args = build_parser().parse_args([
+                    str(source), "--game-lang", "en", "-o", str(outdir),
+                    "--target", target, "--merge", "--jobs", "1",
+                    *(["--split-merge-by-target"] if target != "both" else []),
+                ])
+                detections = [EventDetection(60.0, 30.0, "event", "ocr", target=target)]
+                if target == "both":
+                    detections = [
+                        EventDetection(60.0, 30.0, "kill", "ocr", target="own-kill"),
+                        EventDetection(60.0, 31.0, "death", "ocr", target="self-death"),
+                    ]
+                _, trim, concat = self._run_with_mocked_video_pipeline(args, detections)
+                self.assertEqual(trim.call_count, 1)
+                self.assertEqual(concat.call_count, 1)
+                summary = json.loads((outdir / "summary.json").read_text(encoding="utf-8"))
+                self.assertEqual(summary["merge_outputs"], [{
+                    "target": target, "path": str(outdir / "source_pubg_trim.mp4"),
+                    "concat_list": str(outdir / "source_pubg_trim.concat.txt"),
+                }])
 
     def test_run_dry_run_does_not_create_clips_directory(self):
         with tempfile.TemporaryDirectory() as tmp:

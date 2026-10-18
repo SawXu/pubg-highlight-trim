@@ -15,6 +15,8 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<string> _logLines = [];
     private readonly CliOutputParser _parser = new();
+    private readonly TargetSelection _targetSelection = new();
+    private bool _updatingTargetSelection;
     private readonly CliRunner _runner = new();
     private readonly Stopwatch _runStopwatch = new();
     private readonly DispatcherTimer _elapsedTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -259,7 +261,6 @@ public partial class MainWindow : Window
             RunTitleText.Text = _summary.IncludedCount > 0 ? "处理完成" : "扫描完成，没有匹配事件";
             RunSubtitleText.Text = $"扫描 {_summary.SourceCount} 个源文件，保留 {_summary.IncludedCount} 个片段";
             OpenOutputButton.IsEnabled = Directory.Exists(_summary.OutputDirectory);
-            PlayMergedButton.IsEnabled = File.Exists(_summary.MergeOutput);
             FooterStatusText.Text = _summary.DryRun ? "仅扫描结果已写入输出目录" : "输出已生成";
             RunProgressBar.Value = RunProgressBar.Maximum;
         }
@@ -288,15 +289,6 @@ public partial class MainWindow : Window
         if (summary is not null && Directory.Exists(summary.OutputDirectory))
         {
             Process.Start(new ProcessStartInfo("explorer.exe", summary.OutputDirectory) { UseShellExecute = true });
-        }
-    }
-
-    private void PlayMergedButton_Click(object sender, RoutedEventArgs e)
-    {
-        var summary = _summary;
-        if (summary is not null && File.Exists(summary.MergeOutput))
-        {
-            Process.Start(new ProcessStartInfo(summary.MergeOutput) { UseShellExecute = true });
         }
     }
 
@@ -358,7 +350,7 @@ public partial class MainWindow : Window
         options = new CliRunOptions(
             inputPaths,
             NullIfEmpty(OutputPathTextBox.Text),
-            TargetSelfDeath.IsChecked == true ? "self-death" : TargetOwnKill.IsChecked == true ? "own-kill" : "both",
+            _targetSelection.Target,
             SelectedTag(LanguageComboBox),
             before,
             after,
@@ -371,7 +363,8 @@ public partial class MainWindow : Window
             ScanOnlyCheckBox.IsChecked == true,
             OverwriteCheckBox.IsChecked == true,
             BrightnessGateCheckBox.IsChecked == true,
-            MoveOriginalsCheckBox.IsChecked == true);
+            MoveOriginalsCheckBox.IsChecked == true,
+            _targetSelection.SplitMergeByTarget);
         return true;
     }
 
@@ -410,7 +403,6 @@ public partial class MainWindow : Window
         RunButton.IsEnabled = !running && _cliPath is not null && HasInputSelection();
         CancelButton.IsEnabled = running;
         OpenOutputButton.IsEnabled = !running && _summary is not null && Directory.Exists(_summary.OutputDirectory);
-        PlayMergedButton.IsEnabled = !running && _summary is not null && File.Exists(_summary.MergeOutput);
         InputPathTextBox.IsEnabled = !running;
         OutputPathTextBox.IsEnabled = !running;
         BrowseFolderButton.IsEnabled = !running;
@@ -485,10 +477,36 @@ public partial class MainWindow : Window
             checkBox.Checked += (_, _) => UpdateCommandPreview();
             checkBox.Unchecked += (_, _) => UpdateCommandPreview();
         }
-        foreach (var radioButton in new[] { TargetBoth, TargetSelfDeath, TargetOwnKill })
+        foreach (var checkBox in new[] { TargetBoth, TargetSelfDeath, TargetOwnKill })
         {
-            radioButton.Checked += (_, _) => UpdateCommandPreview();
+            checkBox.Checked += TargetSelection_Changed;
+            checkBox.Unchecked += TargetSelection_Changed;
         }
+    }
+
+    private void TargetSelection_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingTargetSelection)
+        {
+            return;
+        }
+
+        var checkBox = (CheckBox)sender;
+        var target = checkBox == TargetBoth ? DetectionTarget.All
+            : checkBox == TargetSelfDeath ? DetectionTarget.SelfDeath : DetectionTarget.OwnKill;
+        _targetSelection.SetSelected(target, checkBox.IsChecked == true);
+        _updatingTargetSelection = true;
+        try
+        {
+            TargetBoth.IsChecked = _targetSelection.All;
+            TargetSelfDeath.IsChecked = _targetSelection.SelfDeath;
+            TargetOwnKill.IsChecked = _targetSelection.OwnKill;
+        }
+        finally
+        {
+            _updatingTargetSelection = false;
+        }
+        UpdateCommandPreview();
     }
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -12,6 +13,7 @@
     <PackageReference Include="MSTest.TestFramework" Version="3.10.4" />
   </ItemGroup>
   <ItemGroup>
+    <Using Include="System.IO" />
     <ProjectReference Include="..\PubgHighlightTrim.Ui\PubgHighlightTrim.Ui.csproj" />
   </ItemGroup>
 </Project>
