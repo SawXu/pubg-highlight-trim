@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This project is licensed as `GPL-3.0-or-later`. Release archives also include third-party runtime components so that users can run `pubg-highlight-trim.exe` without installing Python or FFmpeg separately.
+This project is licensed as `GPL-3.0-or-later`. The default `pubg-highlight-trim-windows-x64.zip` is Rust-only for OCR (it still embeds CPython because Python remains the application orchestration layer). A separate opt-in compatibility artifact, `pubg-highlight-trim-paddle-windows-x64.zip`, may include Paddle runtime components. Each archive's `SUPPLY_CHAIN_MANIFEST.json` lists only components actually present.
 
 ## Bundled binary/runtime components
 
@@ -8,10 +8,12 @@ This project is licensed as `GPL-3.0-or-later`. Release archives also include th
 |---|---|---|---|
 | FFmpeg / FFprobe | Downloaded by `scripts/download_ffmpeg.ps1` from `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip` | GPL-3.0-or-later | The bundled `ffmpeg.exe -L` reports GPL terms. This project does not modify FFmpeg. Corresponding upstream source and build scripts are available from FFmpeg and BtbN FFmpeg-Builds. |
 | PyInstaller bootloader | PyInstaller 6.21.0 | GPL-2.0-or-later with PyInstaller bootloader exception | Used to create `pubg-highlight-trim.exe`. |
-| PaddleOCR | 3.7.0 | Apache-2.0 | OCR runtime used to detect self-event text such as `击倒了你` and `淘汰了你`. |
-| PaddlePaddle | 3.2.2 | Apache-2.0 | PaddleOCR inference runtime. |
-| PaddleX | 3.7.2 | Apache-2.0 | PaddleOCR pipeline dependency. |
-| OpenCV contrib Python | 4.10.0.84 or compatible package selected during build | Apache-2.0 | Video frame access and OCR crop preprocessing. |
+| PaddleOCR | 3.7.0 | Apache-2.0 | **Compatibility artifact only**; used only when `PUBG_OCR_BACKEND=paddle` (not present in the default Rust-only archive). |
+| PaddlePaddle | 3.2.2 | Apache-2.0 | **Compatibility artifact only**; not present in the default Rust-only archive. |
+| PaddleX | 3.7.2 | Apache-2.0 | **Compatibility artifact only**; not present in the default Rust-only archive. |
+| CPython | Build/runtime version recorded in the release manifest | Python Software Foundation License | Embedded by the PyInstaller application; Rust-only refers to OCR inference, not the whole app. |
+| NumPy | Version recorded in the release manifest when present | BSD-3-Clause | Python orchestration dependency when present in the frozen bundle. |
+| OpenCV contrib Python | 4.10.0.84 or compatible package selected during build | Apache-2.0 | Present in the default bundle for video frame access and OCR crop preprocessing. |
 | pyclipper | 1.4.0 | MIT | PaddleOCR/PaddleX dependency. |
 | Shapely | 2.1.2 | BSD-3-Clause | PaddleOCR/PaddleX dependency. |
 | pypdfium2 | 5.11.0 | BSD-3-Clause, Apache-2.0, dependency licenses | PaddleOCR/PaddleX dependency. |
@@ -42,4 +44,4 @@ The release workflow downloads and redistributes the FFmpeg runtime as-is. This 
 
 ## Supply chain manifest
 
-Every file shipped in the release zip is hashed in `SUPPLY_CHAIN_MANIFEST.json`, which also records component versions, sources and licenses. The runtime never downloads models, binaries, or OCR caches; model files are re-hashed by `ocr_engine.exe` at load time and a mismatch fails explicitly.
+Every file shipped in the release zip except `SUPPLY_CHAIN_MANIFEST.json` itself is hashed in that manifest, which also records component versions, sources and licenses. The runtime never downloads models, binaries, or OCR caches; model files are re-hashed by `ocr_engine.exe` at load time and a mismatch fails explicitly.

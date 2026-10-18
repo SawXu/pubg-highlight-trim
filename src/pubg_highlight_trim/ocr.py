@@ -13,7 +13,7 @@ from typing import Any, Callable
 from .frame_source import Cv2FrameSource, FrameSource, FrameSourceFactory, VideoUnreadable
 from .game_languages import GameLanguageProfile, default_game_language_profile
 from .models import EventDetection
-from .runtime import first_existing_runtime_path
+from .runtime import first_existing_runtime_path, ocr_backend_name
 
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
@@ -509,9 +509,14 @@ def classify_target_text(text: str, target: str, profile: GameLanguageProfile | 
 
 def load_backend(profile: GameLanguageProfile | None = None, *, verbose: bool = False) -> tuple[Any, Any]:
     profile = _language(profile)
-    if os.environ.get("PUBG_OCR_BACKEND", "paddle").lower() == "rust":
+    if ocr_backend_name() == "rust":
         from .rust_ocr import rust_backend_from_environment
-        import cv2  # type: ignore
+        try:
+            import cv2  # type: ignore
+        except ImportError as exc:
+            raise OcrUnavailable(
+                "OpenCV is missing. Install with: python -m pip install -e .[ocr]"
+            ) from exc
         backend = rust_backend_from_environment()
         if verbose:
             print(f"Rust OCR backend requested provider={backend.provider}", flush=True)
@@ -522,7 +527,9 @@ def load_backend(profile: GameLanguageProfile | None = None, *, verbose: bool = 
         from paddleocr import PaddleOCR  # type: ignore
     except Exception as exc:  # pragma: no cover - depends on optional packages.
         raise OcrUnavailable(
-            "OCR dependencies are missing. Install with: python -m pip install -e .[ocr]"
+            "Paddle rollback dependencies are missing. Use the Paddle compatibility bundle "
+            "or install with: python -m pip install -e .[paddle]. "
+            "Remove PUBG_OCR_BACKEND to use the default Rust backend."
         ) from exc
     started = time.time()
     ocr = PaddleOCR(

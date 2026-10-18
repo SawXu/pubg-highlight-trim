@@ -1,4 +1,4 @@
-"""Optional JSONL client for the Rust CPU/ONNX OCR engine."""
+"""JSONL client for the default Rust CPU/ONNX OCR engine."""
 from __future__ import annotations
 
 import base64
@@ -75,6 +75,12 @@ class RustOcrBackend:
         if not response:
             raise RuntimeError("Rust OCR returned an empty response")
         self.last_result = response
+        if response.get("status") not in {"ok", "provider-fallback"}:
+            raise RuntimeError(
+                f"Rust OCR failed: status={response.get('status', 'missing')}, "
+                f"provider={response.get('provider', 'unknown')}, "
+                f"method={response.get('method', 'unknown')}"
+            )
         return [_response_to_paddle_result(response)]
 
     def close(self) -> None:
@@ -149,7 +155,7 @@ def rust_backend_from_environment() -> RustOcrBackend:
         searched = ", ".join(str(root) for root in runtime_roots())
         raise RuntimeError(
             f"Rust OCR {missing} not found (searched: {searched}). "
-            "Use the pubg-highlight-trim-rust release bundle, or set "
+            "Use the default pubg-highlight-trim Windows release bundle, or set "
             "PUBG_OCR_ENGINE and PUBG_OCR_MODEL_DIR explicitly."
         )
     threads = int(os.environ.get("PUBG_OCR_THREADS", "1"))

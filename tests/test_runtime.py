@@ -64,6 +64,19 @@ class SuppressProcessOutputTests(unittest.TestCase):
         self.assertEqual(result.stdout, "before\nafter\n")
         self.assertEqual(result.stderr, "")
 
+    def test_windows_path_does_not_mutate_native_file_descriptors(self):
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch.object(os, "name", "nt"), patch("pubg_highlight_trim.runtime.os.dup") as dup, patch(
+            "pubg_highlight_trim.runtime.os.dup2"
+        ) as dup2, redirect_stdout(stdout), redirect_stderr(stderr):
+            with suppress_process_output():
+                print("python noise")
+        dup.assert_not_called()
+        dup2.assert_not_called()
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_supports_streams_without_file_descriptors(self):
         stdout = StringIO()
         stderr = StringIO()

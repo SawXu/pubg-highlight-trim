@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import EventDetection
+from .runtime import ocr_backend_name
 
 
 # Invalidate detections suppressed by the old unbounded follow-up kill rule.
@@ -17,7 +18,7 @@ OCR_MODEL_VERSION = "paddleocr-3.7.0"
 
 
 def ocr_engine_descriptor() -> str:
-    backend = os.environ.get("PUBG_OCR_BACKEND", "paddle").strip().lower()
+    backend = ocr_backend_name()
     if backend != "rust":
         return "paddle"
     from .rust_ocr import normalize_provider

@@ -22,12 +22,17 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build Windows bundle
+      - name: Build Windows bundle (Rust/ONNX default)
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
 
@@ -73,7 +78,7 @@ jobs:
             dist/pubg-highlight-trim-windows-x64.zip
             dist/pubg-highlight-trim-ui-windows-x64.zip
 
-  windows-rust:
+  windows-paddle-compat:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -89,19 +94,19 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
 
-      - name: Build Windows bundle with Rust OCR engine
+      - name: Build Windows Paddle OCR compatibility bundle
         shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -WithRustOcr
+        run: powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -WithPaddleOcr
 
-      - name: Upload Rust OCR artifact
+      - name: Upload Paddle compatibility artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pubg-highlight-trim-rust-windows-x64
-          path: dist/pubg-highlight-trim-rust-windows-x64.zip
+          name: pubg-highlight-trim-paddle-windows-x64
+          path: dist/pubg-highlight-trim-paddle-windows-x64.zip
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/pubg-highlight-trim-rust-windows-x64.zip
+            dist/pubg-highlight-trim-paddle-windows-x64.zip
