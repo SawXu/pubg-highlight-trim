@@ -61,6 +61,149 @@ class PipelineMergeTests(unittest.TestCase):
         self.assertTrue(all(call.args[5].target == args.target for call in detect_events.call_args_list))
         return code, trim_clip, concat_clips
 
+    def test_run_deduplicates_overlapping_sources_before_trim(self):
+        import numpy as np
+
+        for later_complete, early_seek_mismatch in ((False, False), (True, False), (False, True)):
+            with self.subTest(later_complete=later_complete, early_seek_mismatch=early_seek_mismatch), tempfile.TemporaryDirectory() as tmp:
+                # run() resolves input paths (including Windows short-name TEMP paths).
+                root = Path(tmp).resolve()
+                first, second = root / "a.mp4", root / "b.mp4"
+                first.write_bytes(b"original-a")
+                second.write_bytes(b"original-b")
+                outdir = root / "output"
+                args = build_parser().parse_args([
+                    "--files", str(first), str(second), "--game-lang", "en",
+                    "-o", str(outdir), "--jobs", "1", "-y",
+                ])
+                times = [2.0, 30.5] if later_complete else [30.5, 2.0]
+                detections = [EventDetection(t + 1, t, "death", "ocr", target="self-death",
+                                             event_key="self-death:knock:enemy") for t in times]
+
+                class Frames:
+                    def __init__(self, path, *_args, **_kwargs):
+                        self.event = times[0 if path == first else 1]
+                    def __enter__(self):
+                        return self
+                    def __exit__(self, *_args):
+                        pass
+                    def read_at(self, sec):
+                        seed = round((sec - self.event + 10) * 1000)
+                        if early_seek_mismatch and self.event == 2 and sec < 2:
+                            seed += 100
+                        rng = np.random.default_rng(seed)
+                        return rng.integers(0, 256, (48, 64, 3), dtype=np.uint8)
+
+                with patch("pubg_highlight_trim.pipeline.FfmpegFrameSource", Frames):
+                    code, trim, concat = self._run_batch_fixture(args, iter(detections))
+                self.assertEqual(code, 0)
+                self.assertEqual(trim.call_count, 1)
+                kept = second if later_complete else first
+                self.assertEqual(trim.call_args.args[0], kept)
+                self.assertEqual(trim.call_args.args[2:4], (25.5, 6.0))
+                self.assertEqual(len(concat.call_args.args[0]), 1)
+                entries = (outdir / "pubg_highlight_trim_merged.concat.txt").read_text(encoding="utf-8").splitlines()
+                self.assertEqual(len(entries), 1)
+                with (outdir / "检测与裁剪记录.csv").open(encoding="utf-8-sig", newline="") as handle:
+                    rows = list(csv.DictReader(handle))
+                self.assertEqual(sorted(row["Status"] for row in rows), ["included", "skipped"])
+                skipped = next(row for row in rows if row["Status"] == "skipped")
+                self.assertEqual(skipped["Method"], "skipped-cross-source-duplicate")
+                self.assertEqual(skipped["Output"], "")
+                self.assertEqual(first.read_bytes(), b"original-a")
+                self.assertEqual(second.read_bytes(), b"original-b")
+
+    def test_run_keeps_events_without_changing_cross_source_overlap_evidence(self):
+        import numpy as np
+
+        for evidence in ("different-game", "black", "static", "hud-only", "missing", "decode-error",
+                         "different-key", "missing-key", "same-source", "extra-event"):
+            with self.subTest(evidence=evidence), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                first, second = root / "a.mp4", root / "b.mp4"
+                first.touch()
+                second.touch()
+                outdir = root / "output"
+                single = evidence == "same-source"
+                args = build_parser().parse_args([
+                    "--files", str(first), *([] if single else [str(second)]),
+                    "--game-lang", "en", "-o", str(outdir), "--jobs", "1", "--merge", "-y",
+                ])
+                def event(sec, key="enemy"):
+                    return EventDetection(60, sec, "death", "ocr", target="self-death",
+                                          event_key=f"self-death:knock:{key}" if key else "")
+                first_events = [event(30.5)]
+                second_events = [event(2, "another" if evidence == "different-key" else
+                                        "" if evidence == "missing-key" else "enemy")]
+                if single:
+                    first_events.append(event(45))
+                if evidence == "extra-event":
+                    second_events.append(event(3, "unique"))
+
+                class Frames:
+                    def __init__(self, path, *_args, **_kwargs):
+                        self.path = path
+                    def __enter__(self):
+                        return self
+                    def __exit__(self, *_args):
+                        pass
+                    def read_at(self, sec):
+                        if evidence == "decode-error":
+                            raise RuntimeError("decoder unavailable")
+                        if evidence == "missing":
+                            return None
+                        offset = sec - (30.5 if self.path == first else 2)
+                        seed = round((offset + 10) * 1000)
+                        if evidence == "different-game" and self.path == second:
+                            seed += 10
+                        if evidence in ("static", "hud-only"):
+                            seed = 123
+                        frame = np.random.default_rng(seed).integers(0, 256, (48, 64, 3), dtype=np.uint8)
+                        if evidence == "black":
+                            frame[:] = 0
+                        if evidence == "hud-only":
+                            frame[:4] = round((offset + 10) * 10)
+                        return frame
+
+                queue = iter([first_events] if single else [first_events, second_events])
+                with patch("pubg_highlight_trim.pipeline.FfmpegFrameSource", Frames):
+                    code, trim, concat = self._run_batch_fixture(args, queue)
+                self.assertEqual(code, 0)
+                self.assertEqual(trim.call_count, 2)
+                self.assertEqual(len(concat.call_args.args[0]), 2)
+                self.assertEqual(len(list((outdir / "clips").glob("*.mp4"))), 2)
+                with (outdir / "检测与裁剪记录.csv").open(encoding="utf-8-sig", newline="") as handle:
+                    rows = list(csv.DictReader(handle))
+                self.assertEqual(sum(row["Status"] == "included" for row in rows), 2)
+                skipped = [row for row in rows if row["Status"] == "skipped"]
+                self.assertEqual(len(skipped), 1 if evidence == "extra-event" else 0)
+                if evidence == "extra-event":
+                    self.assertTrue(any(row["EventKeys"] == "self-death:knock:unique"
+                                        for row in rows if row["Status"] == "included"))
+
+    def _run_batch_fixture(self, args, queue):
+        def trim(src, out, start, length, ffmpeg):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"trim")
+            return "mock-encoder"
+        def concat(clips, final, ffmpeg):
+            final.write_bytes(b"merged")
+            path = final.with_suffix(".concat.txt")
+            path.write_text("\n".join(map(str, clips)), encoding="utf-8")
+            return path
+        def detect(*_args, **_kwargs):
+            result = next(queue)
+            return result if isinstance(result, list) else [result]
+        with patch("pubg_highlight_trim.pipeline.find_ffmpeg_pair", return_value=("ffmpeg", "ffprobe")), patch(
+            "pubg_highlight_trim.pipeline.load_backend", return_value=(object(), object())
+        ), patch("pubg_highlight_trim.pipeline.duration_sec", return_value=60.0), patch(
+            "pubg_highlight_trim.pipeline.detect_ocr_events", side_effect=detect
+        ), patch("pubg_highlight_trim.pipeline.trim_clip", side_effect=trim) as trim_mock, patch(
+            "pubg_highlight_trim.pipeline.concat_clips", side_effect=concat
+        ) as concat_mock:
+            code = run(args)
+        return code, trim_mock, concat_mock
+
     def test_run_places_trimmed_clips_under_clips_and_merge_at_output_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
