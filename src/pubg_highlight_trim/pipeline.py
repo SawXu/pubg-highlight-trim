@@ -742,6 +742,117 @@ def _merged_clip_plans(detections: list[EventDetection], before: float, after: f
     return plans
 
 
+def _same_recorded_event(
+    src: Path, detection: EventDetection, other_src: Path, other: EventDetection,
+    factory: FrameSourceFactory,
+) -> bool:
+    """Require aligned full-frame matches AND changing gameplay, not a shared HUD.
+
+    Exact pixels deliberately favour false negatives (re-encodes, OCR timestamp
+    drift) over discarding a real event. Failed/short/static evidence keeps both.
+    """
+    assert detection.event_sec is not None and other.event_sec is not None
+    left = max(-detection.event_sec, -other.event_sec, -2.0)
+    right = min(detection.duration_sec - detection.event_sec,
+                other.duration_sec - other.event_sec, 0.5)
+    if right - left < 1.0:
+        return False
+    windows: list[tuple[float, ...]] = [(left, (left + right) / 2, right)]
+    if right >= 0.5:
+        # Some overlapping recordings decode early GOPs with different pixels
+        # but converge at the event. Three changing frames after the event are
+        # independent evidence too; an earlier mismatch need not veto them.
+        # Sample a uniform 10 Hz grid and require three exact moving matches.
+        windows.insert(0, tuple(index / 10 for index in range(6)))
+    return any(_matching_event_window(src, detection.event_sec, other_src, other.event_sec,
+                                      other.duration_sec, offsets, factory) for offsets in windows)
+
+
+def _matching_event_window(
+    src: Path, event_sec: float, other_src: Path, other_event_sec: float,
+    other_duration: float, offsets: tuple[float, ...], factory: FrameSourceFactory,
+) -> bool:
+    previous: list[bytes] | None = None
+    matched_frames = 0
+    try:
+        with factory(src) as source, factory(other_src) as other_source:
+            for offset in offsets:
+                frame = source.read_at(event_sec + offset)
+                other_frame = other_source.read_at(other_event_sec + offset)
+                if frame is None or other_frame is None or frame.shape != other_frame.shape:
+                    return False
+                if frame.tobytes() != other_frame.tobytes():
+                    # Accurate seeks can land one frame apart at a GOP/timebase
+                    # boundary. Search only a tiny local neighbourhood; still
+                    # require exact full-resolution pixels, never fuzzy HUDs.
+                    matched = False
+                    for delta in (-1 / 60, 1 / 60, -1 / 30, 1 / 30):
+                        timestamp = other_event_sec + offset + delta
+                        if timestamp < 0 or timestamp >= other_duration:
+                            continue
+                        nearby = other_source.read_at(timestamp)
+                        if nearby is not None and nearby.shape == frame.shape and nearby.tobytes() == frame.tobytes():
+                            matched = True
+                            break
+                    if not matched:
+                        continue
+                height, width = frame.shape[:2]
+                if height < 16 or width < 16:
+                    return False
+                # Inspect sixteen tiles inside the central 80%, excluding most
+                # HUD. Animation confined to text, a spinner or a cursor is not
+                # sufficient evidence that two recordings share gameplay.
+                tiles = []
+                for y in range(4):
+                    for x in range(4):
+                        tile = frame[
+                            height * (1 + 2*y) // 10:height * (3 + 2*y) // 10,
+                            width * (1 + 2*x) // 10:width * (3 + 2*x) // 10,
+                        ]
+                        tiles.append(tile[::max(1, height // 80), ::max(1, width // 80)].tobytes())
+                if previous is not None:
+                    changing_tiles = sum(
+                        sum(abs(a - b) > 8 for a, b in zip(old, new)) > len(new) * 0.05
+                        for old, new in zip(previous, tiles)
+                    )
+                    if changing_tiles < 8:
+                        return False
+                previous = tiles
+                matched_frames += 1
+                if matched_frames >= 3:
+                    return True
+    except Exception:
+        # Verification is optional; unavailable decoders/frames must never
+        # turn a valid OCR event into a skip or abort the batch.
+        return False
+    return False
+
+
+def _cross_source_duplicates(
+    sources: list[tuple[Path, list[EventDetection]]], factory: FrameSourceFactory | None,
+) -> set[int]:
+    if factory is None:
+        return set()
+    candidates = [(src, d) for src, detections in sources for d in detections
+                  if d.event_sec is not None and d.event_key]
+    # Rank before emitting any trims: a later source can have more context.
+    candidates.sort(key=lambda item: (
+        min(item[1].event_sec or 0.0, item[1].clip_before_sec)
+        + min(item[1].duration_sec - (item[1].event_sec or 0.0), item[1].clip_after_sec)
+    ), reverse=True)
+    retained: dict[tuple[str, str], list[tuple[Path, EventDetection]]] = {}
+    skipped: set[int] = set()
+    for src, detection in candidates:
+        key = (detection.target, detection.event_key)
+        matches = retained.setdefault(key, [])
+        if any(src != other_src and _same_recorded_event(src, detection, other_src, other, factory)
+               for other_src, other in matches):
+            skipped.add(id(detection))
+        else:
+            matches.append((src, detection))
+    return skipped
+
+
 def _clip_target_prefix(detection: EventDetection) -> str:
     suffix = f"x{detection.event_count}" if detection.event_count not in {"", "0", "1"} else ""
     return f"{detection.target or 'event'}{suffix}"
@@ -1046,6 +1157,7 @@ def run(args: SimpleNamespace) -> int:
                         unreadable_sources[src] = (duration, probe_seconds, error)
                 print(_progress_line("scan", completed + future_index, len(files), jobs), flush=True)
 
+    pending: list[tuple[int, Path, list[EventDetection], float, float, float, float]] = []
     for idx, src in enumerate(files, 1):
         language_profile = file_profiles[src]
         ocr_config = ocr_config_for(language_profile)
@@ -1150,6 +1262,25 @@ def run(args: SimpleNamespace) -> int:
             continue
         detections = [_apply_context_rules(detection, args, language_profile) for detection in detections]
 
+        pending.append((idx, src, detections, probe_seconds, clip_started, detect_started, time.time()))
+
+    duplicate_ids = _cross_source_duplicates(
+        [(src, detections) for _, src, detections, _, _, _, _ in pending],
+        _ffmpeg_frame_source_factory(ffmpeg, ffprobe),
+    )
+    for idx, src, detections, probe_seconds, clip_started, detect_started, queued_at in pending:
+        queue_seconds = time.time() - queued_at
+        clip_started += queue_seconds
+        detect_started += queue_seconds
+        language_profile = file_profiles[src]
+        for detection in detections:
+            if id(detection) in duplicate_ids:
+                skipped = replace(detection, method="skipped-cross-source-duplicate")
+                methods[skipped.method] += 1
+                detectors[skipped.detector] += 1
+                records.append(_record_skip(idx, src, skipped, probe_seconds))
+                print(f"[{idx:02d}/{len(files)}] SKIP {skipped.target} {skipped.method} | {src.name}", flush=True)
+        detections = [d for d in detections if id(d) not in duplicate_ids]
         groups = (
             [[d for d in detections if d.target == target] for target in target_clips]
             if split_targets else [detections]
@@ -1199,6 +1330,7 @@ def run(args: SimpleNamespace) -> int:
             )
 
     scan_seconds = time.time() - scan_started
+    records.sort(key=lambda row: int(row["Index"]))
     csv_path = outdir / "检测与裁剪记录.csv"
     record_fields = list(_blank_record(0, Path(""), 0.0, "", "", "").keys())
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
