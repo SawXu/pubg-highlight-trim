@@ -25,6 +25,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "The final package UI executable failed DPI manifest verification."
     }
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "smoke_windows_bundle.ps1") -Bundle (Join-Path $extractDir "cli")
+    if ($LASTEXITCODE -ne 0) {
+        throw "The final UI package's bundled CLI failed OCR smoke verification."
+    }
     Write-Host "Verified final UI package: $resolvedPackage"
 }
 finally {

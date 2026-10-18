@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODEL_MANIFEST = REPO_ROOT / "rust" / "ocr_engine" / "models" / "pp_ocrv6_medium.json"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+OCR_ENGINE_CARGO = REPO_ROOT / "rust" / "ocr_engine" / "Cargo.toml"
 
 CRT_DLLS = ["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll"]
 
@@ -52,10 +54,42 @@ def project_version() -> str:
     return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]["version"]
 
 
+def ocr_engine_version() -> str:
+    return tomllib.loads(OCR_ENGINE_CARGO.read_text(encoding="utf-8"))["package"]["version"]
+
+
+def _present(bundle: Path, entry: dict) -> bool:
+    """Return whether a component is actually represented in this bundle.
+
+    Manifest entries are intentionally filtered by shipped paths: optional
+    compatibility dependencies must not be advertised in the Rust-only zip.
+    """
+    files = entry.get("files", [])
+    return bool(entry.get("external", False)) or (
+        bool(files) and any((bundle / path).exists() for path in files)
+    )
+
+
 def components(bundle: Path) -> list[dict]:
     model_manifest = json.loads(MODEL_MANIFEST.read_text(encoding="utf-8"))
     ffmpeg = bundle / "_internal" / "vendor" / "ffmpeg" / "ffmpeg.exe"
     entries = [
+        {
+            "name": "CPython",
+            "kind": "embedded runtime",
+            "version": sys.version.split()[0],
+            "source": "https://www.python.org/",
+            "license": "Python Software Foundation License",
+            "files": ["python3.dll", "python312.dll", "python311.dll", "_internal/python312.dll", "_internal/python311.dll"],
+        },
+        {
+            "name": "NumPy",
+            "kind": "python package in _internal",
+            "version": package_version("numpy"),
+            "source": "https://numpy.org/",
+            "license": "BSD-3-Clause",
+            "files": ["_internal/numpy", "_internal/numpy.libs"],
+        },
         {
             "name": "pubg-highlight-trim",
             "kind": "application",
@@ -67,7 +101,7 @@ def components(bundle: Path) -> list[dict]:
         {
             "name": "pubg-ocr-engine",
             "kind": "application",
-            "version": project_version(),
+            "version": ocr_engine_version(),
             "source": "this repository, rust/ocr_engine (cargo --features cli,directml)",
             "license": "GPL-3.0-or-later",
             "files": ["ocr_engine.exe"],
@@ -103,6 +137,7 @@ def components(bundle: Path) -> list[dict]:
             "source": "provided by Windows 10 1903+ (directml.dll, d3d12.dll, dxgi.dll, dxcore.dll)",
             "license": "proprietary, Microsoft Windows",
             "notes": "optional execution provider; CPU provider requires no DirectML",
+            "external": True,
             "files": [],
         },
         {
@@ -155,7 +190,7 @@ def components(bundle: Path) -> list[dict]:
             "source": "https://pypi.org",
             "license": "Apache-2.0",
             "notes": "legacy OCR backend; not used when PUBG_OCR_BACKEND=rust",
-            "files": [],
+            "files": ["_internal/paddleocr", "_internal/paddle", "_internal/paddlex"],
         },
         {
             "name": "OpenCV contrib",
@@ -166,7 +201,9 @@ def components(bundle: Path) -> list[dict]:
             "files": ["_internal/cv2"],
         },
     ]
-    return entries
+    # Keep the manifest faithful to the artifact: optional Paddle packages are
+    # omitted unless their files really exist in this bundle.
+    return [entry for entry in entries if _present(bundle, entry)]
 
 
 def main() -> int:
@@ -179,9 +216,11 @@ def main() -> int:
     if not bundle.is_dir():
         raise FileNotFoundError(f"bundle not found: {bundle}")
 
+    output = args.output or bundle / "SUPPLY_CHAIN_MANIFEST.json"
+    output = output.resolve()
     files = []
     for path in sorted(bundle.rglob("*")):
-        if path.is_file():
+        if path.is_file() and path.resolve() != output:
             files.append(
                 {
                     "path": path.relative_to(bundle).as_posix(),
@@ -199,7 +238,6 @@ def main() -> int:
         "files": files,
     }
 
-    output = args.output or bundle / "SUPPLY_CHAIN_MANIFEST.json"
     output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {output} ({len(files)} files hashed)")
     return 0

@@ -89,3 +89,26 @@ def test_describe_exit_hints_for_missing_dll():
 
 def test_describe_exit_plain_code_when_unmapped():
     assert _describe_exit(1) == "Rust OCR exited with code 1"
+
+
+@pytest.mark.parametrize("status", ["ok", "provider-fallback", "model-unavailable", "inference-error", "invalid-roi", "empty-roi", "unknown"])
+def test_engine_status_contract(status):
+    import json
+    from io import StringIO
+    from unittest.mock import Mock
+
+    np = pytest.importorskip("numpy")
+    from pubg_highlight_trim.rust_ocr import RustOcrBackend
+
+    backend = RustOcrBackend.__new__(RustOcrBackend)
+    backend._process = Mock(
+        stdin=StringIO(),
+        stdout=StringIO(json.dumps({"status": status, "provider": "none"}) + "\n"),
+    )
+    backend._process.poll.return_value = None
+    crop = np.zeros((2, 2, 3), dtype=np.uint8)
+    if status in {"ok", "provider-fallback"}:
+        assert backend.predict(crop)[0]["status"] == status
+    else:
+        with pytest.raises(RuntimeError, match=f"status={status}"):
+            backend.predict(crop)

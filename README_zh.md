@@ -14,7 +14,7 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 
 1. 从 [最新 release](https://github.com/SawXu/pubg-highlight-trim/releases/latest) 下载 `pubg-highlight-trim-windows-x64.zip`。
 2. 将 zip 解压到任意目录。
-3. 压缩包内已包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg.exe` / `ffprobe.exe`，以及 OCR 检测所需的 PaddleOCR 模型。
+3. 默认压缩包包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg.exe` / `ffprobe.exe`、Rust-only OCR 引擎及 PP-OCRv6 ONNX 模型；**不包含** PaddleOCR、PaddlePaddle 或 Paddle 模型。
 
 需要图形界面时，下载 `pubg-highlight-trim-ui-windows-x64.zip`。解压后运行 `pubg-highlight-trim-ui.exe`；同包的 `cli` 目录包含完整 CLI 和 OCR 运行时，必须与 UI exe 保持并列（即 `cli\\pubg-highlight-trim.exe`）。请勿将 UI exe 移出该目录，或在缺少 `cli` 的情况下单独复制它。
 
@@ -153,9 +153,17 @@ pubg_highlight_trim_output/
 └── summary.json
 ```
 
+## OCR 后端与发布包
+
+默认 release 使用 Rust-only OCR：Python CLI 仍是应用编排层（并通过 PyInstaller 冻结），OCR 推理由压缩包中的 Rust `ocr_engine.exe` 完成。这里的 Rust-only 只描述 OCR 后端，**不表示整个 app 没有 CPython**；应用仍嵌入 CPython，并按编排和视频处理需要携带 NumPy/OpenCV 等 Python 组件。
+
+默认包名称为 `pubg-highlight-trim-windows-x64.zip`。如需兼容回滚，请显式设置 `PUBG_OCR_BACKEND=paddle`，这需要 PaddleOCR/PaddlePaddle 运行时。打包流程会将兼容构建单独发布为 `pubg-highlight-trim-paddle-windows-x64.zip`；使用 Paddle 必须同时下载/选择该兼容包，并设置 `PUBG_OCR_BACKEND=paddle`。`-WithPaddleOcr` 构建已经实现，但绝不会成为默认包。
+
+源码安装时，基础 `ocr` extra 仅包含 OpenCV；需要 Paddle 兼容后端时显式执行 `pip install .[paddle]`，并设置 `PUBG_OCR_BACKEND=paddle`。Rust OCR 模型 hash 会在启动时校验；运行时和组件 hash 会记录在 `SUPPLY_CHAIN_MANIFEST.json` 中供离线审计，该文件只列出每个压缩包中实际存在的组件与文件。
+
 ## 检测
 
-由于 own-kill 与混合事件裁剪依赖 OCR，检测仅使用 OCR。默认 OCR 扫描 PUBG 事件文本所在的固定下方居中区域。粗扫描前先在相对位置 `x=0.26–0.74, y=0.635–0.725` 用 OpenCV 做预筛：默认 `light` 模式仅在画面近乎全黑时跳过 PaddleOCR；`--brightness-gate-mode full` 可恢复更严格的亮色描边与横向文字结构检查（更省 OCR 调用，但可能误拦细单行事件文本）。该门控只用于粗扫描，事件精修仍使用完整 OCR；对局结束源文件会自动禁用门控，以免胜利结算遮罩压暗文字。所有区域均使用相对坐标，不依赖视频分辨率。若布局不同，可用 `--no-brightness-gate` 禁用门控，或用 `--roi x1,y1,x2,y2` 覆盖 OCR 裁剪区域。
+由于 own-kill 与混合事件裁剪依赖 OCR，检测仅使用 OCR。默认 OCR 扫描 PUBG 事件文本所在的固定下方居中区域。粗扫描前先在相对位置 `x=0.26–0.74, y=0.635–0.725` 用 OpenCV 做预筛：默认 `light` 模式仅在画面近乎全黑时跳过 OCR；`--brightness-gate-mode full` 可恢复更严格的亮色描边与横向文字结构检查（更省 OCR 调用，但可能误拦细单行事件文本）。该门控只用于粗扫描，事件精修仍使用完整 OCR；对局结束源文件会自动禁用门控，以免胜利结算遮罩压暗文字。所有区域均使用相对坐标，不依赖视频分辨率。若布局不同，可用 `--no-brightness-gate` 禁用门控，或用 `--roi x1,y1,x2,y2` 覆盖 OCR 裁剪区域。
 
 当前支持的游戏语言：`zh-Hans`、`zh-Hant`、`en`。默认的 `--game-lang auto` 模式会从 NVIDIA Highlight 文件名自动识别 PUBG 游戏语言，支持同一文件夹中混用不同语言标签的文件。仅当需要强制指定某一种语言时，才使用 `--game-lang zh-Hans`、`--game-lang zh-Hant` 或 `--game-lang en`。
 
@@ -172,7 +180,7 @@ pubg_highlight_trim_output/
 
 ## ffmpeg
 
-Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` 与 `ffprobe.exe`。
+Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` 与 `ffprobe.exe`。默认包还包含 Rust OCR 引擎和模型；PaddleOCR 运行时仅存在于单独命名的兼容包中。
 
 源码开发期间，解析器按以下顺序查找：
 
@@ -205,7 +213,7 @@ python -m unittest discover -s tests -v
 
 本地构建需要 Windows x64、可联网的 PowerShell，以及以下工具：
 
-- 推荐使用 64 位 Python 3.12.x。`pyproject.toml` 固定了 `paddleocr==3.7.0` 和 `paddlepaddle==3.2.2`；目前 `paddlepaddle==3.2.2` 没有适用于 Windows 的 Python 3.14 wheel，因此 Python 3.14 无法安装本项目的 OCR 构建依赖。
+- 推荐使用 64 位 Python 3.12.x（项目元数据支持 Python 3.10+，但 3.12 是已验证的 Windows 构建版本）。
 - 构建 UI 需要 .NET 10 SDK（项目目标框架为 `net10.0-windows`）。
 - 构建脚本会用 `mt.exe` 检查最终 UI 可执行文件的 DPI manifest。请安装 Windows 10/11 SDK，并将包含 `mt.exe` 的目录加入 `PATH`；该目录通常类似 `C:\Program Files (x86)\Windows Kits\10\bin\<版本>\x64`。也可以从 Visual Studio Developer PowerShell（已配置 Windows SDK 的环境）运行构建。可先用 `Get-Command mt.exe` 验证。
 
@@ -222,28 +230,28 @@ python -m pip install --upgrade pip
 
 #### 安装 Python 构建依赖
 
-在已启用 `.venv` 的终端中安装 `pyproject.toml` 的 `[ocr,build]` 可选依赖：
+在已启用 `.venv` 的终端中安装 `pyproject.toml` 的基础 `[ocr,build]` 可选依赖（Paddle 兼容依赖不在默认构建中）：
 
 ```powershell
 python -m pip install -e ".[ocr,build]"
 ```
 
-该 extra 会安装以下构建所需的包（以及它们的传递依赖）：
+默认 extra 会安装以下构建所需的包（以及它们的传递依赖）：
 
 - `opencv-contrib-python>=4.9`
-- `paddleocr==3.7.0`
-- `paddlepaddle==3.2.2`
 - `pyinstaller>=6.10`
+
+若要构建或运行 Paddle 兼容包，再显式安装 `pip install -e ".[paddle]"`。
 
 #### 构建 CLI bundle
 
-推荐先单独构建 CLI。`build_windows.ps1` 在缺少 `vendor\ffmpeg\ffmpeg.exe` 或 `ffprobe.exe` 时自动下载 FFmpeg，并运行 `prefetch_ocr_models.py` 将 PaddleOCR 模型缓存到 `vendor\paddlex_cache`；模型和 FFmpeg 都会被复制进发布 bundle。
+推荐先单独构建 CLI。默认 Rust 构建将 PP-OCRv6 ONNX 资源（不是 PaddleOCR 模型）和 FFmpeg 复制进发布 bundle，并生成 `pubg-highlight-trim-windows-x64.zip`；兼容构建单独生成 `pubg-highlight-trim-paddle-windows-x64.zip`。使用 Paddle 时必须同时选择 `-WithPaddleOcr` 构建并在运行时设置 `PUBG_OCR_BACKEND=paddle`，默认包始终为 Rust-only。
 
 ```powershell
 # 可选：提前下载 FFmpeg；省略时 build_windows.ps1 会自动下载
 powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
 
-# 可选：提前下载/校验 PaddleOCR 模型；构建脚本也会自动执行
+# 仅构建 Paddle 兼容包时使用：提前下载/校验 PaddleOCR 模型
 python .\scripts\prefetch_ocr_models.py --cache-dir vendor\paddlex_cache
 
 # 依赖已由上一步安装，因此跳过脚本内的重复安装
@@ -254,7 +262,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 `
 CLI 构建会清理旧的 `build` / `dist` 目录，运行 PyInstaller 并生成：
 
 - `dist\pubg-highlight-trim\pubg-highlight-trim.exe`：可直接运行的 CLI bundle。
-- `dist\pubg-highlight-trim-windows-x64.zip`：包含 CLI、FFmpeg/FFprobe、PaddleOCR 模型和许可文件的发布包。该 zip 的用户无需安装 Python。
+- `dist\pubg-highlight-trim-windows-x64.zip`：默认 Rust-only 包，包含 CLI、FFmpeg/FFprobe、PP-OCRv6 ONNX 模型和许可文件。该 zip 的用户无需安装 Python。Paddle 兼容包另行命名为 `pubg-highlight-trim-paddle-windows-x64.zip`。
 
 #### 构建 GUI EXE
 
@@ -271,7 +279,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1
 GUI 构建会执行 `dotnet publish`、检查 `mt.exe` 生成的 DPI manifest，并把 CLI bundle 复制到 UI 包的 `cli` 子目录。产物为：
 
 - `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`：自包含 GUI EXE。
-- `dist\pubg-highlight-trim-ui-windows-x64.zip`：GUI、并排的 `cli` bundle、FFmpeg/FFprobe、PaddleOCR 模型和文档的完整发布包。用户无需安装 .NET、Python 或其他运行时。
+- `dist\pubg-highlight-trim-ui-windows-x64.zip`：GUI、并排的 `cli` bundle、FFmpeg/FFprobe、默认 Rust OCR 资源和文档的完整发布包。用户无需安装 .NET、Python 或其他运行时。Paddle 资源仅随单独兼容构建提供。
 
 UI 测试单独运行：
 
@@ -287,4 +295,4 @@ GitHub Actions 会在推送 `v0.1.0` 等标签或手动 `workflow_dispatch` 时�
 
 本项目以 `GPL-3.0-or-later` 许可。
 
-发布包中捆绑 FFmpeg/FFprobe 与 PaddleOCR 运行时资源，第三方许可详情与源链接见 `THIRD_PARTY_NOTICES.md`。
+默认发布包中捆绑 FFmpeg/FFprobe 与 Rust OCR 引擎/模型资源；PaddleOCR 运行时资源仅在单独命名的兼容包中提供。第三方许可详情与源链接见 `THIRD_PARTY_NOTICES.md`。

@@ -14,7 +14,7 @@ No Python install required.
 
 1. Download `pubg-highlight-trim-windows-x64.zip` from the [latest release](https://github.com/SawXu/pubg-highlight-trim/releases/latest).
 2. Extract the zip to any folder.
-3. The bundle includes `pubg-highlight-trim.exe`, bundled `ffmpeg.exe`/`ffprobe.exe`, and the PaddleOCR models needed by OCR detection.
+3. The default bundle includes `pubg-highlight-trim.exe`, bundled `ffmpeg.exe`/`ffprobe.exe`, the Rust-only OCR engine, and PP-OCRv6 ONNX models. It does **not** include PaddleOCR, PaddlePaddle, or Paddle models.
 
 For the graphical app, download `pubg-highlight-trim-ui-windows-x64.zip`, extract it, and run `pubg-highlight-trim-ui.exe`. The GUI archive is a WPF desktop front end; the CLI archive is the command-line executable and runtime by itself. In the GUI archive, keep the bundled `cli` directory beside the UI executable (`pubg-highlight-trim-ui.exe` and `cli\pubg-highlight-trim.exe` at the same level). The UI starts that CLI as a child process, so moving or renaming `cli` makes the UI unavailable. Neither archive requires a separate Python or .NET installation.
 
@@ -144,9 +144,17 @@ OCR options (advanced):
 
 GUI and CLI use the same output layout. `<output>\clips\` contains individual trimmed videos; merged videos and their `.concat.txt` FFmpeg lists are in the output root. In split mode, each target with clips gets its own video. `检测与裁剪记录.csv` records per-source detection status, event time, clip range, and timings; `candidate_events.csv` stores candidate hints for later scans; `profile.json` stores phase timings. `summary.json` records source, retained/skipped counts, output paths, scan mode, language, merge state, and OCR/cache metadata; `merge_outputs` lists every generated target output while legacy single-output fields remain compatible.
 
+## OCR backends and release artifacts
+
+The release default is Rust-only OCR: the Python CLI remains the application orchestrator (and is frozen with PyInstaller), while OCR inference runs in the bundled Rust `ocr_engine.exe`. This is **not** a claim that the whole application has no CPython: the app still embeds CPython and Python packages such as NumPy/OpenCV as needed for orchestration and video processing.
+
+The default archive is `pubg-highlight-trim-windows-x64.zip`. To use the compatibility backend, set `PUBG_OCR_BACKEND=paddle` explicitly; this is an opt-in rollback and requires PaddleOCR/PaddlePaddle runtime assets. Packaging publishes that compatibility build separately as `pubg-highlight-trim-paddle-windows-x64.zip`; using Paddle requires both downloading/selecting that compatibility archive and setting `PUBG_OCR_BACKEND=paddle`. The `-WithPaddleOcr` build is implemented but is never the default.
+
+For source installs, the base `ocr` extra contains only OpenCV. Install Paddle compatibility dependencies explicitly with `pip install .[paddle]` (and use `PUBG_OCR_BACKEND=paddle`). Rust OCR model hashes are checked at startup. Runtime and component hashes are recorded in `SUPPLY_CHAIN_MANIFEST.json` for offline audit; the manifest lists the files actually present in each archive.
+
 ## Detection
 
-Detection is OCR-only because own-kill and mixed-event trimming require OCR. Before coarse OCR, OpenCV prefilters the relative region `x=0.26–0.74, y=0.635–0.725`; the default `light` mode skips PaddleOCR only on essentially dark frames, while `--brightness-gate-mode full` restores the stricter outlined-glyph and horizontal-structure checks (cheaper, but it can reject frames that contain thin single-line event text). The gate only applies to coarse scanning; event refinement still uses full OCR, and match-end sources automatically bypass the gate because victory overlays can dim the text. All regions use relative coordinates and do not depend on video resolution. Use `--no-brightness-gate` to disable the prefilter or `--roi x1,y1,x2,y2` to override the OCR crop.
+Detection is OCR-only because own-kill and mixed-event trimming require OCR. Before coarse OCR, OpenCV prefilters the relative region `x=0.26–0.74, y=0.635–0.725`; the default `light` mode skips OCR only on essentially dark frames, while `--brightness-gate-mode full` restores the stricter outlined-glyph and horizontal-structure checks (cheaper, but it can reject frames that contain thin single-line event text). The gate only applies to coarse scanning; event refinement still uses full OCR, and match-end sources automatically bypass the gate because victory overlays can dim the text. All regions use relative coordinates and do not depend on video resolution. Use `--no-brightness-gate` to disable the prefilter or `--roi x1,y1,x2,y2` to override the OCR crop.
 
 Current game-language support is `zh-Hans`, `zh-Hant`, and `en`. The default `--game-lang auto` mode detects the PUBG game language from NVIDIA Highlight filenames, including mixed folders where files have different language labels. Use `--game-lang zh-Hans`, `--game-lang zh-Hant`, or `--game-lang en` only when you want to force one profile.
 
@@ -186,17 +194,12 @@ python -m unittest discover -s tests -v
 
 The release build needs a Windows x64 machine with:
 
-- Python 3.12 x64. The project metadata supports Python 3.10+, but the pinned `paddlepaddle==3.2.2` does not provide a Windows wheel for Python 3.14. Python 3.12 is the verified build version.
+- Python 3.12 x64 (the verified Windows build version; project metadata supports Python 3.10+).
 - .NET 10 SDK, including the Windows Desktop targeting pack, for the WPF UI.
 - The Windows 10/11 SDK `mt.exe` tool on `PATH`. The build uses it to verify the UI executable's `PerMonitorV2` DPI manifest.
 - PowerShell and network access for downloading FFmpeg and, on a first build, OCR models.
 
-The Python build dependencies are declared in `pyproject.toml` and installed with the `ocr` and `build` extras:
-
-- `opencv-contrib-python>=4.9`
-- `paddleocr==3.7.0`
-- `paddlepaddle==3.2.2`
-- `pyinstaller>=6.10`
+The Python build dependencies are declared in `pyproject.toml`. The base OCR extra installs only `opencv-contrib-python>=4.9`; Paddle compatibility is an explicit `[paddle]` extra. The build extra installs `pyinstaller>=6.10`.
 
 Create and use a Python 3.12 virtual environment before building:
 
@@ -216,7 +219,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 `
   -SkipCliBuild
 ```
 
-`build_windows.ps1` prefetches the `en` and `zh-Hans` PaddleOCR models into `vendor\paddlex_cache`, embeds FFmpeg and the models into the CLI bundle, and creates `dist\pubg-highlight-trim-windows-x64.zip`. `build_ui_windows.ps1 -SkipCliBuild` reuses that CLI bundle, publishes a self-contained WPF single-file executable, verifies its DPI manifest, and creates `dist\pubg-highlight-trim-ui-windows-x64.zip`. The UI executable is also available at `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`; its package keeps the CLI at `cli\pubg-highlight-trim.exe` beside it.
+The default Rust build embeds PP-OCRv6 ONNX assets (not PaddleOCR models) and creates `dist\pubg-highlight-trim-windows-x64.zip`; the separate compatibility build is named `pubg-highlight-trim-paddle-windows-x64.zip`. Packaging should keep the default artifact Rust-only and require both the explicit `-WithPaddleOcr` build and `PUBG_OCR_BACKEND=paddle` at runtime for Paddle. `build_ui_windows.ps1 -SkipCliBuild` reuses that CLI bundle, publishes a self-contained WPF single-file executable, verifies its DPI manifest, and creates `dist\pubg-highlight-trim-ui-windows-x64.zip`. The UI executable is also available at `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`; its package keeps the CLI at `cli\pubg-highlight-trim.exe` beside it.
 
 If the CLI bundle already exists, omit the first build command and run only the UI command. The release archives contain all runtime dependencies, so users need neither Python nor .NET installed.
 
@@ -234,4 +237,4 @@ GitHub Actions builds both CLI and UI Windows release archives on tag pushes lik
 
 This project is licensed under `GPL-3.0-or-later`.
 
-Release archives bundle FFmpeg/FFprobe and PaddleOCR runtime assets. See `THIRD_PARTY_NOTICES.md` for third-party license details and source links.
+Release archives bundle FFmpeg/FFprobe and, in the default artifact, Rust OCR engine/model assets. PaddleOCR runtime assets are limited to the separately named compatibility artifact. See `THIRD_PARTY_NOTICES.md` for third-party license details and source links.

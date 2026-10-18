@@ -589,9 +589,9 @@ class OcrRefineTests(unittest.TestCase):
         fake_paddleocr = ModuleType("paddleocr")
         fake_paddleocr.PaddleOCR = FakePaddleOCR
 
-        with patch("pubg_highlight_trim.ocr.configure_paddlex_cache"), patch.dict(
-            "sys.modules", {"cv2": fake_cv2, "paddleocr": fake_paddleocr}
-        ):
+        with patch.dict("os.environ", {"PUBG_OCR_BACKEND": "paddle"}), patch(
+            "pubg_highlight_trim.ocr.configure_paddlex_cache"
+        ), patch.dict("sys.modules", {"cv2": fake_cv2, "paddleocr": fake_paddleocr}):
             quiet_output = StringIO()
             with redirect_stdout(quiet_output):
                 load_backend(verbose=False)

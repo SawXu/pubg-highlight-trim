@@ -18,6 +18,15 @@ def configure_process_output_encoding() -> None:
             reconfigure(encoding=encoding, errors="replace")
 
 
+def ocr_backend_name() -> str:
+    backend = os.environ.get("PUBG_OCR_BACKEND", "rust").strip().lower()
+    if backend not in {"rust", "paddle"}:
+        raise ValueError(
+            f"unknown OCR backend {backend!r}; expected rust (default) or paddle (explicit rollback)"
+        )
+    return backend
+
+
 def runtime_roots() -> list[Path]:
     roots: list[Path] = []
     frozen_root = getattr(sys, "_MEIPASS", None)
@@ -50,6 +59,17 @@ def first_existing_runtime_path(*parts: str) -> Path | None:
 def suppress_process_output(enabled: bool = True) -> Iterator[None]:
     if not enabled:
         yield
+        return
+
+    # On Windows, dup2/restore can leave multiprocessing spawn with an invalid
+    # inherited console handle (notably when launched from nested PowerShell).
+    # Redirect Python streams without mutating process-level handles instead.
+    # Native child-process output is intentionally not suppressed on this path;
+    # Rust OCR diagnostics remain visible, but worker handles stay valid.
+    if os.name == "nt":
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                yield
         return
 
     try:

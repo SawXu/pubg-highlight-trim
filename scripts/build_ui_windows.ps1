@@ -49,7 +49,7 @@ Copy-Item -LiteralPath "README.md", "README_zh.md", "LICENSE", "THIRD_PARTY_NOTI
 PUBG Highlight Trim UI
 
 Run pubg-highlight-trim-ui.exe. The bundled CLI is located in the cli folder and must remain beside the UI.
-No Python or .NET installation is required.
+No Python installation is required at runtime; the UI is self-contained and the bundled CLI uses the Rust/ONNX OCR engine.
 "@ | Set-Content -LiteralPath "$bundleDir\RUN_UI.txt" -Encoding UTF8
 
 Compress-Archive -Path "$bundleDir\*" -DestinationPath $zipPath -CompressionLevel Optimal -Force

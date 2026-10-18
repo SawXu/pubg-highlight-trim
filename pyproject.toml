@@ -22,7 +22,8 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-ocr = [
+ocr = ["opencv-contrib-python>=4.9"]
+paddle = [
   "opencv-contrib-python>=4.9",
   "paddleocr==3.7.0",
   "paddlepaddle==3.2.2",
