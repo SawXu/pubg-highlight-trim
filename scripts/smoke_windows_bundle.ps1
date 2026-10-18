@@ -49,15 +49,36 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Offline model verification failed" }
     }
     # Rust CLI JSONL smoke, with an explicit missing-engine failure check.
-    $input = '{"pixels_b64":"' + ([Convert]::ToBase64String([byte[]](0..767 | ForEach-Object { 0 }))) + '","width":16,"height":16}'
-    $engineLog = Join-Path $tempRoot "engine-init.log"
-    $previousErrorAction = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $result = $input | & $engine $models 1 cpu 2> $engineLog
-    $engineExit = $LASTEXITCODE
-    $ErrorActionPreference = $previousErrorAction
-    if ($engineExit -ne 0) { throw "Rust OCR CLI smoke failed: $(Get-Content $engineLog -Raw)" }
-    $json = $result | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1
+    $requestJson = '{"pixels_b64":"' + ([Convert]::ToBase64String([byte[]](0..767 | ForEach-Object { 0 }))) + '","width":16,"height":16}'
+    # GitHub's Windows PowerShell profile can set $OutputEncoding to UTF-8 with
+    # BOM. Write directly to stdin to keep the JSONL protocol BOM-free.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $engine
+    $startInfo.Arguments = '"{0}" 1 cpu' -f $models
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardInputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    try {
+        $null = $process.Start()
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.StandardInput.WriteLine($requestJson)
+        $process.StandardInput.Close()
+        if (-not $process.WaitForExit(120000)) {
+            $process.Kill()
+            throw "Rust OCR CLI smoke timed out"
+        }
+        $result = $stdoutTask.GetAwaiter().GetResult()
+        $engineLog = $stderrTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) { throw "Rust OCR CLI smoke failed: $engineLog" }
+    } finally {
+        $process.Dispose()
+    }
+    $json = $result -split '\r?\n' | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1
     if ([string]::IsNullOrWhiteSpace($json)) { throw "Rust OCR produced no JSON response: $result" }
     $response = $json | ConvertFrom-Json
     if ($response.status -ne "ok") { throw "Rust OCR blank ROI expected ok, got $($response.status)" }
