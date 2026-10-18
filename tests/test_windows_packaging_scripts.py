@@ -22,6 +22,5 @@ def test_paddle_artifact_and_smoke_contract():
     assert "icacls" in smoke
     assert "--scan-only" in smoke
     assert "PUBG_OCR_BACKEND" in smoke
-    assert "System.Text.UTF8Encoding($false)).GetBytes($requestJson" in smoke
-    assert "StandardInput.BaseStream.Write($requestBytes" in smoke
+    assert '"smoke_ocr_engine.py"' in smoke
     assert "$input | & $engine" not in smoke

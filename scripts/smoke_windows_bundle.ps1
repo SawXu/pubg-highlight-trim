@@ -48,44 +48,11 @@ try {
         & $verify.Source scripts\verify_ocr_models.py --model-dir $models
         if ($LASTEXITCODE -ne 0) { throw "Offline model verification failed" }
     }
-    # Rust CLI JSONL smoke, with an explicit missing-engine failure check.
-    $requestJson = '{"pixels_b64":"' + ([Convert]::ToBase64String([byte[]](0..767 | ForEach-Object { 0 }))) + '","width":16,"height":16}'
-    # GitHub's Windows PowerShell profile can set $OutputEncoding to UTF-8 with
-    # BOM. Write directly to stdin to keep the JSONL protocol BOM-free.
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $engine
-    $startInfo.Arguments = '"{0}" 1 cpu' -f $models
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardInput = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $startInfo
-    try {
-        $null = $process.Start()
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        # StandardInputEncoding is unavailable on Windows PowerShell's .NET
-        # Framework. Write bytes to BaseStream instead of using its text writer.
-        $requestBytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($requestJson + "`n")
-        $process.StandardInput.BaseStream.Write($requestBytes, 0, $requestBytes.Length)
-        $process.StandardInput.BaseStream.Flush()
-        $process.StandardInput.Close()
-        if (-not $process.WaitForExit(120000)) {
-            $process.Kill()
-            throw "Rust OCR CLI smoke timed out"
-        }
-        $result = $stdoutTask.GetAwaiter().GetResult()
-        $engineLog = $stderrTask.GetAwaiter().GetResult()
-        if ($process.ExitCode -ne 0) { throw "Rust OCR CLI smoke failed: $engineLog" }
-    } finally {
-        $process.Dispose()
-    }
-    $json = $result -split '\r?\n' | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1
-    if ([string]::IsNullOrWhiteSpace($json)) { throw "Rust OCR produced no JSON response: $result" }
-    $response = $json | ConvertFrom-Json
-    if ($response.status -ne "ok") { throw "Rust OCR blank ROI expected ok, got $($response.status)" }
-    if ($response.provider -ne "cpu") { throw "Rust OCR expected cpu provider, got $($response.provider)" }
+    # Use binary subprocess pipes, not PowerShell/.NET text writers, whose
+    # encoding preambles depend on the runner's console configuration.
+    if ($null -eq $verify) { throw "Python is required on the build host for bundle verification" }
+    & $verify.Source (Join-Path $PSScriptRoot "smoke_ocr_engine.py") $engine $models
+    if ($LASTEXITCODE -ne 0) { throw "Rust OCR CLI JSONL smoke failed" }
     if (-not $SkipCliScan) {
         $ffmpeg = Join-Path $copy "_internal\vendor\ffmpeg\ffmpeg.exe"
         if (-not (Test-Path $ffmpeg)) { throw "Bundled ffmpeg.exe is missing; cannot run CLI scan smoke" }
