@@ -32,7 +32,7 @@ The GUI is intended for Windows users who prefer not to type CLI arguments. Afte
 
 The controls map to these CLI settings:
 
-- **Detection target**: All, self knocked/eliminated (`self-death`), or your own knocks/eliminations (`own-kill`).
+- **Detection target**: All, self knocked/eliminated (`self-death`), or your own knocks/eliminations (`own-kill`). The two specific targets may be selected together to produce separate merged videos.
 - **Game language**: Auto, Simplified Chinese, Traditional Chinese, or English. Auto detects the profile from Highlight filenames.
 - **Scan mode**: Auto, Fast, or Full. Auto uses candidate hints when available; Full is the exhaustive choice when completeness matters.
 - **Clip range**: Seconds before and after the event (defaults 5 and 1).
@@ -42,7 +42,7 @@ The controls map to these CLI settings:
 - **Overwrite output**: Reuse/clean the selected output paths instead of choosing unique names.
 - **Expert settings**: Ignore events in the first N seconds (default 2), keep extra seconds before molotov/fire-bomb eliminations (default 10), choose OCR worker count (`auto` or a positive integer), and enable/disable the bright outlined-text prefilter.
 
-Click **Start** to run. The right-hand panel reports scan/trim progress, retained and skipped counts, elapsed time, and the current phase. Expand **Show log** to inspect the raw CLI records; this is the first place to look when a run fails. Click **Stop** to cancel the current task; the GUI terminates the CLI and its child processes. After a successful run, **Open output** opens the output root in Explorer and **Play merged video** launches the merged MP4 when one was produced.
+Click **Start** to run. The right-hand panel reports scan/trim progress, retained and skipped counts, elapsed time, and the current phase. Expand **Show log** to inspect the raw CLI records; this is the first place to look when a run fails. Click **Stop** to cancel the current task; the GUI terminates the CLI and its child processes. After a successful run, **Open output** opens the output root in Explorer. When multiple merged outputs are produced, choose the desired video from that directory.
 
 The UI communicates only through CLI arguments, standard output, and the final `summary.json`. Set `PUBG_HIGHLIGHT_TRIM_CLI` to override the CLI executable during development or compatibility testing.
 
@@ -106,6 +106,7 @@ Run `pubg-highlight-trim --help` to see all options.
 | `--dry-run` / `--scan-only` | off | Detect and write CSV/summary without trimming or merging |
 | `--merge [MERGED_MP4]` | folder default | Create a merged mp4; optionally set the output path |
 | `--no-merge` | file default | Skip merged mp4 output |
+| `--split-merge-by-target` | off | With `--target both`, merge self-death and own-kill clips into separate videos; default remains the mixed output |
 | `-y`, `--overwrite` | off | Overwrite output dir/merged file instead of creating unique names |
 | `--verbose` | off | Print startup settings and third-party OCR diagnostics; default output suppresses library noise |
 | `--profile` | off | Print per-clip timing breakdown (ffprobe, OCR, frame read, trim) |
@@ -137,10 +138,11 @@ OCR options (advanced):
 
 - Single-file input defaults to no merged mp4. Folder and multi-file inputs default to merging the individual clips.
 - Use `--merge` without a value to force merging, `--merge ".\merged.mp4"` to choose the merged output path, or `--no-merge` to keep only individual clips.
+- With `--split-merge-by-target --target both`, each source is scanned once and clips are merged per target. Missing targets produce no empty video. Explicit paths receive `_self-death` and `_own-kill` suffixes; default names use Chinese target names on Chinese Windows UI systems and English names otherwise.
 - The selected output directory is the run's root. Trimmed clips are written under its `clips\` subdirectory; the default merged mp4, concat list, CSV, and summary remain in the root.
 - Use `--profile` to print per-clip timings for ffprobe, OCR predict, video frame seek/read, trim encoding, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
 
-GUI and CLI use the same output layout. `<output>\clips\` contains individual trimmed videos; the merged `pubg_highlight_trim_merged.mp4` (when enabled) and its `.concat.txt` FFmpeg list are in the output root. `检测与裁剪记录.csv` records per-source detection status, event time, clip range, and timings; `candidate_events.csv` stores candidate hints for later scans; `profile.json` stores phase timings. `summary.json` records source, retained/skipped counts, output paths, scan mode, language, merge state, and OCR/cache metadata, and the GUI uses it to populate the final result.
+GUI and CLI use the same output layout. `<output>\clips\` contains individual trimmed videos; merged videos and their `.concat.txt` FFmpeg lists are in the output root. In split mode, each target with clips gets its own video. `检测与裁剪记录.csv` records per-source detection status, event time, clip range, and timings; `candidate_events.csv` stores candidate hints for later scans; `profile.json` stores phase timings. `summary.json` records source, retained/skipped counts, output paths, scan mode, language, merge state, and OCR/cache metadata; `merge_outputs` lists every generated target output while legacy single-output fields remain compatible.
 
 ## Detection
 

@@ -75,12 +75,12 @@
                         <Border Background="#F7F9F8" BorderBrush="{StaticResource BorderBrush}"
                                 BorderThickness="1" CornerRadius="6" Padding="1">
                             <UniformGrid Columns="3">
-                                <RadioButton x:Name="TargetBoth" Content="全部" GroupName="Target" IsChecked="True"
-                                             Style="{StaticResource SegmentButton}" />
-                                <RadioButton x:Name="TargetSelfDeath" Content="自己倒地" GroupName="Target"
-                                             Style="{StaticResource SegmentButton}" />
-                                <RadioButton x:Name="TargetOwnKill" Content="我的击杀" GroupName="Target"
-                                             Style="{StaticResource SegmentButton}" />
+                                <CheckBox x:Name="TargetBoth" Content="全部" IsChecked="True"
+                                          Style="{StaticResource SegmentButton}" />
+                                <CheckBox x:Name="TargetSelfDeath" Content="自己倒地"
+                                          Style="{StaticResource SegmentButton}" />
+                                <CheckBox x:Name="TargetOwnKill" Content="我的击杀"
+                                          Style="{StaticResource SegmentButton}" />
                             </UniformGrid>
                         </Border>
 
@@ -201,9 +201,7 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button x:Name="OpenOutputButton" Content="打开输出" Style="{StaticResource SecondaryButton}"
-                                Click="OpenOutputButton_Click" IsEnabled="False" Margin="0,0,8,0" />
-                        <Button x:Name="PlayMergedButton" Content="播放合并视频" Style="{StaticResource SecondaryButton}"
-                                Click="PlayMergedButton_Click" IsEnabled="False" />
+                                Click="OpenOutputButton_Click" IsEnabled="False" />
                     </StackPanel>
                 </Grid>
 

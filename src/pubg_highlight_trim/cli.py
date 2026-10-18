@@ -124,6 +124,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create merged mp4; optionally choose the merged output path; default for folder input",
     )
     merge.add_argument("--no-merge", dest="merge", action="store_false", default=None, help="Skip merged mp4 output; default for single-file input")
+    parser.add_argument(
+        "--split-merge-by-target",
+        action="store_true",
+        help="Keep target clips separate and merge each target independently when --target both is used",
+    )
     parser.add_argument("-y", "--overwrite", action="store_true", help="Overwrite the selected output directory/merged file instead of creating unique names")
     parser.add_argument(
         "--move-originals",

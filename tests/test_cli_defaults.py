@@ -11,6 +11,7 @@ class CliDefaultsTests(unittest.TestCase):
         args = build_parser().parse_args(["video.mp4"])
 
         self.assertEqual(args.target, "both")
+        self.assertFalse(args.split_merge_by_target)
         self.assertEqual(args.seconds_before, 5.0)
         self.assertEqual(args.seconds_after, 1.0)
         self.assertEqual(args.min_event_sec, 2.0)
@@ -58,6 +59,7 @@ class CliDefaultsTests(unittest.TestCase):
     def test_merge_flags(self):
         parser = build_parser()
 
+        self.assertTrue(parser.parse_args([".", "--split-merge-by-target"]).split_merge_by_target)
         self.assertTrue(parser.parse_args([".", "--merge"]).merge)
         self.assertEqual(parser.parse_args([".", "--merge", "merged.mp4"]).merge, "merged.mp4")
         self.assertFalse(parser.parse_args([".", "--no-merge"]).merge)

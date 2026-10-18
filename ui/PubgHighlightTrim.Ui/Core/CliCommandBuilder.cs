@@ -42,6 +42,7 @@ public static class CliCommandBuilder
         }
 
         arguments.Add(options.Merge ? "--merge" : "--no-merge");
+        AddFlag(arguments, options.Merge && options.Target == "both" && options.SplitMergeByTarget, "--split-merge-by-target");
         AddFlag(arguments, options.Recursive, "--recursive");
         AddFlag(arguments, options.ScanOnly, "--scan-only");
         AddFlag(arguments, options.Overwrite, "--overwrite");

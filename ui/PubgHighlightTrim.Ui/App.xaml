@@ -108,7 +108,7 @@
             <Setter Property="Cursor" Value="Hand" />
         </Style>
 
-        <Style x:Key="SegmentButton" TargetType="RadioButton">
+        <Style x:Key="SegmentButton" TargetType="CheckBox">
             <Setter Property="MinHeight" Value="36" />
             <Setter Property="Margin" Value="2" />
             <Setter Property="Padding" Value="10,7" />
@@ -120,7 +120,7 @@
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="RadioButton">
+                    <ControlTemplate TargetType="CheckBox">
                         <Border x:Name="Border" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"

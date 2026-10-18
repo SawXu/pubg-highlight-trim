@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 
+
 namespace PubgHighlightTrim.Ui.Core;
 
 public sealed class CliRunSummary
@@ -22,6 +23,9 @@ public sealed class CliRunSummary
     [JsonPropertyName("merge_output")]
     public string MergeOutput { get; init; } = string.Empty;
 
+    [JsonPropertyName("merge_outputs")]
+    public IReadOnlyList<MergeOutputSummary> MergeOutputs { get; init; } = [];
+
     [JsonPropertyName("merge_duration_sec")]
     public double MergeDurationSeconds { get; init; }
 
@@ -30,4 +34,16 @@ public sealed class CliRunSummary
 
     [JsonPropertyName("profile_total_sec")]
     public double TotalSeconds { get; init; }
+}
+
+public sealed class MergeOutputSummary
+{
+    [JsonPropertyName("target")]
+    public string Target { get; init; } = string.Empty;
+
+    [JsonPropertyName("path")]
+    public string Path { get; init; } = string.Empty;
+
+    [JsonPropertyName("concat_list")]
+    public string ConcatList { get; init; } = string.Empty;
 }
