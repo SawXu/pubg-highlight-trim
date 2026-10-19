@@ -1,0 +1,56 @@
+name: Rust Windows setup
+description: Clean no-Python host, toolchain and configuration-keyed Cargo cache
+inputs:
+  cache-role:
+    required: true
+    description: Separate quality and assurance feature/profile caches
+  cold-cache:
+    default: "false"
+    description: Bypass cache restore and save for reproducibility checks
+outputs:
+  cache-hit:
+    description: Cargo cache restore result
+    value: ${{ steps.cargo-cache.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Enforce clean no-Python build host
+      shell: powershell
+      run: |
+        # GitHub-hosted runners are disposable; remove preinstalled Python distributions
+        # and the py launcher instead of merely hiding them from PATH.
+        $roots = @("C:\hostedtoolcache\windows\Python", "C:\Python27", "C:\Python38", "C:\Python39", "C:\Python310", "C:\Python311", "C:\Python312", "C:\Python313")
+        foreach ($root in $roots) {
+          if (Test-Path -LiteralPath $root) {
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop
+          }
+        }
+        foreach ($launcher in @("$env:WINDIR\py.exe", "$env:WINDIR\pyw.exe")) {
+          if (Test-Path -LiteralPath $launcher) {
+            Remove-Item -LiteralPath $launcher -Force -ErrorAction Stop
+          }
+        }
+        $env:PATH = (($env:PATH -split ';') | Where-Object { $_ -and $_ -notmatch '(?i)python|windowsapps' }) -join ';'
+        "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        foreach ($name in @('python', 'python3', 'py')) {
+          if (Get-Command $name -ErrorAction SilentlyContinue) {
+            throw "Python command remains on the clean runner: $name"
+          }
+        }
+        Write-Host "Confirmed python, python3 and py are unavailable before Cargo tests/build."
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable-x86_64-pc-windows-msvc
+        components: rustfmt
+    - uses: Swatinem/rust-cache@v2
+      id: cargo-cache
+      if: inputs.cold-cache != 'true'
+      with:
+        workspaces: rust -> target
+        key: windows-x64-${{ inputs.cache-role }}-${{ hashFiles('.github/workflows/ocr-rust.yml', '.github/actions/rust-windows-setup/action.yml', 'scripts/build_rust_release.ps1', 'vendor/ppocr-rs/**/*.rs', 'vendor/ppocr-rs/**/Cargo.toml') }}
+        cache-all-crates: true
+    - name: Report Cargo cache status
+      shell: powershell
+      run: |
+        Write-Host "Cargo (${{ inputs.cache-role }}) cache-hit=${{ steps.cargo-cache.outputs.cache-hit }}; cold-cache=${{ inputs.cold-cache }}"
+        "Cargo (${{ inputs.cache-role }}) cache-hit=${{ steps.cargo-cache.outputs.cache-hit }}; cold-cache=${{ inputs.cold-cache }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

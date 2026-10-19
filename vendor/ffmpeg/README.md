@@ -2,7 +2,7 @@
 
 GitHub Actions and `scripts/download_ffmpeg.ps1` populate this directory with Windows FFmpeg runtime files before packaging.
 
-The default download is BtbN's `ffmpeg-master-latest-win64-gpl-shared.zip`, so bundled FFmpeg/FFprobe are GPL-3.0-or-later according to `ffmpeg.exe -L`.
+The pinned download is BtbN's immutable monthly release asset recorded in `scripts/ffmpeg-lock.json`, so bundled FFmpeg/FFprobe are GPL-3.0-or-later according to `ffmpeg.exe -L`. BtbN retains monthly builds for two years; refresh this pin before its September 2028 retention deadline.
 
 Expected runtime files include:
 
