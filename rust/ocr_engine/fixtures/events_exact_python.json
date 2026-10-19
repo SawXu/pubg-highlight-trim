@@ -1,0 +1,1791 @@
+[
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOU KILLED Enemy with M416 2 KILLS 1 ASSIST",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemywithM4162KILLS",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemywithM4162KILLS",
+        "weapon": "M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOU KILLED Enemy 2 KILLS 1 ASSIST",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy2KILLS",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy2KILLS",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUxxKILLEDEnemy",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": null,
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUFINALLYKILLEDEnemy",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": true
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDYOU",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "eliminate",
+        "subject": "YOU",
+        "key": "self-death:eliminate:you",
+        "text": "YOUKILLEDYOU",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUWEREKNOCKEDOUTBYFALLING",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-zone-self-downed-text",
+        "action": "zone-downed",
+        "subject": "zone",
+        "key": "self-death:zone",
+        "text": "YOUWEREKNOCKEDOUTBYFALLING",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-zone-self-downed-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUWEREKNOCKEDOUTBYFALLDAMAGE",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-zone-self-downed-text",
+        "action": "zone-downed",
+        "subject": "zone",
+        "key": "self-death:zone",
+        "text": "YOUWEREKNOCKEDOUTBYFALLDAMAGE",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-zone-self-downed-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "EnemyKNOCKEDxxYOU",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "self-death:knock:enemy",
+        "text": "EnemyKNOCKEDxxYOU",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "EnemyKILLEDxxYOU",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "self-death:eliminate:enemy",
+        "text": "EnemyKILLEDxxYOU",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "EnemyELIMINATxxYOU",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "self-death:eliminate:enemy",
+        "text": "EnemyELIMINATxxYOU",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "EnemyKILLEDYOUjunk",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "self-death:eliminate:enemy",
+        "text": "EnemyKILLEDYOUjunk",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "EnemyKNOCKEDYOUOUTWITHM4162KILLS1ASSIST",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "self-death:knock:enemy",
+        "text": "EnemyKNOCKEDYOUOUTWITHM4162KILLS1ASSIST",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemyWITHYOUKILLEDYOU",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "eliminate",
+        "subject": "YOUKILLEDEnemyWITHYOU",
+        "key": "self-death:eliminate:unknown",
+        "text": "YOUKILLEDEnemyWITHYOUKILLEDYOU",
+        "weapon": "YOU"
+      },
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyWITHYOUKILLEDYOU",
+        "weapon": "YOUKILLEDYOU"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyWITHYOUKILLEDYOU",
+        "weapon": "YOUKILLEDYOU"
+      }
+    ],
+    "self_method": "paddle-strict-self-text",
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKNOCKEDOUTYOUKILLEDUSINGYOUKILLEDother",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "knock",
+        "subject": "YOU",
+        "key": "self-death:knock:you",
+        "text": "YOUKNOCKEDOUTYOUKILLEDUSINGYOUKILLEDother",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemyYOUFINALLYKILLEDEnemy1KILL",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": true
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemy(148m)",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy(148m)",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy(148m)",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemyBYHEADSHOT",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyBYHEADSHOT",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyBYHEADSHOT",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDKILLS²",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "KILLS²",
+        "key": "own-kill:eliminate:kills²",
+        "text": "YOUKILLEDKILLS²",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "KILLS²",
+        "key": "own-kill:eliminate:kills²",
+        "text": "YOUKILLEDKILLS²",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemyͅ",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemyͅ",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyͅ",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemyͅ",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyͅ",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDİıſK²",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "İıſK²",
+        "key": "own-kill:eliminate:i̇ıſk²",
+        "text": "YOUKILLEDİıſK²",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "İıſK²",
+        "key": "own-kill:eliminate:i̇ıſk²",
+        "text": "YOUKILLEDİıſK²",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKİLLEDEnemyUSİNGM416",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKİLLEDEnemyUSİNGM416",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKİLLEDEnemyUSİNGM416",
+        "weapon": "M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemyWITHM416YOUKILLEDNextUSINGAKM",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyWITHM416",
+        "weapon": "M416"
+      },
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Next",
+        "key": "own-kill:eliminate:next",
+        "text": "YOUKILLEDNextUSINGAKM",
+        "weapon": "AKM"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemyWITHM416",
+        "weapon": "M416"
+      },
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Next",
+        "key": "own-kill:eliminate:next",
+        "text": "YOUKILLEDNextUSINGAKM",
+        "weapon": "AKM"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemy1ASSIST",
+    "events": [],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": true,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemy你你你你你你你你你你你你你你你你你你你你你你你1ASSIST",
+    "events": [],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy你你你你你你你你你你你你你你你你你你你你你你你",
+        "key": "own-kill:eliminate:enemy你你你你你你你你你你你你你你你你你你你你你你你",
+        "text": "YOUKILLEDEnemy你你你你你你你你你你你你你你你你你你你你你你你",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": true,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOUKILLEDEnemy你你你你你你你你你你你你你你你你你你你你你你你你1ASSIST",
+    "events": [],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy你你你你你你你你你你你你你你你你你你你你你你你你",
+        "key": "own-kill:eliminate:enemy你你你你你你你你你你你你你你你你你你你你你你你你",
+        "text": "YOUKILLEDEnemy你你你你你你你你你你你你你你你你你你你你你你你你",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": true,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "both",
+    "text": "YOU KILLED\u001cEnemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你用M416击倒了Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你用M416击倒了Enemy",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你用M416击倒了Enemy",
+        "weapon": "M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "Enemy用M416击倒了你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "knock",
+        "subject": "Enemy用M416",
+        "key": "self-death:knock:enemy",
+        "text": "Enemy用M416击倒了你",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "。Enemy用M416。淘汰了你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "eliminate",
+        "subject": "。Enemy用M416。",
+        "key": "self-death:eliminate:enemy",
+        "text": "。Enemy用M416。淘汰了你",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了您",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "您",
+        "key": "own-kill:knock:您",
+        "text": "你击倒了您",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "您",
+        "key": "own-kill:knock:您",
+        "text": "你击倒了您",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "knock",
+        "subject": "你",
+        "key": "self-death:knock:你",
+        "text": "你击倒了你",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了ni",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了EnemyX",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "EnemyX",
+        "key": "own-kill:knock:enemyx",
+        "text": "你击倒了EnemyX",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "EnemyX",
+        "key": "own-kill:knock:enemyx",
+        "text": "你击倒了EnemyX",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了Enemy(148m)",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy(148m)",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy(148m)",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了Enemy用AKM",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy用AKM",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy用AKM",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "Enemy倒了你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "self-death:knock:enemy",
+        "text": "Enemy倒了你",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "Enemy击倒x你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "self-death:knock:enemy",
+        "text": "Enemy击倒x你",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "Enemy淘x你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "self-death:eliminate:enemy",
+        "text": "Enemy淘x你",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你终于淘汰了Enemy",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": true
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了Enemy你终于淘汰了Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": true
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你用AKM使用M416淘汰了Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "你用AKM使用M416淘汰了Enemy",
+        "weapon": "AKM使用M416"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "你用AKM使用M416淘汰了Enemy",
+        "weapon": "AKM使用M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了Enemy淘汰2助攻",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy淘汰2助攻",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy淘汰2助攻",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了Enemy淘汰数2协助",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy淘汰数2协助",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy淘汰数2协助",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了AͅB",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "AͅB",
+        "key": "own-kill:knock:ab",
+        "text": "你击倒了AͅB",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "AͅB",
+        "key": "own-kill:knock:ab",
+        "text": "你击倒了AͅB",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "你击倒了Enemy助攻",
+    "events": [],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "你击倒了Enemy助攻",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": true,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "both",
+    "text": "Enemy用击倒了你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "knock",
+        "subject": "Enemy用",
+        "key": "self-death:knock:enemy",
+        "text": "Enemy用击倒了你",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您以M416擊倒Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您以M416擊倒Enemy",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您以M416擊倒Enemy",
+        "weapon": "M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "Enemy以M416擊倒您",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "knock",
+        "subject": "Enemy以M416",
+        "key": "self-death:knock:enemy",
+        "text": "Enemy以M416擊倒您",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "Enemy撃殺您",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "self-death:eliminate:enemy",
+        "text": "Enemy撃殺您",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "Enemy擎殺您",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "self-death:eliminate:enemy",
+        "text": "Enemy擎殺您",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "Enemy殺x您",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-fuzzy-self-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "self-death:eliminate:enemy",
+        "text": "Enemy殺x您",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-fuzzy-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您击倒Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您击倒Enemy",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您击倒Enemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺Enemy2擊殺數",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您擊殺Enemy2擊殺數",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您擊殺Enemy2擊殺數",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺Enemy击杀数2",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您擊殺Enemy击杀数2",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您擊殺Enemy击杀数2",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺Enemy擊殺2協助",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您擊殺Enemy擊殺2協助",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您擊殺Enemy擊殺2協助",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您以AKM使用M416擊殺Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您以AKM使用M416擊殺Enemy",
+        "weapon": "AKM使用M416"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您以AKM使用M416擊殺Enemy",
+        "weapon": "AKM使用M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺EnemyX",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "EnemyX",
+        "key": "own-kill:eliminate:enemyx",
+        "text": "您擊殺EnemyX",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "EnemyX",
+        "key": "own-kill:eliminate:enemyx",
+        "text": "您擊殺EnemyX",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺您",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "eliminate",
+        "subject": "您",
+        "key": "self-death:eliminate:您",
+        "text": "您擊殺您",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺你",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺ni",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您終於撃殺Enemy",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": true
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊倒Enemy您終於擎殺Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您擊倒Enemy",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您擊倒Enemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": true
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊殺Enemy助殺",
+    "events": [],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "您擊殺Enemy助殺",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": true,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您因墜落遭擊倒",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-zone-self-downed-text",
+        "action": "zone-downed",
+        "subject": "zone",
+        "key": "self-death:zone",
+        "text": "您因墜落遭擊倒",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-zone-self-downed-text",
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "您擊倒AͅB",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "AͅB",
+        "key": "own-kill:knock:ab",
+        "text": "您擊倒AͅB",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "AͅB",
+        "key": "own-kill:knock:ab",
+        "text": "您擊倒AͅB",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "both",
+    "text": "敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵以M416擊倒您",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "knock",
+        "subject": "敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵以M416",
+        "key": "self-death:knock:敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵",
+        "text": "敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵敵以M416擊倒您",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "own-kill",
+    "text": "YOUKILLEDEnemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "en",
+    "target": "self-death",
+    "text": "YOUKILLEDEnemy",
+    "events": [],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "eliminate",
+        "subject": "Enemy",
+        "key": "own-kill:eliminate:enemy",
+        "text": "YOUKILLEDEnemy",
+        "weapon": ""
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "own-kill",
+    "text": "Enemy用M416击倒了你",
+    "events": [],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hans",
+    "target": "self-death",
+    "text": "Enemy用M416击倒了你",
+    "events": [
+      {
+        "target": "self-death",
+        "method": "paddle-strict-self-text",
+        "action": "knock",
+        "subject": "Enemy用M416",
+        "key": "self-death:knock:enemy",
+        "text": "Enemy用M416击倒了你",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [],
+    "self_method": "paddle-strict-self-text",
+    "candidate": false,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "own-kill",
+    "text": "您以M416擊倒Enemy",
+    "events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您以M416擊倒Enemy",
+        "weapon": "M416"
+      }
+    ],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您以M416擊倒Enemy",
+        "weapon": "M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  },
+  {
+    "language": "zh-Hant",
+    "target": "self-death",
+    "text": "您以M416擊倒Enemy",
+    "events": [],
+    "allow_assist_events": [
+      {
+        "target": "own-kill",
+        "method": "paddle-own-kill-text",
+        "action": "knock",
+        "subject": "Enemy",
+        "key": "own-kill:knock:enemy",
+        "text": "您以M416擊倒Enemy",
+        "weapon": "M416"
+      }
+    ],
+    "self_method": null,
+    "candidate": true,
+    "assist": false,
+    "delayed": false
+  }
+]

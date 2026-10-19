@@ -1,14 +1,11 @@
 {
-  "count": 12,
+  "count": 18,
   "languages": {
-    "zh-Hans": 4,
+    "zh-Hans": 8,
     "zh-Hant": 4,
-    "en": 4
+    "en": 6
   },
-  "roi": [
-    0.3,
-    0.66,
-    0.7,
-    0.75
-  ]
+  "roi": [0.3, 0.66, 0.7, 0.75],
+  "reference": "reference.json",
+  "annotation_audit": "README.md"
 }

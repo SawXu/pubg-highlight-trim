@@ -1,0 +1,44 @@
+{
+  "schema_version": "issue66-v2",
+  "source_commit": "a070076526f918b0ef7f1848994d69363d5c1291",
+  "historical_sources": [
+    "git:a070076:tests/test_game_languages.py",
+    "git:a070076:tests/test_ocr_refine.py",
+    "git:a070076:tests/test_pipeline_merge.py",
+    "git:a070076:tests/test_cli_defaults.py",
+    "git:a070076:tests/test_cli_logging.py"
+  ],
+  "canonical_fixtures": [
+    "rust/ocr_engine/fixtures/events_golden.json",
+    "rust/ocr_engine/fixtures/planning.json",
+    "rust/ocr_engine/fixtures/real/reference.json",
+    "rust/ocr_engine/tests/fixtures/scanner.json",
+    "rust/ocr_engine/tests/fixtures/scan_schedules.json",
+    "docs/baselines/issue66_events.json",
+    "docs/baselines/issue66_cli_contract.json"
+  ],
+  "automated_coverage": {
+    "event_fields_and_languages": "events_contract, events golden replay and frozen_baseline_events",
+    "fuzzy_subject_and_followup": "scanner frozen cases and events parser tests",
+    "unicode_roi_gate_resize": "preprocess fixed pixels, full color grid and public ROI hashes",
+    "decimal_schedules": "scan_schedules: 1540 frozen cases",
+    "cache_identity_and_corruption": "persistent_cache and real application_e2e cache cases",
+    "media_runtime_failure_and_timeout": "media, media_errors and media_launch_failure",
+    "source_language_and_target_selection": "source_profiles and application_files",
+    "output_alias_and_cancellation": "application_contract, media_output and cancellation",
+    "real_ocr_trim_merge_and_reports": "mandatory provisioned end_to_end and application_e2e",
+    "model_and_package_tools": "xtask CLI, tools_parity, real_roi and retirement_contract"
+  },
+  "completed_acceptance": [
+    "complete 95-candidate private old/new differential with retained native exit evidence and unchanged source hashes",
+    "one/automatic/explicit worker comparisons with deterministic semantic fields",
+    "quiet v3 creation-time/parent-chain process-tree memory audits; frozen zero-growth time gate remains false, measured elapsed differences explicitly accepted by user",
+    "successful no-Python clean Windows release build and actual offline CLI/final GUI ZIP OCR-to-trim execution",
+    "independent two-axis Standards/Spec review with findings dispositioned"
+  ],
+  "verification_ledger": "docs/rust-migration-verification.md",
+  "status": "final_rust_ci_pending",
+  "pending_acceptance": [
+    "latest full Rust test/assurance CI 39186555704 at 53fce44; actual executed ignored/model/media/CLI/license results must be observed, not inferred from release success"
+  ]
+}

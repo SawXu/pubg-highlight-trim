@@ -4,7 +4,7 @@
 
 Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight（精彩时刻）片段进行裁剪。
 
-仓库同时提供原生 Windows 桌面 UI。UI 使用 WPF，不包含浏览器运行时；它把 CLI 当作独立进程运行，不引用 Python 源码。
+仓库同时提供原生 Windows 桌面 UI。UI 使用 WPF，不包含浏览器运行时；它把 Rust CLI 当作独立进程运行。
 
 默认行为同时检测“你击倒/淘汰敌人”和“敌人击倒/淘汰你”两类事件，保留事件前 5 秒与后 1 秒，跳过前 2 秒内的事件；对燃烧瓶 / 火瓶淘汰事件保留前 10 秒。
 
@@ -18,7 +18,7 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 
 需要图形界面时，下载 `pubg-highlight-trim-ui-windows-x64.zip`。解压后运行 `pubg-highlight-trim-ui.exe`；同包的 `cli` 目录包含完整 CLI 和 OCR 运行时，必须与 UI exe 保持并列（即 `cli\\pubg-highlight-trim.exe`）。请勿将 UI exe 移出该目录，或在缺少 `cli` 的情况下单独复制它。
 
-GUI 发布包是 CLI 发布包之上的桌面外壳：WPF UI 通过参数、标准输出和最终的 `summary.json` 启动并监视 CLI，实际 OCR、FFmpeg 和视频处理仍由 `cli` 目录中的 CLI 完成。GUI 包已经自包含 .NET、Python、FFmpeg/FFprobe 和 OCR 模型，用户无需另行安装运行时。
+GUI 发布包是 CLI 发布包之上的桌面外壳：WPF UI 通过参数、标准输出和最终的 `summary.json` 启动并监视 CLI，实际 OCR、FFmpeg 和视频处理仍由 `cli` 目录中的 CLI 完成。当前构建的 GUI 包自包含 .NET、Rust CLI、FFmpeg/FFprobe 和 OCR 模型，不携带 Python；用户无需另行安装运行时。
 
 在解压目录下直接运行：
 
@@ -155,15 +155,17 @@ pubg_highlight_trim_output/
 
 ## OCR 后端与发布包
 
-默认 release 使用 Rust-only OCR：Python CLI 仍是应用编排层（并通过 PyInstaller 冻结），OCR 推理由压缩包中的 Rust `ocr_engine.exe` 完成。这里的 Rust-only 只描述 OCR 后端，**不表示整个 app 没有 CPython**；应用仍嵌入 CPython，并按编排和视频处理需要携带 NumPy/OpenCV 等 Python 组件。
+本分支由 Rust 完成整个应用：事件解析、扫描、媒体处理、剪辑规划、缓存和报告均直接调用 Rust OCR library。`ocr_engine.exe` 保留为独立 JSONL 推理诊断，不再是 Python 桥接。应用和官方测试/构建/发布命令不需要 CPython、PyInstaller、Python OpenCV/NumPy 或 Paddle 运行时。
 
-默认包名称为 `pubg-highlight-trim-windows-x64.zip`。如需兼容回滚，请显式设置 `PUBG_OCR_BACKEND=paddle`，这需要 PaddleOCR/PaddlePaddle 运行时。打包流程会将兼容构建单独发布为 `pubg-highlight-trim-paddle-windows-x64.zip`；使用 Paddle 必须同时下载/选择该兼容包，并设置 `PUBG_OCR_BACKEND=paddle`。`-WithPaddleOcr` 构建已经实现，但绝不会成为默认包。
+包名称仍为 `pubg-highlight-trim-windows-x64.zip`。不再支持 Paddle 后端；旧 `PUBG_OCR_BACKEND` / `PUBG_OCR_ENGINE` 桥接设置不选择后端，`PUBG_OCR_MODEL_DIR` 可指定已有模型目录。历史 `paddle-*` 检测标签与报告字段仅为消费者兼容保留，不代表依赖 Paddle。
 
-源码安装时，基础 `ocr` extra 仅包含 OpenCV；需要 Paddle 兼容后端时显式执行 `pip install .[paddle]`，并设置 `PUBG_OCR_BACKEND=paddle`。Rust OCR 模型 hash 会在启动时校验；运行时和组件 hash 会记录在 `SUPPLY_CHAIN_MANIFEST.json` 中供离线审计，该文件只列出每个压缩包中实际存在的组件与文件。
+模型 hash 在启动时校验。`SUPPLY_CHAIN_MANIFEST.json` 记录实际产物、组件来源、许可及 hash。仅显式构建工具下载模型，应用运行时不下载。
+
+**迁移状态：**本集成分支尚未完成 #63 最终验收，也不改写旧 release 的事实。完整私有样本/性能、无 Python 干净 Windows、最终 CLI/GUI 压缩包验收仍是门槛。项目自有 Python 源码、测试及脚本已在建立 Rust 替代后移除，能力与检查映射见[退休审计](docs/python-retirement-audit.md)；这不代替仍待完成的最终验收证据。
 
 ## 检测
 
-由于 own-kill 与混合事件裁剪依赖 OCR，检测仅使用 OCR。默认 OCR 扫描 PUBG 事件文本所在的固定下方居中区域。粗扫描前先在相对位置 `x=0.26–0.74, y=0.635–0.725` 用 OpenCV 做预筛：默认 `light` 模式仅在画面近乎全黑时跳过 OCR；`--brightness-gate-mode full` 可恢复更严格的亮色描边与横向文字结构检查（更省 OCR 调用，但可能误拦细单行事件文本）。该门控只用于粗扫描，事件精修仍使用完整 OCR；对局结束源文件会自动禁用门控，以免胜利结算遮罩压暗文字。所有区域均使用相对坐标，不依赖视频分辨率。若布局不同，可用 `--no-brightness-gate` 禁用门控，或用 `--roi x1,y1,x2,y2` 覆盖 OCR 裁剪区域。
+由于 own-kill 与混合事件裁剪依赖 OCR，检测仅使用 OCR。默认 OCR 扫描 PUBG 事件文本所在的固定下方居中区域。粗扫描前先在相对位置 `x=0.26–0.74, y=0.635–0.725` 用 Rust 图像预处理做预筛：默认 `light` 模式仅在画面近乎全黑时跳过 OCR；`--brightness-gate-mode full` 可恢复更严格的亮色描边与横向文字结构检查（更省 OCR 调用，但可能误拦细单行事件文本）。该门控只用于粗扫描，事件精修仍使用完整 OCR；对局结束源文件会自动禁用门控，以免胜利结算遮罩压暗文字。所有区域均使用相对坐标，不依赖视频分辨率。若布局不同，可用 `--no-brightness-gate` 禁用门控，或用 `--roi x1,y1,x2,y2` 覆盖 OCR 裁剪区域。
 
 当前支持的游戏语言：`zh-Hans`、`zh-Hant`、`en`。默认的 `--game-lang auto` 模式会从 NVIDIA Highlight 文件名自动识别 PUBG 游戏语言，支持同一文件夹中混用不同语言标签的文件。仅当需要强制指定某一种语言时，才使用 `--game-lang zh-Hans`、`--game-lang zh-Hant` 或 `--game-lang en`。
 
@@ -180,7 +182,7 @@ pubg_highlight_trim_output/
 
 ## ffmpeg
 
-Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` 与 `ffprobe.exe`。默认包还包含 Rust OCR 引擎和模型；PaddleOCR 运行时仅存在于单独命名的兼容包中。
+Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` 与 `ffprobe.exe`。包内还包含 Rust OCR 引擎和模型，不提供 Paddle 兼容运行时。
 
 源码开发期间，解析器按以下顺序查找：
 
@@ -195,17 +197,25 @@ Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` �
 - **GUI 提示缺少 CLI**：确认使用的是完整的 `pubg-highlight-trim-ui-windows-x64.zip`，并保持 `pubg-highlight-trim-ui.exe` 与 `cli` 文件夹并列；不要只复制 UI exe。开发或测试时也可设置 `PUBG_HIGHLIGHT_TRIM_CLI` 指向另一份 CLI 可执行文件。
 - **CLI 启动失败或运行失败**：展开 GUI 的“运行记录”查看 `ERR` 行和退出码。命令行用户可加 `--verbose` 重试；确认输入路径存在、输出目录可写，并避免让合并文件覆盖输入视频。
 - **没有匹配事件**：确认输入是 NVIDIA Highlight 原始源文件而非“淘汰画面/击倒画面”回放文件；检查游戏语言和检测目标是否正确。可先用“仅扫描”或 CLI 的 `--scan-mode full` 生成 `candidate_events.csv`，必要时使用 `--no-brightness-gate` 或调整 `--roi`。
-- **OCR 模型或 FFmpeg 不可用**：优先使用官方 release 包（其中已捆绑模型和 `vendor/ffmpeg`）。源码运行时按“ffmpeg”章节配置 `--ffmpeg`/`--ffprobe` 或 `PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR`，并确保首次运行可联网下载 OCR 模型。
+- **OCR 模型或 FFmpeg 不可用**：优先使用官方 release 包（其中已捆绑模型和 `vendor/ffmpeg`）。源码运行时按“ffmpeg”章节配置 `--ffmpeg`/`--ffprobe` 或 `PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR`，并在构建/准备阶段显式下载并校验模型；应用运行时不会联网下载模型。
 - **任务很慢或内存不足**：首次 OCR 会加载模型；可在专家设置将并行任务设为 `1`，或使用 `--jobs 1`。快速扫描依赖候选提示，需确保候选 CSV 未被误删。
 
 ## 开发
 
 ### 运行测试
 
+在仓库根目录，安装 Rust stable（MSVC x64）、FFmpeg/FFprobe 和 .NET 10 SDK 后运行：
+
 ```powershell
-$env:PYTHONPATH="src"
-python -m unittest discover -s tests -v
+cargo test --locked --manifest-path rust/Cargo.toml --workspace --features highlight-cli
+cargo test --locked --manifest-path rust/Cargo.toml --features cli,directml
+# 显式真实模型门槛：需要校验过的模型目录，不需要私有原片
+$env:PUBG_OCR_MODEL_DIR="<模型目录>"
+cargo test --locked --manifest-path rust/Cargo.toml --features cli --test end_to_end -- --ignored --nocapture
+dotnet test ui/PubgHighlightTrim.Ui.Tests/PubgHighlightTrim.Ui.Tests.csproj --configuration Release
 ```
+
+默认测试使用语言无关 golden、已公开 ROI 和临时合成媒体。真实模型 ignored 测试是单独的验收门槛，默认测试通过不代表可以跳过。`highlight_plan` 是 canonical 固定数据 JSON/JSONL planner 诊断，不能提供无模型视频/OCR 预览。
 
 ### 本地构建 Windows release
 
@@ -213,56 +223,27 @@ python -m unittest discover -s tests -v
 
 本地构建需要 Windows x64、可联网的 PowerShell，以及以下工具：
 
-- 推荐使用 64 位 Python 3.12.x（项目元数据支持 Python 3.10+，但 3.12 是已验证的 Windows 构建版本）。
+- Rust stable x64 MSVC 工具链及 Visual Studio C++ 构建工具。
 - 构建 UI 需要 .NET 10 SDK（项目目标框架为 `net10.0-windows`）。
 - 构建脚本会用 `mt.exe` 检查最终 UI 可执行文件的 DPI manifest。请安装 Windows 10/11 SDK，并将包含 `mt.exe` 的目录加入 `PATH`；该目录通常类似 `C:\Program Files (x86)\Windows Kits\10\bin\<版本>\x64`。也可以从 Visual Studio Developer PowerShell（已配置 Windows SDK 的环境）运行构建。可先用 `Get-Command mt.exe` 验证。
 
-不要使用系统 Python 3.14。先在仓库根目录创建并启用 Python 3.12 虚拟环境：
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python --version  # 应显示 Python 3.12.x
-python -m pip install --upgrade pip
-```
-
-如果 PowerShell 禁止执行激活脚本，也可以直接使用 `.\.venv\Scripts\python.exe` 执行下面所有 Python 命令。
-
-#### 安装 Python 构建依赖
-
-在已启用 `.venv` 的终端中安装 `pyproject.toml` 的基础 `[ocr,build]` 可选依赖（Paddle 兼容依赖不在默认构建中）：
-
-```powershell
-python -m pip install -e ".[ocr,build]"
-```
-
-默认 extra 会安装以下构建所需的包（以及它们的传递依赖）：
-
-- `opencv-contrib-python>=4.9`
-- `pyinstaller>=6.10`
-
-若要构建或运行 Paddle 兼容包，再显式安装 `pip install -e ".[paddle]"`。
+不创建 Python 虚拟环境、不运行 pip。模型下载/hash/字典、推理 smoke、基线比较、供应链清单、包审计与体积报告由 Rust `xtask` 提供；用 `cargo run --manifest-path rust/Cargo.toml --bin xtask -- --help` 查看。原开发工具的职责和有效检查如何保留，见退休审计。
 
 #### 构建 CLI bundle
 
-推荐先单独构建 CLI。默认 Rust 构建将 PP-OCRv6 ONNX 资源（不是 PaddleOCR 模型）和 FFmpeg 复制进发布 bundle，并生成 `pubg-highlight-trim-windows-x64.zip`；兼容构建单独生成 `pubg-highlight-trim-paddle-windows-x64.zip`。使用 Paddle 时必须同时选择 `-WithPaddleOcr` 构建并在运行时设置 `PUBG_OCR_BACKEND=paddle`，默认包始终为 Rust-only。
+推荐先单独构建 CLI。Rust 构建将 PP-OCRv6 ONNX 资源（不是 PaddleOCR 运行时模型）和 FFmpeg 复制进发布 bundle，并生成 `pubg-highlight-trim-windows-x64.zip`；不再支持 Paddle 兼容构建。
 
 ```powershell
 # 可选：提前下载 FFmpeg；省略时 build_windows.ps1 会自动下载
 powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
 
-# 仅构建 Paddle 兼容包时使用：提前下载/校验 PaddleOCR 模型
-python .\scripts\prefetch_ocr_models.py --cache-dir vendor\paddlex_cache
-
-# 依赖已由上一步安装，因此跳过脚本内的重复安装
-powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 `
-    -Python .\.venv\Scripts\python.exe -SkipInstall
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
 ```
 
-CLI 构建会清理旧的 `build` / `dist` 目录，运行 PyInstaller 并生成：
+CLI 构建会清理旧的 `build` / `dist` 目录，运行 Cargo 构建完整 Rust 应用及诊断引擎、校验模型、执行 manifest/audit/smoke，并生成：
 
 - `dist\pubg-highlight-trim\pubg-highlight-trim.exe`：可直接运行的 CLI bundle。
-- `dist\pubg-highlight-trim-windows-x64.zip`：默认 Rust-only 包，包含 CLI、FFmpeg/FFprobe、PP-OCRv6 ONNX 模型和许可文件。该 zip 的用户无需安装 Python。Paddle 兼容包另行命名为 `pubg-highlight-trim-paddle-windows-x64.zip`。
+- `dist\pubg-highlight-trim-windows-x64.zip`：默认 Rust-only 包，包含 CLI、FFmpeg/FFprobe、PP-OCRv6 ONNX 模型和许可文件。该 zip 的用户无需安装 Python。
 
 #### 构建 GUI EXE
 
@@ -279,7 +260,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1
 GUI 构建会执行 `dotnet publish`、检查 `mt.exe` 生成的 DPI manifest，并把 CLI bundle 复制到 UI 包的 `cli` 子目录。产物为：
 
 - `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`：自包含 GUI EXE。
-- `dist\pubg-highlight-trim-ui-windows-x64.zip`：GUI、并排的 `cli` bundle、FFmpeg/FFprobe、默认 Rust OCR 资源和文档的完整发布包。用户无需安装 .NET、Python 或其他运行时。Paddle 资源仅随单独兼容构建提供。
+- `dist\pubg-highlight-trim-ui-windows-x64.zip`：GUI、并排的 `cli` bundle、FFmpeg/FFprobe、默认 Rust OCR 资源和文档的完整发布包。用户无需安装 .NET、Python 或其他运行时。
 
 UI 测试单独运行：
 
@@ -295,4 +276,6 @@ GitHub Actions 会在推送 `v0.1.0` 等标签或手动 `workflow_dispatch` 时�
 
 本项目以 `GPL-3.0-or-later` 许可。
 
-默认发布包中捆绑 FFmpeg/FFprobe 与 Rust OCR 引擎/模型资源；PaddleOCR 运行时资源仅在单独命名的兼容包中提供。第三方许可详情与源链接见 `THIRD_PARTY_NOTICES.md`。
+发布包中捆绑 FFmpeg/FFprobe 与 Rust OCR 引擎/模型资源，不提供 Paddle 兼容运行时。第三方许可详情与源链接见 `THIRD_PARTY_NOTICES.md`。
+
+每个 Windows 发布包还包含 `third_party/rust/INVENTORY.json`，由锁定的 Cargo metadata 通过 `cargo xtask licenses <bundle>` 生成，记录依赖的名称、版本、SPDX 许可、来源及 shipped/build-only 范围。对应的 `LICENSE`、`NOTICE`、`COPYING`、ONNX Runtime、PP-OCR/模型、CRT 等固定许可文本复制在 `third_party/` 下；`SUPPLY_CHAIN_MANIFEST.json` 会对 inventory 与全部许可文本逐一计算 hash。缺少许可文本或 hash 不匹配都会阻断发布。

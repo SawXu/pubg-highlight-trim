@@ -13,18 +13,33 @@ name = "ocr_engine"
 path = "src/bin/ocr_engine.rs"
 required-features = ["cli"]
 
+[[bin]]
+name = "highlight_plan"
+path = "src/bin/highlight_plan.rs"
+required-features = ["highlight-cli"]
+
+[[bin]]
+name = "pubg_highlight_trim"
+path = "src/bin/pubg_highlight_trim.rs"
+
 [features]
 default = []
-onnx = ["dep:image", "dep:ppocr-rs"]
+onnx = ["dep:ppocr-rs"]
 directml = ["onnx", "dep:ort", "ort/directml"]
 onnx-test-runtime = ["onnx", "ppocr-rs/test-binaries"]
-cli = ["onnx", "dep:base64", "ppocr-rs/test-binaries"]
+highlight-cli = []
+cli = ["highlight-cli", "onnx", "dep:base64", "ppocr-rs/test-binaries"]
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+csv = "1"
+ctrlc = "3"
+same-file = "1"
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 base64 = { version = "0.22", optional = true }
-image = { version = "0.25", optional = true }
+image = { version = "0.25" }
 ppocr-rs = { version = "0.7.3", optional = true }
 ort = { version = "=2.0.0-rc.9", optional = true, default-features = false }

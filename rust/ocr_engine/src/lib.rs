@@ -1,3 +1,21 @@
+pub mod application;
+pub mod cancellation;
+pub mod config;
+pub mod dedupe;
+pub mod events;
+pub mod frame;
+pub mod media;
+pub mod media_output;
+pub mod output_files;
+pub mod persistent_cache;
+pub mod planning;
+pub mod provider_diagnostics;
+pub mod reports;
+pub mod scan;
+pub mod scan_adapter;
+pub mod scanner;
+pub mod source_files;
+
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -62,6 +80,7 @@ pub struct OcrResult {
     pub method: String,
     pub inference_ms: f64,
     pub frame_ms: f64,
+    pub error: Option<String>,
     pub provider: Provider,
     pub device_id: Option<i32>,
     pub fallback_reason: Option<String>,
@@ -84,6 +103,7 @@ impl OcrResult {
             method: method.into(),
             inference_ms: 0.0,
             frame_ms: 0.0,
+            error: None,
             provider: Provider::Cpu,
             device_id: None,
             fallback_reason: None,
@@ -257,6 +277,11 @@ static DIRECTML_DEVICE_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::Ato
 #[cfg(feature = "directml")]
 static DIRECTML_INTRA_THREADS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(1);
+// ppocr's builder hook is a function pointer rather than a capturing closure.
+// Serialize its scoped configuration during construction; sessions own their
+// finished configuration and inference never takes this initialization lock.
+#[cfg(feature = "directml")]
+static DIRECTML_INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(all(feature = "directml", windows))]
 fn directml_runtime_available() -> Result<(), String> {
@@ -318,6 +343,9 @@ fn build_directml_pipeline(
     use std::sync::atomic::Ordering;
 
     directml_runtime_available()?;
+    let _initialization = DIRECTML_INIT
+        .lock()
+        .map_err(|_| "DirectML initialization lock poisoned".to_string())?;
     DIRECTML_DEVICE_ID.store(device_id, Ordering::Relaxed);
     DIRECTML_INTRA_THREADS.store(threads.max(1), Ordering::Relaxed);
     let mut pipeline = ppocr_rs::OcrLite::new();
@@ -627,11 +655,12 @@ impl<R: Recognizer> OcrEngine<R> {
                 method: self.method(),
                 inference_ms: inference_start.elapsed().as_secs_f64() * 1000.0,
                 frame_ms: frame_start.elapsed().as_secs_f64() * 1000.0,
+                error: None,
                 provider: info.provider,
                 device_id: info.device_id,
                 fallback_reason: info.fallback_reason,
             },
-            Err(_) => OcrResult {
+            Err(error) => OcrResult {
                 text: String::new(),
                 scores: Vec::new(),
                 boxes: Vec::new(),
@@ -639,6 +668,7 @@ impl<R: Recognizer> OcrEngine<R> {
                 method: self.method(),
                 inference_ms: inference_start.elapsed().as_secs_f64() * 1000.0,
                 frame_ms: frame_start.elapsed().as_secs_f64() * 1000.0,
+                error: Some(error),
                 provider: info.provider,
                 device_id: info.device_id,
                 fallback_reason: info.fallback_reason,
@@ -869,6 +899,27 @@ mod tests {
         assert_eq!(r.status, OcrStatus::Ok);
         assert_eq!(r.text, "击倒了你 Enemy");
         assert!(r.inference_ms >= 0.0);
+    }
+    #[test]
+    fn inference_failure_preserves_actionable_diagnostic() {
+        struct Failed;
+        impl Recognizer for Failed {
+            fn recognize(&self, _: &[u8], _: u32, _: u32) -> Result<(String, Vec<f32>), String> {
+                Err("ORT execution failed: device removed".into())
+            }
+        }
+        let engine = OcrEngine::new(config(Provider::Cpu, false), Failed).unwrap();
+        let result = engine.recognize(Roi {
+            pixels: &[0; 60],
+            width: 10,
+            height: 2,
+        });
+        assert_eq!(result.status, OcrStatus::InferenceError);
+        assert_eq!(
+            result.error.as_deref(),
+            Some("ORT execution failed: device removed")
+        );
+        assert!(result.text.is_empty());
     }
     #[test]
     fn empty_roi_is_not_normal_miss() {

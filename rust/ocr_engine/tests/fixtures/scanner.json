@@ -1,0 +1,2545 @@
+{
+  "baseline": "Python ocr.py at 75916e2; genuine detect_events/refine/cache/runtime, fixed IO/monotonic clock",
+  "cases": [
+    {
+      "name": "non_target_adaptive",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": false,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "sampling_mode": "adaptive"
+      },
+      "duration": 8,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 8,
+          "text": "普通HUD文字"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 8,
+          "event_sec": null,
+          "method": "paddle-not-target-text",
+          "detector": "ocr",
+          "text": "普通HUD文字",
+          "scores": "0.990",
+          "ocr_seconds": 0.03,
+          "sampled_count": 3,
+          "detect_seconds": 0.03900000000000001,
+          "ocr_frame_seconds": 0.009000000000000001,
+          "ocr_coarse_frames": 3,
+          "ocr_refine_frames": 0,
+          "target": "both",
+          "event_key": "",
+          "event_count": "1",
+          "event_secs": "",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 3,
+          "ocr_successes": 3,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 3,
+        "ocr_successes": 3,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 8.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "backward_refine",
+      "config": {
+        "target": "self-death",
+        "priority_window": [
+          [
+            31,
+            31.1
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 3,
+        "assist_max_frames": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 30.5,
+          "end": 60,
+          "text": "击倒了你"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.5,
+          "method": "paddle-strict-self-text",
+          "detector": "ocr",
+          "text": "击倒了你",
+          "scores": "0.990",
+          "ocr_seconds": 0.04,
+          "sampled_count": 4,
+          "detect_seconds": 0.05200000000000001,
+          "ocr_frame_seconds": 0.012000000000000004,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 3,
+          "target": "self-death",
+          "event_key": "self-death:knock:unknown",
+          "event_count": "1",
+          "event_secs": "30.500",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 4,
+          "ocr_successes": 4,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 3,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.03,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 4,
+        "ocr_successes": 4,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 3,
+        "assist_budget_used": 0,
+        "refine_calls": 3,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.03,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 30.5,
+        "termination_reason": ""
+      },
+      "expected_decodes": 4
+    },
+    {
+      "name": "multiple_ids_refine",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            38
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 4,
+        "assist_max_frames": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 32,
+          "end": 60,
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB"
+        },
+        {
+          "start": 30,
+          "end": 31.999,
+          "text": "你用M416击倒了EnemyA"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.04,
+          "sampled_count": 4,
+          "detect_seconds": 0.05200000000000001,
+          "ocr_frame_seconds": 0.012000000000000004,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 3,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 4,
+          "ocr_successes": 4,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 3,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.03,
+          "assist_ocr_seconds": 0.0
+        },
+        {
+          "duration_sec": 60.0,
+          "event_sec": 32.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB",
+          "scores": "0.990",
+          "ocr_seconds": 0.08,
+          "sampled_count": 9,
+          "detect_seconds": 0.10400000000000001,
+          "ocr_frame_seconds": 0.024000000000000014,
+          "ocr_coarse_frames": 2,
+          "ocr_refine_frames": 7,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemyb",
+          "event_count": "1",
+          "event_secs": "32.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 8,
+          "ocr_successes": 8,
+          "ocr_cache_hits": 1,
+          "ocr_skipped": 0,
+          "refine_budget_used": 7,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.060000000000000005,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 9,
+        "ocr_successes": 9,
+        "ocr_cache_hits": 1,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 7,
+        "assist_budget_used": 0,
+        "refine_calls": 7,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.060000000000000005,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 38.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 9
+    },
+    {
+      "name": "bare_assist_is_not_subject_evidence",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30.5,
+            30.6
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": null
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA"
+        }
+      ],
+      "assist": [
+        {
+          "start": 31,
+          "end": 60,
+          "text": "1助攻"
+        }
+      ],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.5,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416淘汰了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.04,
+          "sampled_count": 4,
+          "detect_seconds": 0.05100000000000001,
+          "ocr_frame_seconds": 0.011000000000000006,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:eliminate:enemya",
+          "event_count": "1",
+          "event_secs": "30.500",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 4,
+          "ocr_successes": 4,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 3,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.03
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 4,
+        "ocr_successes": 4,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 3,
+        "refine_calls": 0,
+        "assist_calls": 3,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.03,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 31.5,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "same_subject_assist_suppresses",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30.5,
+            30.6
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": null
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA"
+        }
+      ],
+      "assist": [
+        {
+          "start": 31,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA助攻"
+        }
+      ],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": null,
+          "method": "paddle-own-kill-assist-skipped",
+          "detector": "ocr",
+          "text": "你用M416淘汰了EnemyA你用M416淘汰了EnemyA助攻",
+          "scores": "0.990;0.990",
+          "ocr_seconds": 0.03,
+          "sampled_count": 3,
+          "detect_seconds": 0.038000000000000006,
+          "ocr_frame_seconds": 0.008000000000000004,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "both",
+          "event_key": "",
+          "event_count": "1",
+          "event_secs": "",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 3,
+          "ocr_successes": 3,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 2,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.02
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 3,
+        "ocr_successes": 3,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 2,
+        "refine_calls": 0,
+        "assist_calls": 2,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.02,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 31.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "different_subject_assist_keeps",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30.5,
+            30.6
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": null
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA"
+        }
+      ],
+      "assist": [
+        {
+          "start": 31,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyB助攻"
+        }
+      ],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.5,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416淘汰了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.04,
+          "sampled_count": 4,
+          "detect_seconds": 0.05100000000000001,
+          "ocr_frame_seconds": 0.011000000000000006,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:eliminate:enemya",
+          "event_count": "1",
+          "event_secs": "30.500",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 4,
+          "ocr_successes": 4,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 3,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.03
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 4,
+        "ocr_successes": 4,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 3,
+        "refine_calls": 0,
+        "assist_calls": 3,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.03,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 31.5,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "adaptive_target_seeds_do_not_recurse",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": false,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "sampling_mode": "adaptive",
+        "adaptive_window": 2
+      },
+      "duration": 8,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 2,
+          "end": 6,
+          "text": "你用M416击倒了EnemyA"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 8,
+          "event_sec": 4.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 2,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "4.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 7,
+        "ocr_successes": 7,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 8.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 7
+    },
+    {
+      "name": "own_followup_suppressed",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            34
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 34,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA"
+        },
+        {
+          "start": 30,
+          "end": 33.999,
+          "text": "你用M416击倒了EnemyA"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 1,
+          "detect_seconds": 0.013000000000000001,
+          "ocr_frame_seconds": 0.003,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 34.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "own_different_subject_kept",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            34
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 34,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyB"
+        },
+        {
+          "start": 30,
+          "end": 33.999,
+          "text": "你用M416击倒了EnemyA"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 1,
+          "detect_seconds": 0.013000000000000001,
+          "ocr_frame_seconds": 0.003,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        },
+        {
+          "duration_sec": 60.0,
+          "event_sec": 34.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416淘汰了EnemyB",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 2,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:eliminate:enemyb",
+          "event_count": "1",
+          "event_secs": "34.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 34.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "self_followup_any_actor_suppressed",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            34
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 34,
+          "end": 60,
+          "text": "EnemyB用AKM淘汰了你"
+        },
+        {
+          "start": 30,
+          "end": 33.999,
+          "text": "EnemyA用M416击倒了你"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-strict-self-text",
+          "detector": "ocr",
+          "text": "EnemyA用M416击倒了你",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 1,
+          "detect_seconds": 0.013000000000000001,
+          "ocr_frame_seconds": 0.003,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "self-death",
+          "event_key": "self-death:knock:enemya",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 34.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "later_direct_kill_kept",
+      "config": {
+        "target": "own-kill",
+        "priority_window": [
+          [
+            30.5,
+            31
+          ],
+          [
+            64,
+            64.5
+          ],
+          [
+            78,
+            78.5
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "language": "zh-Hant"
+      },
+      "duration": 80,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 30.5,
+          "end": 30.5,
+          "text": "您以M249擊倒[QWER]Ax20oq"
+        },
+        {
+          "start": 64,
+          "end": 64,
+          "text": "您以P92擊殺[QWER]Ax200q3擊殺數"
+        },
+        {
+          "start": 78,
+          "end": 78,
+          "text": "您終於擊殺OtherEnemy"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 80,
+          "event_sec": 30.5,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "您以M249擊倒[QWER]Ax20oq",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 1,
+          "detect_seconds": 0.013000000000000001,
+          "ocr_frame_seconds": 0.003,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:qwer]ax20oq",
+          "event_count": "1",
+          "event_secs": "30.500",
+          "event_weapon": "M249",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        },
+        {
+          "duration_sec": 80,
+          "event_sec": 64.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "您以P92擊殺[QWER]Ax200q3擊殺數",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 2,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:eliminate:qwer]ax200q",
+          "event_count": "1",
+          "event_secs": "64.000",
+          "event_weapon": "P92",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 3,
+        "ocr_successes": 3,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 78.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "english_headshot_followup",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            34
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "language": "en"
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 34,
+          "end": 60,
+          "text": "YOU KILLED Terminatorwlfx with Dragunov 1 KILL"
+        },
+        {
+          "start": 30,
+          "end": 33.999,
+          "text": "YOU KNOCKED OUT TerminatorwIfx by headshot with Beryl M762"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "YOUKNOCKEDOUTTerminatorwIfxbyheadshotwithBerylM762",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 1,
+          "detect_seconds": 0.013000000000000001,
+          "ocr_frame_seconds": 0.003,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:terminatorwifx",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "BerylM762",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 34.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "close_suffix_noise",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            43,
+            45
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "candidate_step": 2
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 45,
+          "end": 60,
+          "text": "你用自动装填步枪击倒了ASKKZMPNC2020"
+        },
+        {
+          "start": 43,
+          "end": 44.999,
+          "text": "你用自动装填步枪击倒了ASKKZM"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 43.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用自动装填步枪击倒了ASKKZM",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 1,
+          "detect_seconds": 0.013000000000000001,
+          "ocr_frame_seconds": 0.003,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:askkzm",
+          "event_count": "1",
+          "event_secs": "43.000",
+          "event_weapon": "自动装填步枪",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 45.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "short_prefix_is_distinct",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            34
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 34,
+          "end": 60,
+          "text": "你用BerylM762击倒了[I7]NvccpFREBOBE0"
+        },
+        {
+          "start": 30,
+          "end": 33.999,
+          "text": "你用BerylM762击倒了[I7]Nvccp"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用BerylM762击倒了[I7]Nvccp",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 1,
+          "detect_seconds": 0.013000000000000001,
+          "ocr_frame_seconds": 0.003,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:i7]nvccp",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "BerylM762",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 34.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "max_ocr_calls",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": false,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "ocr_max_calls": 2
+      },
+      "duration": 12,
+      "candidates": [],
+      "primary": [],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 12,
+          "event_sec": null,
+          "method": "paddle-no-target-text-found",
+          "detector": "ocr",
+          "text": "",
+          "scores": "",
+          "ocr_seconds": 0.02,
+          "sampled_count": 3,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 3,
+          "ocr_refine_frames": 0,
+          "target": "both",
+          "event_key": "",
+          "event_count": "1",
+          "event_secs": "",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 1,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "ocr-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 1,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "ocr-budget-exhausted",
+        "last_cache_hit": false,
+        "last_request_sec": 4.0,
+        "termination_reason": "ocr-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "min_ocr_interval",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": false,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "coarse_step": 0.5,
+        "ocr_min_interval": 1
+      },
+      "duration": 2,
+      "candidates": [],
+      "primary": [],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 2,
+          "event_sec": null,
+          "method": "paddle-no-target-text-found",
+          "detector": "ocr",
+          "text": "",
+          "scores": "",
+          "ocr_seconds": 0.03,
+          "sampled_count": 5,
+          "detect_seconds": 0.03900000000000001,
+          "ocr_frame_seconds": 0.009000000000000001,
+          "ocr_coarse_frames": 5,
+          "ocr_refine_frames": 0,
+          "target": "both",
+          "event_key": "",
+          "event_count": "1",
+          "event_secs": "",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 3,
+          "ocr_successes": 3,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 2,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 3,
+        "ocr_successes": 3,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 2,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 2.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "refine_frame_budget",
+      "config": {
+        "target": "self-death",
+        "priority_window": [
+          [
+            31,
+            31.1
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 3,
+        "assist_max_frames": 0,
+        "refine_max_frames": 1
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 30.5,
+          "end": 60,
+          "text": "击倒了你"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 31.0,
+          "method": "paddle-strict-self-text",
+          "detector": "ocr",
+          "text": "击倒了你",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 1,
+          "target": "self-death",
+          "event_key": "self-death:knock:unknown",
+          "event_count": "1",
+          "event_secs": "31.000",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 1,
+          "assist_budget_used": 0,
+          "termination_reason": "refine-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.01,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 1,
+        "assist_budget_used": 0,
+        "refine_calls": 1,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.01,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 29.0,
+        "termination_reason": "refine-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "refine_time_budget",
+      "config": {
+        "target": "self-death",
+        "priority_window": [
+          [
+            31,
+            31.1
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 3,
+        "assist_max_frames": 0,
+        "refine_max_seconds": 0.005
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 30.5,
+          "end": 60,
+          "text": "击倒了你"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 31.0,
+          "method": "paddle-strict-self-text",
+          "detector": "ocr",
+          "text": "击倒了你",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 1,
+          "target": "self-death",
+          "event_key": "self-death:knock:unknown",
+          "event_count": "1",
+          "event_secs": "31.000",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 1,
+          "assist_budget_used": 0,
+          "termination_reason": "refine-time-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.01,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 1,
+        "assist_budget_used": 0,
+        "refine_calls": 1,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.01,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 29.0,
+        "termination_reason": "refine-time-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "assist_frame_budget",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30.5,
+            30.6
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 1
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA"
+        }
+      ],
+      "assist": [
+        {
+          "start": 31,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA助攻"
+        }
+      ],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.5,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416淘汰了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.025,
+          "ocr_frame_seconds": 0.005,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:eliminate:enemya",
+          "event_count": "1",
+          "event_secs": "30.500",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 1,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.01
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 1,
+        "refine_calls": 0,
+        "assist_calls": 1,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.01,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 30.5,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 1
+    },
+    {
+      "name": "assist_time_budget",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30.5,
+            30.6
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": null,
+        "assist_max_seconds": 0.005
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA"
+        }
+      ],
+      "assist": [
+        {
+          "start": 31,
+          "end": 60,
+          "text": "你用M416淘汰了EnemyA助攻"
+        }
+      ],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.5,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416淘汰了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.025,
+          "ocr_frame_seconds": 0.005,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:eliminate:enemya",
+          "event_count": "1",
+          "event_secs": "30.500",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 1,
+          "termination_reason": "assist-time-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.01
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 1,
+        "refine_calls": 0,
+        "assist_calls": 1,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.01,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 30.5,
+        "termination_reason": "assist-time-budget-exhausted"
+      },
+      "expected_decodes": 1
+    },
+    {
+      "name": "shared_frame_primary_assist",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            30.1
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": null,
+        "assist_after": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 60,
+          "text": "你用M416击倒了EnemyA"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.025,
+          "ocr_frame_seconds": 0.005,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 0,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 1,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.01
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 1,
+        "refine_calls": 0,
+        "assist_calls": 1,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.01,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 30.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 1
+    },
+    {
+      "name": "ocr_cache_before_budget",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            34
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 4,
+        "assist_max_frames": 0,
+        "ocr_max_calls": 2
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 34,
+          "end": 60,
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB"
+        },
+        {
+          "start": 30,
+          "end": 33.999,
+          "text": "你用M416击倒了EnemyA"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 4,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 3,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 2,
+          "refine_budget_used": 3,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.01,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 3,
+        "gate_skipped": 0,
+        "refine_budget_used": 3,
+        "assist_budget_used": 0,
+        "refine_calls": 3,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.01,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "ocr-budget-exhausted",
+        "last_cache_hit": false,
+        "last_request_sec": 28.0,
+        "termination_reason": "ocr-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "gate_skips_without_ocr",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": false,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "brightness_gate": true
+      },
+      "duration": 8,
+      "candidates": [],
+      "primary": [],
+      "assist": [],
+      "gate_passed": false,
+      "expected_detections": [
+        {
+          "duration_sec": 8,
+          "event_sec": null,
+          "method": "paddle-no-target-text-found",
+          "detector": "ocr",
+          "text": "",
+          "scores": "",
+          "ocr_seconds": 0.0,
+          "sampled_count": 3,
+          "detect_seconds": 0.012,
+          "ocr_frame_seconds": 0.012,
+          "ocr_coarse_frames": 3,
+          "ocr_refine_frames": 0,
+          "target": "both",
+          "event_key": "",
+          "event_count": "1",
+          "event_secs": "",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 3,
+          "ocr_requests": 0,
+          "ocr_successes": 0,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 3,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "light-low-brightness",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 0,
+        "ocr_successes": 0,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 3,
+        "gate_skipped": 3,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "light-low-brightness",
+        "gate_reasons": [
+          "light-low-brightness"
+        ],
+        "last_skip_reason": "light-low-brightness",
+        "last_cache_hit": false,
+        "last_request_sec": null,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "gate_timing_passed",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": false,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "brightness_gate": true
+      },
+      "duration": 8,
+      "candidates": [],
+      "primary": [],
+      "assist": [],
+      "gate_passed": true,
+      "expected_detections": [
+        {
+          "duration_sec": 8,
+          "event_sec": null,
+          "method": "paddle-no-target-text-found",
+          "detector": "ocr",
+          "text": "",
+          "scores": "",
+          "ocr_seconds": 0.03,
+          "sampled_count": 3,
+          "detect_seconds": 0.04800000000000001,
+          "ocr_frame_seconds": 0.018000000000000002,
+          "ocr_coarse_frames": 3,
+          "ocr_refine_frames": 0,
+          "target": "both",
+          "event_key": "",
+          "event_count": "1",
+          "event_secs": "",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 3,
+          "ocr_successes": 3,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "light-brightness-passed",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 3,
+        "ocr_successes": 3,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "light-brightness-passed",
+        "gate_reasons": [
+          "light-brightness-passed"
+        ],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 8.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "single_frame_failure_continues",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": false,
+        "refine_before": 0.0,
+        "assist_max_frames": 0
+      },
+      "duration": 8,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 8,
+          "end": 8,
+          "text": "EnemyA用M416击倒了你"
+        }
+      ],
+      "assist": [],
+      "failed_frames": [
+        0,
+        4
+      ],
+      "expected_detections": [
+        {
+          "duration_sec": 8,
+          "event_sec": 8.0,
+          "method": "paddle-strict-self-text",
+          "detector": "ocr",
+          "text": "EnemyA用M416击倒了你",
+          "scores": "0.990",
+          "ocr_seconds": 0.01,
+          "sampled_count": 3,
+          "detect_seconds": 0.015,
+          "ocr_frame_seconds": 0.005,
+          "ocr_coarse_frames": 3,
+          "ocr_refine_frames": 0,
+          "target": "self-death",
+          "event_key": "self-death:knock:enemya",
+          "event_count": "1",
+          "event_secs": "8.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 1,
+          "ocr_successes": 1,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 2,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 1,
+        "ocr_successes": 1,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 2,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 8.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "adaptive_candidate_boundary",
+      "config": {
+        "target": "both",
+        "priority_window": [],
+        "no_full_scan": true,
+        "refine_before": 0.0,
+        "assist_max_frames": 0,
+        "sampling_mode": "adaptive",
+        "candidate_lookback": 1,
+        "candidate_lookahead": 0.5
+      },
+      "duration": 8,
+      "candidates": [
+        3.2
+      ],
+      "primary": [],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 8,
+          "event_sec": null,
+          "method": "paddle-no-target-text-found",
+          "detector": "ocr",
+          "text": "",
+          "scores": "",
+          "ocr_seconds": 0.03,
+          "sampled_count": 3,
+          "detect_seconds": 0.03900000000000001,
+          "ocr_frame_seconds": 0.009000000000000001,
+          "ocr_coarse_frames": 3,
+          "ocr_refine_frames": 0,
+          "target": "both",
+          "event_key": "",
+          "event_count": "1",
+          "event_secs": "",
+          "event_weapon": "",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 3,
+          "ocr_successes": 3,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 0,
+          "assist_budget_used": 0,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.0,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 3,
+        "ocr_successes": 3,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 0,
+        "assist_budget_used": 0,
+        "refine_calls": 0,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.0,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 3.7,
+        "termination_reason": ""
+      },
+      "expected_decodes": 3
+    },
+    {
+      "name": "millisecond_refine_rounding",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            0.004,
+            0.005
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 0.004,
+        "assist_max_frames": 0,
+        "refine_search_step": 0.003,
+        "refine_step": 0.001
+      },
+      "duration": 1,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0.0021,
+          "end": 1,
+          "text": "你用M416击倒了EnemyA"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 1,
+          "event_sec": 0.003,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA",
+          "scores": "0.990",
+          "ocr_seconds": 0.04,
+          "sampled_count": 4,
+          "detect_seconds": 0.05200000000000001,
+          "ocr_frame_seconds": 0.012000000000000004,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 3,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "0.003",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 4,
+          "ocr_successes": 4,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 3,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.03,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 4,
+        "ocr_successes": 4,
+        "ocr_cache_hits": 0,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 3,
+        "assist_budget_used": 0,
+        "refine_calls": 3,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.03,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 0.002,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 4
+    },
+    {
+      "name": "ocr_cache_shared_by_multiple_subjects",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            30.1
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 2,
+        "assist_max_frames": 0
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 0,
+          "end": 60,
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 28.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 2,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 1,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "28.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 1,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.01,
+          "assist_ocr_seconds": 0.0
+        },
+        {
+          "duration_sec": 60.0,
+          "event_sec": 28.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB",
+          "scores": "0.990",
+          "ocr_seconds": 0.02,
+          "sampled_count": 3,
+          "detect_seconds": 0.026000000000000002,
+          "ocr_frame_seconds": 0.005999999999999999,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 2,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemyb",
+          "event_count": "1",
+          "event_secs": "28.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 2,
+          "ocr_successes": 2,
+          "ocr_cache_hits": 1,
+          "ocr_skipped": 0,
+          "refine_budget_used": 2,
+          "assist_budget_used": 0,
+          "termination_reason": "assist-budget-exhausted",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.01,
+          "assist_ocr_seconds": 0.0
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 2,
+        "ocr_successes": 2,
+        "ocr_cache_hits": 1,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 2,
+        "assist_budget_used": 0,
+        "refine_calls": 2,
+        "assist_calls": 0,
+        "refine_ocr_seconds": 0.01,
+        "assist_ocr_seconds": 0.0,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": true,
+        "last_request_sec": 28.0,
+        "termination_reason": "assist-budget-exhausted"
+      },
+      "expected_decodes": 2
+    },
+    {
+      "name": "frame_fifo_retains_recent_assist_samples",
+      "config": {
+        "target": "both",
+        "priority_window": [
+          [
+            30,
+            34
+          ]
+        ],
+        "no_full_scan": true,
+        "refine_before": 12,
+        "assist_max_frames": null,
+        "candidate_step": 4,
+        "refine_search_step": 1,
+        "assist_after": 2,
+        "assist_step": 1
+      },
+      "duration": 60.0,
+      "candidates": [],
+      "primary": [
+        {
+          "start": 30,
+          "end": 60,
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB"
+        }
+      ],
+      "assist": [],
+      "expected_detections": [
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB",
+          "scores": "0.990",
+          "ocr_seconds": 0.06,
+          "sampled_count": 6,
+          "detect_seconds": 0.07700000000000001,
+          "ocr_frame_seconds": 0.017000000000000008,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 2,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemya",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 6,
+          "ocr_successes": 6,
+          "ocr_cache_hits": 0,
+          "ocr_skipped": 0,
+          "refine_budget_used": 2,
+          "assist_budget_used": 3,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.02,
+          "assist_ocr_seconds": 0.03
+        },
+        {
+          "duration_sec": 60.0,
+          "event_sec": 30.0,
+          "method": "paddle-own-kill-text",
+          "detector": "ocr",
+          "text": "你用M416击倒了EnemyA你用M416击倒了EnemyB",
+          "scores": "0.990",
+          "ocr_seconds": 0.06,
+          "sampled_count": 11,
+          "detect_seconds": 0.07700000000000001,
+          "ocr_frame_seconds": 0.017000000000000008,
+          "ocr_coarse_frames": 1,
+          "ocr_refine_frames": 4,
+          "target": "own-kill",
+          "event_key": "own-kill:knock:enemyb",
+          "event_count": "1",
+          "event_secs": "30.000",
+          "event_weapon": "M416",
+          "context_rule": "",
+          "clip_before_sec": 0.0,
+          "clip_after_sec": 0.0,
+          "ocr_gate_skipped_frames": 0,
+          "ocr_requests": 6,
+          "ocr_successes": 6,
+          "ocr_cache_hits": 5,
+          "ocr_skipped": 0,
+          "refine_budget_used": 4,
+          "assist_budget_used": 6,
+          "termination_reason": "",
+          "gate_reason": "disabled",
+          "refine_ocr_seconds": 0.02,
+          "assist_ocr_seconds": 0.03
+        }
+      ],
+      "expected_stats": {
+        "ocr_requests": 7,
+        "ocr_successes": 7,
+        "ocr_cache_hits": 5,
+        "ocr_skipped": 0,
+        "gate_skipped": 0,
+        "refine_budget_used": 4,
+        "assist_budget_used": 6,
+        "refine_calls": 4,
+        "assist_calls": 6,
+        "refine_ocr_seconds": 0.02,
+        "assist_ocr_seconds": 0.03,
+        "last_gate_reason": "",
+        "gate_reasons": [],
+        "last_skip_reason": "",
+        "last_cache_hit": false,
+        "last_request_sec": 34.0,
+        "termination_reason": ""
+      },
+      "expected_decodes": 6
+    }
+  ]
+}

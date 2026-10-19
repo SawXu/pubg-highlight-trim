@@ -1,0 +1,12 @@
+{
+  "policy": "Texts captured at development/build time; licenses command performs no notice downloads. SHA256 values cover the exact checked-in bytes.",
+  "files": [
+    {"file":"onnxruntime-1.20.0/LICENSE","source":"https://raw.githubusercontent.com/microsoft/onnxruntime/v1.20.0/LICENSE","sha256":"2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"},
+    {"file":"onnxruntime-1.20.0/ThirdPartyNotices.txt","source":"https://raw.githubusercontent.com/microsoft/onnxruntime/v1.20.0/ThirdPartyNotices.txt","sha256":"cf7342f7ba482ef715ae58f5f497a8d3564fa255164175aea324cd293c5701a0"},
+    {"file":"PP-OCR-LICENSE","source":"https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf/LICENSE","sha256":"3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e"},
+    {"file":"profiling-LICENSE-MIT","source":"https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT","sha256":"c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"},
+    {"file":"pulp-LICENSE","source":"https://raw.githubusercontent.com/sarah-quinones/pulp/5eb07fd7b68edf0a5e19f71737d315f72a510295/LICENSE","sha256":"d64f878c89bd5f1e5ada7e4aad57690b122727cf5229b7b87ea1980c188da1d9"},
+    {"file":"zune-LICENSE.md","source":"https://raw.githubusercontent.com/etemesi254/zune-image/69502ce83fdfecdd0beefd677e2abb3781b29d98/LICENSE.md","sha256":"e870d7fd7819a9f0453c62798cb52ae95d148a8c91dc2de1d983f997143c72de"}
+  ],
+  "known_missing_text": [{"package":"simd_helpers","version":"0.1.0","license_metadata":"MIT","source":"https://github.com/lu-zero/simd_helpers/tree/ca1a2f84aa386d758e98f8a609d990263932fb85","note":"Neither crates.io archive nor upstream revision includes a license text; inventory records the gap explicitly. Do not invent author copyright/permission text."}]
+}
