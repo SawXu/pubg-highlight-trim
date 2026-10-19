@@ -1,0 +1,347 @@
+{
+  "schema_version": "issue66-v1",
+  "source_commit": "a070076526f918b0ef7f1848994d69363d5c1291",
+  "purpose": "Language-neutral replay cases frozen before Rust migration.",
+  "cli_defaults": {
+    "target": "both",
+    "game_lang": "auto",
+    "seconds_before": 5.0,
+    "seconds_after": 1.0,
+    "min_event_sec": 2.0,
+    "molotov_elim_before": 10.0,
+    "scan_mode": "auto",
+    "jobs": "auto",
+    "dry_run": false,
+    "merge": null,
+    "no_auto_candidate_csv": false,
+    "split_merge_by_target": false,
+    "priority_window": [
+      [
+        31.0,
+        43.0
+      ],
+      [
+        45.0,
+        53.0
+      ]
+    ],
+    "coarse_step": 4.0,
+    "candidate_lookback": 8.0,
+    "candidate_lookahead": 0.5,
+    "candidate_step": 4.0,
+    "refine_before": 6.0,
+    "refine_after": 0.4,
+    "refine_step": 0.5,
+    "sampling_mode": "fixed",
+    "roi": [
+      0.3,
+      0.66,
+      0.7,
+      0.75
+    ],
+    "ocr_width": 768,
+    "brightness_gate_mode": null
+  },
+  "argument_cases": [
+    {
+      "argv": [
+        "video.mp4"
+      ],
+      "expected_parse": {
+        "input": "video.mp4",
+        "target": "both",
+        "game_lang": "auto",
+        "seconds_before": 5.0,
+        "seconds_after": 1.0,
+        "min_event_sec": 2.0,
+        "molotov_elim_before": 10.0,
+        "scan_mode": "auto",
+        "jobs": null,
+        "dry_run": false,
+        "merge": null
+      }
+    },
+    {
+      "argv": [
+        "--files",
+        "video1.mp4",
+        "video2.mp4",
+        "--scan-only",
+        "--jobs",
+        "2"
+      ],
+      "expected_parse": {
+        "files": [
+          "video1.mp4",
+          "video2.mp4"
+        ],
+        "dry_run": true,
+        "jobs": 2
+      }
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--merge"
+      ],
+      "expected_parse": {
+        "merge": true
+      }
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--no-merge"
+      ],
+      "expected_parse": {
+        "merge": false
+      }
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--game-lang",
+        "zh-Hant",
+        "--target",
+        "own-kill",
+        "--before",
+        "0",
+        "--after",
+        "2.5"
+      ],
+      "expected_parse": {
+        "game_lang": "zh-Hant",
+        "target": "own-kill",
+        "seconds_before": 0.0,
+        "seconds_after": 2.5
+      }
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--scan-mode",
+        "full",
+        "--coarse-step",
+        "2",
+        "-o",
+        "scan"
+      ],
+      "expected_parse": {
+        "scan_mode": "full",
+        "coarse_step": 2.0,
+        "output_dir": "scan"
+      }
+    }
+  ],
+  "invalid_argument_cases": [
+    {
+      "argv": [
+        "video.mp4",
+        "--jobs",
+        "0"
+      ],
+      "exit": 2
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--jobs",
+        "many"
+      ],
+      "exit": 2
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--roi",
+        "0,0,2,1"
+      ],
+      "exit": 2
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--window",
+        "bad"
+      ],
+      "exit": 2
+    },
+    {
+      "argv": [
+        "video.mp4",
+        "--montage",
+        "out.mp4"
+      ],
+      "exit": 2
+    }
+  ],
+  "lifecycle_contract": {
+    "stdout_prefixes": [
+      "PROGRESS ",
+      "[NN/N] INCLUDE ",
+      "[NN/N] SKIP ",
+      "SUMMARY "
+    ],
+    "profile_prefix": "PROFILE ",
+    "verbose_only_diagnostics": true,
+    "third_party_output_default": "suppressed",
+    "summary_encoding": "UTF-8 JSON",
+    "csv_encoding": "UTF-8 BOM",
+    "normal_no_match_exit": 2,
+    "included_exit": 0,
+    "runtime_error_exit": 1
+  },
+  "report_schema": {
+    "summary_required": [
+      "source_count",
+      "included_count",
+      "skipped_count",
+      "unreadable_count",
+      "dry_run",
+      "detector",
+      "game_lang",
+      "detected_game_langs",
+      "min_event_sec",
+      "molotov_elim_before",
+      "ocr_unavailable_reason",
+      "output_dir",
+      "merge",
+      "split_merge_by_target",
+      "merge_outputs",
+      "merge_output",
+      "scan_mode",
+      "full_scan",
+      "candidate_csv",
+      "candidate_events_csv",
+      "profile",
+      "run_id",
+      "cache_enabled",
+      "cache_hits",
+      "cache_misses",
+      "concat_list",
+      "originals_dir",
+      "originals_moved",
+      "originals_failed",
+      "csv",
+      "merge_duration_sec",
+      "merge_size_mb",
+      "methods",
+      "detectors",
+      "encoders",
+      "profile_total_sec"
+    ],
+    "csv_required": [
+      "Index",
+      "Name",
+      "Target",
+      "DurationSec",
+      "Status",
+      "EventSec",
+      "EventSecs",
+      "EventCount",
+      "EventKeys",
+      "EventWeapon",
+      "ContextRule",
+      "BeforeSec",
+      "AfterSec",
+      "KeepStartSec",
+      "KeepEndSec",
+      "KeepDurationSec",
+      "Method",
+      "Detector",
+      "PaddleText",
+      "PaddleScores",
+      "OcrSeconds",
+      "SampledFrames",
+      "DetectSeconds",
+      "OcrFrameSeconds",
+      "OcrCoarseFrames",
+      "OcrRefineFrames",
+      "OcrGateSkippedFrames",
+      "OcrGateReason",
+      "OcrRequests",
+      "OcrSuccesses",
+      "OcrCacheHits",
+      "OcrSkipped",
+      "RefineBudgetUsed",
+      "AssistBudgetUsed",
+      "TerminationReason",
+      "RefineOcrSeconds",
+      "AssistOcrSeconds",
+      "ProbeSeconds",
+      "TrimSeconds",
+      "TotalSeconds",
+      "Encoder",
+      "Output"
+    ],
+    "summary_types": {
+      "source_count": "integer",
+      "included_count": "integer",
+      "skipped_count": "integer",
+      "unreadable_count": "integer",
+      "dry_run": "boolean",
+      "detector": "string",
+      "game_lang": "string",
+      "detected_game_langs": "object",
+      "min_event_sec": "number",
+      "molotov_elim_before": "number",
+      "ocr_unavailable_reason": "string",
+      "output_dir": "string",
+      "merge": "boolean",
+      "split_merge_by_target": "boolean",
+      "merge_outputs": "array",
+      "merge_output": "string",
+      "scan_mode": "string",
+      "full_scan": "boolean",
+      "candidate_csv": "string",
+      "candidate_events_csv": "string",
+      "profile": "string",
+      "run_id": "string",
+      "cache_enabled": "boolean",
+      "cache_hits": "integer",
+      "cache_misses": "integer",
+      "concat_list": "string",
+      "originals_dir": "string",
+      "originals_moved": "integer",
+      "originals_failed": "integer",
+      "csv": "string",
+      "merge_duration_sec": "number",
+      "merge_size_mb": "number",
+      "methods": "object",
+      "detectors": "object",
+      "encoders": "object",
+      "profile_total_sec": "number"
+    },
+    "candidate_columns": [
+      "SchemaVersion",
+      "RunId",
+      "Name",
+      "Status",
+      "Target",
+      "StartSec",
+      "EndSec",
+      "EventSec",
+      "EventSecs",
+      "Score",
+      "GateStatus",
+      "GateReason",
+      "SamplingDensity",
+      "SampledFrames",
+      "OcrRequests",
+      "OcrSuccesses",
+      "OcrSkipped",
+      "OcrCacheHits",
+      "OcrCoarseFrames",
+      "OcrRefineFrames",
+      "RefineBudgetUsed",
+      "AssistBudgetUsed",
+      "RefineOcrSeconds",
+      "AssistOcrSeconds",
+      "CacheStatus",
+      "TerminationReason",
+      "Method",
+      "Detector"
+    ]
+  },
+  "description": "Parser cases and exact CSV column names captured from detached a070076. Python jobs None means automatic; the display default auto is not a numeric worker promise."
+}

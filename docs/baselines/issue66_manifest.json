@@ -1,0 +1,54 @@
+{
+  "schema_version": "issue66-v2",
+  "source_git_sha": "a070076526f918b0ef7f1848994d69363d5c1291",
+  "fixtures": {
+    "cli_contract": "issue66_cli_contract.json",
+    "events": "issue66_events.json",
+    "planning": "../../rust/ocr_engine/fixtures/planning.json"
+  },
+  "configuration": {
+    "target": "both",
+    "game_lang": "auto",
+    "scan_mode": "full",
+    "recursive": false,
+    "jobs_reference": [1, "auto", 2],
+    "dry_run": true,
+    "ffmpeg_hwaccel": null,
+    "min_event_sec": 2.0,
+    "seconds_before": 5.0,
+    "seconds_after": 1.0,
+    "molotov_elim_before": 10.0,
+    "ocr_width": 768,
+    "roi": [0.3, 0.66, 0.7, 0.75]
+  },
+  "private_corpus_counts": {
+    "root_mp4": 24,
+    "root_auto_selected": 23,
+    "nested_mp4": 3219,
+    "nested_staging_or_other": 79,
+    "nested_staging_reencode_candidate": 72,
+    "nested_staging_unique_hashes": 72,
+    "nested_staging_hashes_also_root": 1,
+    "nested_staging_hashes_also_history": 13,
+    "nested_staging_additional_unique_vs_root": 71,
+    "nested_trim_clip_candidates": 7,
+    "nested_historical_output_candidate": 3147
+  },
+  "runtime_identity": {
+    "evidence_root": "operator-selected local evidence directory (for example %LOCALAPPDATA%/issue63-notes)",
+    "model_hashes": "local-only artifact under <evidence_root>/runtime-hashes.json",
+    "media_hashes": "local-only artifact under <evidence_root>/media-hash-all.json",
+    "reference_engine": "source-built release engine from detached a070076, not a stale offline-final artifact",
+    "root23_corrected_summary": "local-only artifact under <evidence_root>/runs/single-a070076-engine/out/summary.json",
+    "full95_runs": "local-only artifacts under <evidence_root>/runs/<mode>/out/summary.json"
+  },
+  "privacy": {
+    "media_in_repository": false,
+    "screenshots_in_repository": false,
+    "private_paths_or_filenames_in_repository": false,
+    "private_media_hashes_in_repository": false,
+    "absolute_local_evidence_paths_in_repository": false,
+    "conservative_read_only_candidates": 95,
+    "selection_requires_no_move_or_upload": true
+  }
+}

@@ -4,7 +4,7 @@ English | [简体中文](README_zh.md)
 
 Windows-only CLI for trimming PUBG NVIDIA Highlight clips around key OCR events.
 
-The repository also ships a native Windows desktop UI. It uses WPF with no browser runtime, launches the CLI as a separate process, and does not reference the Python source code.
+The repository also ships a native Windows desktop UI. It uses WPF with no browser runtime and launches the Rust CLI as a separate process.
 
 Default behavior detects both your knocks/eliminations and enemies knocking/eliminating you, keeps 5 seconds before and 1 second after the detected event, skips events in the first 2 seconds, and keeps 10 seconds before molotov/fire-bomb eliminations.
 
@@ -131,7 +131,7 @@ OCR options (advanced):
 | `--refine-step` | `0.5` | Seconds between refine-scan frames |
 | `--roi` | `0.30,0.66,0.70,0.75` | OCR crop ratios `x1,y1,x2,y2` |
 | `--ocr-width` | `768` | Downscale OCR ROI to this width; `0` disables |
-| `--no-brightness-gate` | off | Disable the OpenCV bright outlined-text gate before coarse OCR |
+| `--no-brightness-gate` | off | Disable the Rust bright outlined-text gate before coarse OCR |
 | `--brightness-gate-mode` | `light` | Gate strictness before coarse OCR: `light` only skips near-empty dark frames, `full` adds outlined-glyph and horizontal-structure checks, `none` disables filtering |
 
 ### Output behavior
@@ -144,17 +144,19 @@ OCR options (advanced):
 
 GUI and CLI use the same output layout. `<output>\clips\` contains individual trimmed videos; merged videos and their `.concat.txt` FFmpeg lists are in the output root. In split mode, each target with clips gets its own video. `检测与裁剪记录.csv` records per-source detection status, event time, clip range, and timings; `candidate_events.csv` stores candidate hints for later scans; `profile.json` stores phase timings. `summary.json` records source, retained/skipped counts, output paths, scan mode, language, merge state, and OCR/cache metadata; `merge_outputs` lists every generated target output while legacy single-output fields remain compatible.
 
-## OCR backends and release artifacts
+## Rust application and release artifacts
 
-The release default is Rust-only OCR: the Python CLI remains the application orchestrator (and is frozen with PyInstaller), while OCR inference runs in the bundled Rust `ocr_engine.exe`. This is **not** a claim that the whole application has no CPython: the app still embeds CPython and Python packages such as NumPy/OpenCV as needed for orchestration and video processing.
+This branch builds the complete application in Rust: event parsing, scanning, media processing, planning, caching and reporting call the Rust OCR library directly. `ocr_engine.exe` remains an independent JSONL inference diagnostic, not a Python bridge. No CPython, PyInstaller, Python OpenCV/NumPy or Paddle runtime is needed by the application or the official test/build/release commands.
 
-The default archive is `pubg-highlight-trim-windows-x64.zip`. To use the compatibility backend, set `PUBG_OCR_BACKEND=paddle` explicitly; this is an opt-in rollback and requires PaddleOCR/PaddlePaddle runtime assets. Packaging publishes that compatibility build separately as `pubg-highlight-trim-paddle-windows-x64.zip`; using Paddle requires both downloading/selecting that compatibility archive and setting `PUBG_OCR_BACKEND=paddle`. The `-WithPaddleOcr` build is implemented but is never the default.
+The archive name remains `pubg-highlight-trim-windows-x64.zip`. Paddle compatibility is no longer supported. Legacy `PUBG_OCR_BACKEND` and `PUBG_OCR_ENGINE` bridge settings do not select a backend. `PUBG_OCR_MODEL_DIR` can select an existing model directory. Historical `paddle-*` detection labels and report fields remain for consumer compatibility, not as a backend dependency.
 
-For source installs, the base `ocr` extra contains only OpenCV. Install Paddle compatibility dependencies explicitly with `pip install .[paddle]` (and use `PUBG_OCR_BACKEND=paddle`). Rust OCR model hashes are checked at startup. Runtime and component hashes are recorded in `SUPPLY_CHAIN_MANIFEST.json` for offline audit; the manifest lists the files actually present in each archive.
+Model hashes are checked at startup. `SUPPLY_CHAIN_MANIFEST.json` records actual bundled files, component sources, licenses and hashes. Models are downloaded only by the explicit build-time tool; running the app never downloads them.
+
+**Migration status:** this integration branch is not final #63 acceptance or a statement about older release archives. Full private-corpus/performance, clean Python-free Windows and final CLI/GUI archive acceptance remain mandatory. Project-owned Python source, tests and scripts have been removed after Rust replacements were established; see the [capability retirement audit](docs/python-retirement-audit.md). This is not a substitute for the remaining acceptance evidence.
 
 ## Detection
 
-Detection is OCR-only because own-kill and mixed-event trimming require OCR. Before coarse OCR, OpenCV prefilters the relative region `x=0.26–0.74, y=0.635–0.725`; the default `light` mode skips OCR only on essentially dark frames, while `--brightness-gate-mode full` restores the stricter outlined-glyph and horizontal-structure checks (cheaper, but it can reject frames that contain thin single-line event text). The gate only applies to coarse scanning; event refinement still uses full OCR, and match-end sources automatically bypass the gate because victory overlays can dim the text. All regions use relative coordinates and do not depend on video resolution. Use `--no-brightness-gate` to disable the prefilter or `--roi x1,y1,x2,y2` to override the OCR crop.
+Detection is OCR-only because own-kill and mixed-event trimming require OCR. Before coarse OCR, Rust image preprocessing prefilters the relative region `x=0.26–0.74, y=0.635–0.725`; the default `light` mode skips OCR only on essentially dark frames, while `--brightness-gate-mode full` restores the stricter outlined-glyph and horizontal-structure checks (cheaper, but it can reject frames that contain thin single-line event text). The gate only applies to coarse scanning; event refinement still uses full OCR, and match-end sources automatically bypass the gate because victory overlays can dim the text. All regions use relative coordinates and do not depend on video resolution. Use `--no-brightness-gate` to disable the prefilter or `--roi x1,y1,x2,y2` to override the OCR crop.
 
 Current game-language support is `zh-Hans`, `zh-Hant`, and `en`. The default `--game-lang auto` mode detects the PUBG game language from NVIDIA Highlight filenames, including mixed folders where files have different language labels. Use `--game-lang zh-Hans`, `--game-lang zh-Hant`, or `--game-lang en` only when you want to force one profile.
 
@@ -185,41 +187,40 @@ During source development the resolver checks, in order:
 
 ### Run tests
 
+From the repository root, with Rust stable (MSVC x64), FFmpeg/FFprobe and .NET 10 SDK installed:
+
 ```powershell
-$env:PYTHONPATH="src"
-python -m unittest discover -s tests -v
+cargo test --locked --manifest-path rust/Cargo.toml --workspace --features highlight-cli
+cargo test --locked --manifest-path rust/Cargo.toml --features cli,directml
+# Explicit real-model gate: requires a verified local model directory, never private recordings
+$env:PUBG_OCR_MODEL_DIR="<model-directory>"
+cargo test --locked --manifest-path rust/Cargo.toml --features cli --test end_to_end -- --ignored --nocapture
+dotnet test ui/PubgHighlightTrim.Ui.Tests/PubgHighlightTrim.Ui.Tests.csproj --configuration Release
 ```
+
+The default suite uses language-neutral golden data, public ROI images and generated temporary media. Real-model ignored tests are separate acceptance gates, not coverage silently waived by a green default suite. `highlight_plan` is a canonical fixed-data JSON/JSONL planner diagnostic; it cannot preview video/OCR without models.
 
 ### Build Windows release locally
 
 The release build needs a Windows x64 machine with:
 
-- Python 3.12 x64 (the verified Windows build version; project metadata supports Python 3.10+).
+- Rust stable x64 MSVC toolchain and Visual Studio C++ build tools.
 - .NET 10 SDK, including the Windows Desktop targeting pack, for the WPF UI.
 - The Windows 10/11 SDK `mt.exe` tool on `PATH`. The build uses it to verify the UI executable's `PerMonitorV2` DPI manifest.
 - PowerShell and network access for downloading FFmpeg and, on a first build, OCR models.
 
-The Python build dependencies are declared in `pyproject.toml`. The base OCR extra installs only `opencv-contrib-python>=4.9`; Paddle compatibility is an explicit `[paddle]` extra. The build extra installs `pyinstaller>=6.10`.
-
-Create and use a Python 3.12 virtual environment before building:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -e ".[ocr,build]"
-```
+No Python virtual environment or pip installation is used. Model download/hash/dictionary, inference smoke, baseline comparison, manifest, archive audit and size tools are Rust `xtask` commands. Run `cargo run --manifest-path rust/Cargo.toml --bin xtask -- --help` for their interfaces. The retirement audit maps each former tool and its effective checks to the Rust replacement.
 
 Build the CLI bundle first, then publish the GUI and package both together:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 `
-  -Python .\.venv\Scripts\python.exe
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 `
   -SkipCliBuild
 ```
 
-The default Rust build embeds PP-OCRv6 ONNX assets (not PaddleOCR models) and creates `dist\pubg-highlight-trim-windows-x64.zip`; the separate compatibility build is named `pubg-highlight-trim-paddle-windows-x64.zip`. Packaging should keep the default artifact Rust-only and require both the explicit `-WithPaddleOcr` build and `PUBG_OCR_BACKEND=paddle` at runtime for Paddle. `build_ui_windows.ps1 -SkipCliBuild` reuses that CLI bundle, publishes a self-contained WPF single-file executable, verifies its DPI manifest, and creates `dist\pubg-highlight-trim-ui-windows-x64.zip`. The UI executable is also available at `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`; its package keeps the CLI at `cli\pubg-highlight-trim.exe` beside it.
+The Rust build bundles PP-OCRv6 ONNX assets (not PaddleOCR runtime models) and creates `dist\pubg-highlight-trim-windows-x64.zip`. Paddle compatibility builds are no longer supported. `build_ui_windows.ps1 -SkipCliBuild` reuses that CLI bundle, publishes a self-contained WPF single-file executable, verifies its DPI manifest, and creates `dist\pubg-highlight-trim-ui-windows-x64.zip`. The UI executable is also available at `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`; its package keeps the CLI at `cli\pubg-highlight-trim.exe` beside it.
 
 If the CLI bundle already exists, omit the first build command and run only the UI command. The release archives contain all runtime dependencies, so users need neither Python nor .NET installed.
 
@@ -237,4 +238,6 @@ GitHub Actions builds both CLI and UI Windows release archives on tag pushes lik
 
 This project is licensed under `GPL-3.0-or-later`.
 
-Release archives bundle FFmpeg/FFprobe and, in the default artifact, Rust OCR engine/model assets. PaddleOCR runtime assets are limited to the separately named compatibility artifact. See `THIRD_PARTY_NOTICES.md` for third-party license details and source links.
+Release archives bundle FFmpeg/FFprobe and Rust OCR engine/model assets, without a Paddle compatibility runtime. See `THIRD_PARTY_NOTICES.md` for third-party license details and source links.
+
+Each Windows release also contains `third_party/rust/INVENTORY.json`, generated by `cargo xtask licenses <bundle>` from the locked Cargo metadata. It records the resolved package name/version/SPDX license/source and whether each dependency is shipped or build-only. The corresponding pinned `LICENSE`, `NOTICE`, `COPYING`, ONNX Runtime, PP-OCR/model, CRT and other notice texts are copied under `third_party/`; `SUPPLY_CHAIN_MANIFEST.json` hashes every inventory and notice file. A missing notice or hash mismatch is a release-gate failure.

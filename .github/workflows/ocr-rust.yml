@@ -1,60 +1,155 @@
-name: OCR Rust checks
+name: Rust checks
 
 on:
   pull_request:
     paths:
       - "rust/**"
-      - "scripts/*ocr*"
-      - "src/pubg_highlight_trim/rust_ocr.py"
-      - "tests/**"
+      - "scripts/**"
       - ".github/workflows/ocr-rust.yml"
   push:
     branches: [main]
     paths:
       - "rust/**"
-      - "scripts/*ocr*"
-      - "src/pubg_highlight_trim/rust_ocr.py"
-      - "tests/**"
+      - "scripts/**"
+      - ".github/workflows/ocr-rust.yml"
 
 jobs:
-  rust-and-python:
+  rust-and-windows-assurance:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Enforce clean no-Python build host
+        shell: powershell
+        run: |
+          # GitHub-hosted runners are disposable; remove preinstalled Python distributions
+          # and the py launcher instead of merely hiding them from PATH.
+          $roots = @("C:\hostedtoolcache\windows\Python", "C:\Python27", "C:\Python38", "C:\Python39", "C:\Python310", "C:\Python311", "C:\Python312", "C:\Python313")
+          foreach ($root in $roots) {
+            if (Test-Path -LiteralPath $root) {
+              Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop
+            }
+          }
+          foreach ($launcher in @("$env:WINDIR\py.exe", "$env:WINDIR\pyw.exe")) {
+            if (Test-Path -LiteralPath $launcher) {
+              Remove-Item -LiteralPath $launcher -Force -ErrorAction Stop
+            }
+          }
+          $env:PATH = (($env:PATH -split ';') | Where-Object { $_ -and $_ -notmatch '(?i)python|windowsapps' }) -join ';'
+          "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          foreach ($name in @('python', 'python3', 'py')) {
+            if (Get-Command $name -ErrorAction SilentlyContinue) {
+              throw "Python command remains on the clean runner: $name"
+            }
+          }
+          Write-Host "Confirmed python, python3 and py are unavailable before Cargo tests/build."
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt
       - name: Rust format
-        run: cargo fmt --manifest-path rust/Cargo.toml -- --check
-      - name: Rust tests
-        run: cargo test --manifest-path rust/Cargo.toml --lib
+        shell: powershell
+        run: cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+      - name: Prepare required media test tools
+        shell: powershell
+        run: |
+          ./scripts/download_ffmpeg.ps1
+          $tools = Join-Path $env:GITHUB_WORKSPACE 'vendor\ffmpeg'
+          foreach ($name in @('ffmpeg.exe', 'ffprobe.exe')) {
+            $binary = Join-Path $tools $name
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw "Required media test tool is missing: $binary"
+            }
+            & $binary -version
+            if ($LASTEXITCODE -ne 0) { throw "Required media test tool failed: $binary" }
+          }
+          "PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR=$tools" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Rust tests (including required real media behaviors)
+        shell: powershell
+        run: cargo test --locked --manifest-path rust/Cargo.toml --all-features
+      - name: Rust highlight planner contract
+        shell: powershell
+        run: cargo test --locked --manifest-path rust/Cargo.toml --features highlight-cli --test highlight_plan_cli
       - name: Rust optional OCR features
+        shell: powershell
         run: |
-          cargo check --manifest-path rust/Cargo.toml --features onnx,cli
-          cargo check --manifest-path rust/Cargo.toml --features directml
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Python test dependencies
-        run: python -m pip install -e . pytest opencv-contrib-python pyyaml onnx onnxruntime
-      - name: Python tests
-        run: python -m pytest -q
-      - name: Download and verify pinned ONNX assets
-        shell: pwsh
+          cargo check --locked --manifest-path rust/Cargo.toml --features onnx,cli
+          cargo check --locked --manifest-path rust/Cargo.toml --features directml
+      - name: Build formal application and OCR engine binaries
+        shell: powershell
         run: |
-          python scripts/download_ocr_models.py --output-dir $env:RUNNER_TEMP\ocr_models
-          python scripts/verify_ocr_models.py --model-dir $env:RUNNER_TEMP\ocr_models --check-onnx
-          python scripts/onnx_cpu_smoke.py --model-dir $env:RUNNER_TEMP\ocr_models
-      - name: Rust ONNX CPU smoke
-        shell: pwsh
+          $env:RUSTFLAGS = "-C link-args=/DELAYLOAD:directml.dll -C link-args=delayimp.lib"
+          cargo build --locked --manifest-path rust/Cargo.toml --release --features cli,directml --bin pubg_highlight_trim
+          cargo build --locked --manifest-path rust/Cargo.toml --release --features cli,directml --bin ocr_engine
+      - name: Verify pinned model source, hashes, dictionary and ONNX format
+        shell: powershell
+        run: |
+          if (-not (Select-String -Path rust/Cargo.toml -Pattern 'xtask' -Quiet)) {
+            throw "Rust xtask is not integrated in rust/Cargo.toml yet (#68 dependency); model assurance is intentionally blocked."
+          }
+          New-Item -ItemType Directory -Path $env:RUNNER_TEMP\ocr_models -Force | Out-Null
+          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- download --output-dir $env:RUNNER_TEMP\ocr_models
+          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- verify --model-dir $env:RUNNER_TEMP\ocr_models --check-onnx --engine rust\target\release\ocr_engine.exe
+      - name: Rust end-to-end OCR pipeline (real pinned models)
+        shell: powershell
         env:
           PUBG_OCR_MODEL_DIR: ${{ runner.temp }}\ocr_models
-        run: cargo test --manifest-path rust/Cargo.toml --features onnx-test-runtime --lib -- --ignored
-      - name: Real ROI Python-Rust comparison
-        shell: pwsh
+          PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR: ${{ github.workspace }}\vendor\ffmpeg
+        run: cargo test --locked --manifest-path rust/Cargo.toml --features cli --test end_to_end -- --ignored
+      - name: Rust OCR inference smoke
+        shell: powershell
+        run: |
+          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- onnx-smoke --model-dir $env:RUNNER_TEMP\ocr_models --engine rust\target\release\ocr_engine.exe
+      - name: Rust real ROI event semantic parity
+        shell: powershell
         env:
           PUBG_OCR_MODEL_DIR: ${{ runner.temp }}\ocr_models
         run: |
-          cargo build --manifest-path rust/Cargo.toml --features cli
-          python scripts/run_real_ocr_benchmark.py --executable rust\target\debug\ocr_engine.exe --model-dir $env:PUBG_OCR_MODEL_DIR --output $env:RUNNER_TEMP\real_ocr_report.json
+          New-Item -ItemType Directory -Path $env:RUNNER_TEMP\real-roi -Force | Out-Null
+          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- real-roi --executable rust\target\release\ocr_engine.exe --model-dir $env:RUNNER_TEMP\ocr_models --fixture rust\ocr_engine\fixtures\real --output $env:RUNNER_TEMP\real-roi\roi.jsonl
+          if ($LASTEXITCODE -ne 0) { throw "xtask real-roi semantic parity failed with exit code $LASTEXITCODE" }
+      - name: Complete CLI fault, cache, provider and cancellation acceptance
+        shell: powershell
+        env:
+          PUBG_OCR_MODEL_DIR: ${{ runner.temp }}\ocr_models
+          PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR: ${{ github.workspace }}\vendor\ffmpeg
+        run: |
+          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test application_e2e -- --ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw "CLI acceptance failed" }
+          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test dedupe_cli -- --ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw "Upstream overlapping-source batch acceptance failed" }
+          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test nonfinite_summary -- --ignored
+          if ($LASTEXITCODE -ne 0) { throw "Legacy explicit infinite-value wire compatibility failed" }
+          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test preprocess real_roi_preprocessing_keeps_recognized_subjects -- --ignored
+          if ($LASTEXITCODE -ne 0) { throw "Real ROI preprocessing acceptance failed" }
+          cargo test --locked --manifest-path rust/Cargo.toml --features cli --lib ppocr_cpu_smoke_test -- --ignored
+          if ($LASTEXITCODE -ne 0) { throw "Real model CPU acceptance failed" }
+          cargo test --locked --manifest-path rust/Cargo.toml -p xtask --test retirement_contract bad_https_download -- --ignored
+          if ($LASTEXITCODE -ne 0) { throw "Pinned HTTPS download failure safety failed" }
+      - name: Windows bundle assurance
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -SkipInstall
+      - name: Verify shipped license inventory and manifest coverage
+        shell: powershell
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE 'dist\pubg-highlight-trim'
+          $inventoryPath = Join-Path $bundle 'third_party\rust\INVENTORY.json'
+          $manifestPath = Join-Path $bundle 'SUPPLY_CHAIN_MANIFEST.json'
+          foreach ($path in @($inventoryPath, $manifestPath)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing release assurance file: $path" }
+          }
+          $inventory = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
+          if ($inventory.schema -ne 'pubg-highlight-trim/rust-licenses/v1') { throw "Unexpected license inventory schema" }
+          if (-not $inventory.packages -or $inventory.packages.Count -lt 1) { throw "License inventory has no Cargo packages" }
+          if (-not $inventory.notice_files -or $inventory.notice_files.Count -lt 1) { throw "License inventory has no pinned notice files" }
+          foreach ($notice in $inventory.notice_files) {
+            $noticePath = Join-Path $bundle ($notice.path -replace '/', '\\')
+            if (-not (Test-Path -LiteralPath $noticePath -PathType Leaf)) { throw "Notice file is not shipped: $($notice.path)" }
+            $actual = (Get-FileHash -LiteralPath $noticePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne ([string]$notice.sha256).ToLowerInvariant()) { throw "Notice hash mismatch: $($notice.path)" }
+          }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $paths = @($manifest.files | ForEach-Object { $_.path })
+          foreach ($notice in $inventory.notice_files) {
+            if ($paths -notcontains $notice.path) { throw "Supply-chain manifest does not cover notice: $($notice.path)" }
+          }
+          Write-Host "Verified $($inventory.packages.Count) Cargo packages and $($inventory.notice_files.Count) pinned notices are shipped and manifest-hashed."

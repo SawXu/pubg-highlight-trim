@@ -1,5 +1,5 @@
 [workspace]
-members = ["ocr_engine"]
+members = ["ocr_engine", "xtask"]
 resolver = "2"
 
 [patch.crates-io]

@@ -1,0 +1,2 @@
+# Pinned upstream bytes are hash-validated; never rewrite newline bytes on checkout.
+* -text

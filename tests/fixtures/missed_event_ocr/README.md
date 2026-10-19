@@ -18,14 +18,13 @@
 运行（PowerShell）：
 
 ```powershell
-$env:PUBG_OCR_ENGINE='F:/NVIDIA/TEMP/offline-final/ocr_engine.exe'
-$env:PUBG_OCR_MODEL_DIR='F:/NVIDIA/TEMP/offline-final/ocr_models'
-G:/Tools/pubg-highlight-trim/.venv/Scripts/python.exe -m pytest tests/test_missed_event_ocr.py -v
+$env:PUBG_OCR_MODEL_DIR='<已校验模型目录>'
+cargo test --locked --manifest-path rust/Cargo.toml --features cli --test preprocess real_roi_preprocessing_keeps_recognized_subjects -- --ignored --nocapture
 ```
 
-未设置任一环境变量时 skip；显式配置后的启动、模型或推理错误应失败。
-三帧共用一个模块级 Rust OCR 进程，CPU、单线程，走真实
-`ocr._predict_text → classify_target_kind → extract_text_events`，固定 `zh-Hant`。
+该测试属于显式 ignored 真实模型门槛；启用后模型缺失、启动或推理错误应失败。
+三帧在 Rust 内直接使用真实 OCR library，CPU、单线程，随后调用 canonical
+`extract_text_events`，固定 `zh-Hant`；不再经过已退休的 Python 适配器。
 断言 target/action/subject 主身份和事件 key，不锁定武器、完整 OCR 文本或 HUD 噪声。
 图片不能验证文件名语言推断，因此这里不测试 auto 语言推断或视频扫描时间边界。
 
@@ -34,4 +33,4 @@ G:/Tools/pubg-highlight-trim/.venv/Scripts/python.exe -m pytest tests/test_misse
 `.09@2` 虽可分类为 self-death，但提取到的 subject 是 `AUG爆頭` 而非攻击者。
 修复排序后应通过；不使用 xfail。
 现有 real benchmark 图片均有目标事件，不能作为“旁人击杀/助攻”的确切负例；
-这里不编造负例，既有 `test_ocr_refine.py` / `test_game_languages.py` 的负例单测继续保留。
+这里不编造负例，原 `test_ocr_refine.py` / `test_game_languages.py` 的固定规则保障已迁入 Rust scanner fixtures 和 `events_contract.rs`，不保留旧 Python 测试执行器。

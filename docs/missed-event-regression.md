@@ -1,5 +1,12 @@
 # 2026-10-13 missed-event regression
 
+This is historical diagnosis/verification evidence, including the commands and
+Python adapter that existed at the time. Current Rust execution for the same
+already-public ROI cases is documented in
+[`tests/fixtures/missed_event_ocr/README.md`](../tests/fixtures/missed_event_ocr/README.md).
+The current app/build does not use the historical Python commands below; no new
+private recording verification was performed by the retirement commit.
+
 ## Fixes
 
 - Rust OCR groups boxes into text rows before left-to-right ordering. Row tolerance uses the smaller box height and a fixed anchor; a tall box cannot absorb an adjacent short row (covered by a failing-then-passing regression). Previously `(min_y, min_x)` put a right-hand box before the sentence prefix whenever its top edge was a few pixels higher. Text, confidence scores and boxes retain the same order.

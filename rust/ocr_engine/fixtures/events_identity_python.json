@@ -1,0 +1,278 @@
+[
+  {
+    "left": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+      "key": "own-kill:knock:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+      "weapon": ""
+    },
+    "right": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "key": "own-kill:knock:baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "text": "baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": false,
+    "followup": false
+  },
+  {
+    "left": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+      "key": "self-death:knock:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+      "weapon": ""
+    },
+    "right": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "key": "self-death:knock:baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "text": "baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": false,
+    "followup": true
+  },
+  {
+    "left": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "[clan]abc中文def",
+      "key": "own-kill:knock:[clan]abc中文def",
+      "text": "[clan]abc中文def",
+      "weapon": ""
+    },
+    "right": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "[clan]abcdef",
+      "key": "own-kill:knock:[clan]abcdef",
+      "text": "[clan]abcdef",
+      "weapon": ""
+    },
+    "same": true,
+    "noisy": true,
+    "followup": true
+  },
+  {
+    "left": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "[clan]abc中文def",
+      "key": "self-death:knock:[clan]abc中文def",
+      "text": "[clan]abc中文def",
+      "weapon": ""
+    },
+    "right": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "[clan]abcdef",
+      "key": "self-death:knock:[clan]abcdef",
+      "text": "[clan]abcdef",
+      "weapon": ""
+    },
+    "same": true,
+    "noisy": true,
+    "followup": true
+  },
+  {
+    "left": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "123٤abcXYZ",
+      "key": "own-kill:knock:123٤abcXYZ",
+      "text": "123٤abcXYZ",
+      "weapon": ""
+    },
+    "right": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "123٤abcXYQ",
+      "key": "own-kill:knock:123٤abcXYQ",
+      "text": "123٤abcXYQ",
+      "weapon": ""
+    },
+    "same": true,
+    "noisy": true,
+    "followup": true
+  },
+  {
+    "left": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "123٤abcXYZ",
+      "key": "self-death:knock:123٤abcXYZ",
+      "text": "123٤abcXYZ",
+      "weapon": ""
+    },
+    "right": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "123٤abcXYQ",
+      "key": "self-death:knock:123٤abcXYQ",
+      "text": "123٤abcXYQ",
+      "weapon": ""
+    },
+    "same": true,
+    "noisy": true,
+    "followup": true
+  },
+  {
+    "left": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "tide",
+      "key": "own-kill:knock:tide",
+      "text": "tide",
+      "weapon": ""
+    },
+    "right": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "diet",
+      "key": "own-kill:knock:diet",
+      "text": "diet",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": false,
+    "followup": false
+  },
+  {
+    "left": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "tide",
+      "key": "self-death:knock:tide",
+      "text": "tide",
+      "weapon": ""
+    },
+    "right": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "diet",
+      "key": "self-death:knock:diet",
+      "text": "diet",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": false,
+    "followup": false
+  },
+  {
+    "left": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "ASKKZM",
+      "key": "own-kill:knock:ASKKZM",
+      "text": "ASKKZM",
+      "weapon": ""
+    },
+    "right": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "ASKKZMPNC2020",
+      "key": "own-kill:knock:ASKKZMPNC2020",
+      "text": "ASKKZMPNC2020",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": true,
+    "followup": true
+  },
+  {
+    "left": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "ASKKZM",
+      "key": "self-death:knock:ASKKZM",
+      "text": "ASKKZM",
+      "weapon": ""
+    },
+    "right": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "ASKKZMPNC2020",
+      "key": "self-death:knock:ASKKZMPNC2020",
+      "text": "ASKKZMPNC2020",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": true,
+    "followup": true
+  },
+  {
+    "left": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "敌人²A",
+      "key": "own-kill:knock:敌人²A",
+      "text": "敌人²A",
+      "weapon": ""
+    },
+    "right": {
+      "target": "own-kill",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "敌人²B",
+      "key": "own-kill:knock:敌人²B",
+      "text": "敌人²B",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": false,
+    "followup": false
+  },
+  {
+    "left": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "敌人²A",
+      "key": "self-death:knock:敌人²A",
+      "text": "敌人²A",
+      "weapon": ""
+    },
+    "right": {
+      "target": "self-death",
+      "method": "paddle-own-kill-text",
+      "action": "knock",
+      "subject": "敌人²B",
+      "key": "self-death:knock:敌人²B",
+      "text": "敌人²B",
+      "weapon": ""
+    },
+    "same": false,
+    "noisy": false,
+    "followup": false
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "min event and molotov context",
+    "config": {"duration_sec": 20.0, "before": 2.0, "after": 1.0, "min_event": 1.0, "molotov_before": 5.0},
+    "detections": [
+      {"target":"own-kill","action":"eliminate","event_sec":1.0,"event_weapon":"molotov","duration_sec":20.0},
+      {"target":"own-kill","action":"knock","event_sec":4.0,"before":0.5,"after":2.0,"duration_sec":20.0},
+      {"target":"own-kill","action":"eliminate","event_sec":0.5,"duration_sec":20.0}
+    ],
+    "expected": {
+      "clips": [
+        {"start_sec":0.0,"end_sec":2.0,"detections":[{"target":"own-kill","action":"eliminate","event_sec":1.0,"before":5.0,"after":1.0,"duration_sec":20.0,"event_key":"","event_weapon":"molotov","method":"","text":""}]},
+        {"start_sec":3.5,"end_sec":6.0,"detections":[{"target":"own-kill","action":"knock","event_sec":4.0,"before":0.5,"after":2.0,"duration_sec":20.0,"event_key":"","event_weapon":"","method":"","text":""}]}
+      ],
+      "skipped":[{"target":"own-kill","action":"eliminate","event_sec":0.5,"before":null,"after":null,"duration_sec":20.0,"event_key":"","event_weapon":"","method":"","text":""}]
+    }
+  }
+]

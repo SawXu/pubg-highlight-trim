@@ -1,0 +1,416 @@
+{
+  "schema_version": "issue66-v1",
+  "source_commit": "a070076526f918b0ef7f1848994d69363d5c1291",
+  "description": "Exact synthetic text-event outputs from the detached a070076 Python parser. Explicit language profiles are never auto-switched within an OCR string; existing edge-case behavior is frozen, not redefined by provisional Rust rules.",
+  "cases": [
+    {
+      "name": "zh-Hans own knock with distance and scoreboard",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "你用 M416 击倒了 Enemy (123m) 淘汰数 2",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "subject": "Enemy",
+          "key": "own-kill:knock:enemy",
+          "text": "你用M416击倒了Enemy(123m)淘汰数2",
+          "weapon": "M416"
+        }
+      ]
+    },
+    {
+      "name": "zh-Hans self elimination",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "Enemy 使用 AKM 淘汰了你",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "eliminate",
+          "subject": "Enemy使用AKM",
+          "key": "self-death:eliminate:enemy",
+          "text": "Enemy使用AKM淘汰了你",
+          "weapon": "AKM"
+        }
+      ]
+    },
+    {
+      "name": "zh-Hant own elimination",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "您以 M416 擊殺 Enemy 擊殺數 2",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Enemy",
+          "key": "own-kill:eliminate:enemy",
+          "text": "您以M416擊殺Enemy擊殺數2",
+          "weapon": "M416"
+        }
+      ]
+    },
+    {
+      "name": "zh-Hant self knock",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "Enemy以M416擊倒您",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "knock",
+          "subject": "Enemy以M416",
+          "key": "self-death:knock:enemy",
+          "text": "Enemy以M416擊倒您",
+          "weapon": "M416"
+        }
+      ]
+    },
+    {
+      "name": "English present tense self elimination",
+      "language": "en",
+      "target": "both",
+      "text": "Enemy KILLS YOU with M416",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "eliminate",
+          "subject": "Enemy",
+          "key": "self-death:eliminate:enemy",
+          "text": "EnemyKILLSYOUwithM416",
+          "weapon": "M416"
+        }
+      ]
+    },
+    {
+      "name": "English headshot own elimination",
+      "language": "en",
+      "target": "both",
+      "text": "You killed Enemy by headshot with AKM 2 KILLS",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Enemy",
+          "key": "own-kill:eliminate:enemy",
+          "text": "YoukilledEnemybyheadshotwithAKM2KILLS",
+          "weapon": "AKM"
+        }
+      ]
+    },
+    {
+      "name": "English own knock",
+      "language": "en",
+      "target": "both",
+      "text": "YOU knocked out Enemy using M416",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "subject": "Enemy",
+          "key": "own-kill:knock:enemy",
+          "text": "YOUknockedoutEnemyusingM416",
+          "weapon": "M416"
+        }
+      ]
+    },
+    {
+      "name": "English contiguous notifications",
+      "language": "en",
+      "target": "both",
+      "text": "YOU killed Alpha with M416 YOU knocked out Bravo using AKM",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Alpha",
+          "key": "own-kill:eliminate:alpha",
+          "text": "YOUkilledAlphawithM416",
+          "weapon": "M416"
+        },
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "subject": "Bravo",
+          "key": "own-kill:knock:bravo",
+          "text": "YOUknockedoutBravousingAKM",
+          "weapon": "AKM"
+        }
+      ]
+    },
+    {
+      "name": "Chinese contiguous notifications",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "你用M416击倒了Alpha你使用AKM淘汰了Bravo",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "subject": "Alpha",
+          "key": "own-kill:knock:alpha",
+          "text": "你用M416击倒了Alpha",
+          "weapon": "M416"
+        },
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Bravo",
+          "key": "own-kill:eliminate:bravo",
+          "text": "你使用AKM淘汰了Bravo",
+          "weapon": "AKM"
+        }
+      ]
+    },
+    {
+      "name": "assist English filtered",
+      "language": "en",
+      "target": "both",
+      "text": "YOU killed Enemy with AKM ASSIST",
+      "expected": []
+    },
+    {
+      "name": "assist simplified Chinese filtered",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "你淘汰了Enemy协助",
+      "expected": []
+    },
+    {
+      "name": "assist traditional Chinese filtered",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "您擊殺Enemy助殺",
+      "expected": []
+    },
+    {
+      "name": "scoreboard assist retained",
+      "language": "en",
+      "target": "both",
+      "text": "YOU killed Enemy with AKM 2 KILLS 1 ASSIST",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Enemy",
+          "key": "own-kill:eliminate:enemy",
+          "text": "YOUkilledEnemywithAKM2KILLS",
+          "weapon": "AKM"
+        }
+      ]
+    },
+    {
+      "name": "delayed elimination English filtered",
+      "language": "en",
+      "target": "both",
+      "text": "YOU FINALLY eliminated Enemy",
+      "expected": []
+    },
+    {
+      "name": "delayed elimination Hans filtered",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "你终于淘汰了Enemy",
+      "expected": []
+    },
+    {
+      "name": "delayed elimination Hant filtered",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "您終於擊殺Enemy",
+      "expected": []
+    },
+    {
+      "name": "local assist preserves next event",
+      "language": "en",
+      "target": "both",
+      "text": "YOU killed Alpha ASSIST YOU killed Bravo",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Bravo",
+          "key": "own-kill:eliminate:bravo",
+          "text": "YOUkilledBravo",
+          "weapon": ""
+        }
+      ]
+    },
+    {
+      "name": "local delayed preserves next event",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "你终于淘汰了Alpha你用AKM击倒了Bravo",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "subject": "Bravo",
+          "key": "own-kill:knock:bravo",
+          "text": "你用AKM击倒了Bravo",
+          "weapon": "AKM"
+        }
+      ]
+    },
+    {
+      "name": "fall damage English",
+      "language": "en",
+      "target": "both",
+      "text": "YOU WERE KNOCKED OUT BY FALLING",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-zone-self-downed-text",
+          "action": "zone-downed",
+          "subject": "zone",
+          "key": "self-death:zone",
+          "text": "YOUWEREKNOCKEDOUTBYFALLING",
+          "weapon": ""
+        }
+      ]
+    },
+    {
+      "name": "fall damage simplified Chinese",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "你因坠落遭击倒",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-zone-self-downed-text",
+          "action": "zone-downed",
+          "subject": "zone",
+          "key": "self-death:zone",
+          "text": "你因坠落遭击倒",
+          "weapon": ""
+        }
+      ]
+    },
+    {
+      "name": "fall damage traditional Chinese",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "您因墜落遭擊倒",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-zone-self-downed-text",
+          "action": "zone-downed",
+          "subject": "zone",
+          "key": "self-death:zone",
+          "text": "您因墜落遭擊倒",
+          "weapon": ""
+        }
+      ]
+    },
+    {
+      "name": "self subject is ignored",
+      "language": "en",
+      "target": "both",
+      "text": "YOU killed YOU",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "eliminate",
+          "subject": "YOU",
+          "key": "self-death:eliminate:you",
+          "text": "YOUkilledYOU",
+          "weapon": ""
+        }
+      ]
+    },
+    {
+      "name": "noise is ignored",
+      "language": "en",
+      "target": "both",
+      "text": "Winner Winner Chicken Dinner",
+      "expected": []
+    },
+    {
+      "name": "mixed notifications line boundaries",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "您以AKM擊倒Alpha\nEnemy KILLED YOU with M416\n你淘汰了Bravo",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "subject": "AlphaEnemyKILLEDYOUwithM416你淘汰了Bravo",
+          "key": "own-kill:knock:alphaenemykilledyouwithm416你淘汰了bravo",
+          "text": "您以AKM擊倒AlphaEnemyKILLEDYOUwithM416你淘汰了Bravo",
+          "weapon": "AKM"
+        }
+      ],
+      "note": "Mixed script input under explicit zh-Hant, matching the supported historical language contract; mixed is not a supported profile."
+    },
+    {
+      "name": "scoreboard assist simplified Chinese retained",
+      "language": "zh-Hans",
+      "target": "both",
+      "text": "你淘汰了Enemy淘汰数2协助1",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Enemy",
+          "key": "own-kill:eliminate:enemy",
+          "text": "你淘汰了Enemy淘汰数2协助1",
+          "weapon": ""
+        }
+      ]
+    },
+    {
+      "name": "scoreboard assist traditional Chinese retained",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "您擊殺Enemy擊殺數2助殺1",
+      "expected": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "subject": "Enemy",
+          "key": "own-kill:eliminate:enemy",
+          "text": "您擊殺Enemy擊殺數2助殺1",
+          "weapon": ""
+        }
+      ]
+    },
+    {
+      "name": "self subjects in both languages ignored",
+      "language": "zh-Hant",
+      "target": "both",
+      "text": "你淘汰了你\nYOU killed YOU",
+      "expected": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "eliminate",
+          "subject": "你",
+          "key": "self-death:eliminate:你",
+          "text": "你淘汰了你YOUkilledYOU",
+          "weapon": ""
+        }
+      ],
+      "note": "Mixed script input under explicit zh-Hant, matching the supported historical language contract; mixed is not a supported profile."
+    }
+  ]
+}

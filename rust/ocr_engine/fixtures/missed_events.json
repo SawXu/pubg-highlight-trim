@@ -1,0 +1,36 @@
+{
+  "source_git_sha": "a070076526f918b0ef7f1848994d69363d5c1291",
+  "frames": [
+    {
+      "image": "23.04.41.02_32.png",
+      "image_sha256": "1aa069d7e6151e61578173c2dd5bf859c10b8358a75946c470fd037b84f6a209",
+      "target": "own-kill",
+      "action": "knock",
+      "key_sha256": "d75f033d7c912942efe510d72e971fefe03f4a6494b23a55f9afd031f6ed5af9",
+      "identity_sha256": "cc5713fb0b9bffd90233cd7ac38a23974f12dd9daddc7ad74e8e2e0f2742555b",
+      "identity_chars": 15,
+      "video_identity_sha256": "6043ad2514df196f795aa58aadc5da941a795fe182a63e8301ece0985aed7c4e",
+      "video_identity_chars": 10
+    },
+    {
+      "image": "23.09.16.04_64.png",
+      "image_sha256": "4602a2f77ee8db3de6c1ef9afa928fa59fb2aa6cb52bcac5e50c6936fc63ffc9",
+      "target": "own-kill",
+      "action": "eliminate",
+      "key_sha256": "c3aac0bbcaef0a25c05f983cd609e15b32590c2b9c9f793496c78a504baadfd8",
+      "identity_sha256": "2a819a9cbe8c86006bfa5c02f87c7b3b5ea6c4a2aecc183e78a67d1dc6afe581",
+      "identity_chars": 6
+    },
+    {
+      "image": "23.20.15.09_2.png",
+      "image_sha256": "b6245481d584e3441e2645c3a2ec17e439d2593125392d7375feec580e7c7d35",
+      "target": "self-death",
+      "action": "knock",
+      "key_sha256": "4d2dc808eccf1c2be5a76930dd6fe63a567c1b9ff322ee1dd77ab7cc5605db29",
+      "identity_sha256": "617e429b614774c59e0787f3d4724ea3a979ccd0bbbecf327a66667f39b36d15",
+      "identity_chars": 8,
+      "video_identity_sha256": "cdf4da448d8ca9e44daf037ded75316049253615bbb14b7312688d5e6f2f009a",
+      "video_identity_chars": 5
+    }
+  ]
+}

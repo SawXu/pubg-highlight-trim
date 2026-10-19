@@ -1,0 +1,336 @@
+{
+  "schema": "pubg-highlight-trim/roi-reference/v2",
+  "source_git_sha": "a070076526f918b0ef7f1848994d69363d5c1291",
+  "engine_sha256": "2ac4becd25509395a93201696207951bd67eda6087b435b0b7fd98cb420dec06",
+  "frames": [
+    {
+      "frame_id": 1,
+      "image_sha256": "622417f08b296ccc05b6610558c687354ee8e8f902c66cefdd23499f5f8a1977",
+      "language": "zh-Hans",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "51a95d2ee157f5aea098cc75ee9c5ce7227615216d6801a1c5c6e1cb1e06d6ec",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "knock",
+          "weapon": "AUG",
+          "subject_sha256": "b8265022e5087f6c91b69884cb4190bfec5d23865a118a6f02fa5d0704c4ea0c",
+          "key_sha256": "3bf6188198c11107af391c79df39d8d191e0bfb820e7caf764ede0292959f79a",
+          "text_sha256": "51a95d2ee157f5aea098cc75ee9c5ce7227615216d6801a1c5c6e1cb1e06d6ec"
+        }
+      ]
+    },
+    {
+      "frame_id": 2,
+      "image_sha256": "399321f72b1a14d57b9fe0119377db6d667e3d87445ebb9ed1f2c8555ddf5d30",
+      "language": "zh-Hans",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "bcbdc6d744dbcefc3b2591c4fcfd25bfe78cbc09b74c41456b616137ce35973b",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "knock",
+          "weapon": "MP5K",
+          "subject_sha256": "59513dfda9b2136d60d63e51841cf082e54de37f07712ac7054327e261f5d52a",
+          "key_sha256": "ccf90baf5ea80fe53ee1f4a94e28d2257816e3c758bb591f604ad6dcbb0c0ad8",
+          "text_sha256": "bcbdc6d744dbcefc3b2591c4fcfd25bfe78cbc09b74c41456b616137ce35973b"
+        }
+      ]
+    },
+    {
+      "frame_id": 3,
+      "image_sha256": "cb5a67eb95c01e6b3ef0aaafad6168a4dd54a648727be7bc1fe226dd99970b68",
+      "language": "zh-Hans",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "16421071f761500af4a42fab6a463f8d710fcf032d71b3002e25c2f5948af7f2",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "knock",
+          "weapon": "UMP命中头部",
+          "subject_sha256": "867d10fe73662e2cbf7464cf333f1f083435ebc35c338386b3fa03dab9090fad",
+          "key_sha256": "ebacc9075722fe7478c8f9d82fca270f3c7ad285c1ffb5752a1d9c21e7592cf0",
+          "text_sha256": "16421071f761500af4a42fab6a463f8d710fcf032d71b3002e25c2f5948af7f2"
+        }
+      ]
+    },
+    {
+      "frame_id": 4,
+      "image_sha256": "d8acda6fb686f2084bd781b5f970420f0ef5b22964a354e442947b60d64e20b3",
+      "language": "zh-Hans",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "f32be9fd766f4d345d69a42a8f29bcd218e3f856d69cc3e382f9b2037bcb2019",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "德拉贡诺夫",
+          "subject_sha256": "ff600852dbb91eb06d406c27987ac926aaf8e786785297126effb872bd0679d5",
+          "key_sha256": "3129b0ed6a6995eaee1c11d24a2f49fb2cbbb0420dc847188ad8b63b296fd14a",
+          "text_sha256": "f32be9fd766f4d345d69a42a8f29bcd218e3f856d69cc3e382f9b2037bcb2019"
+        }
+      ]
+    },
+    {
+      "frame_id": 5,
+      "image_sha256": "4453f431e75b26e71d6f28cc148f2a215d5121d11f6d3ff591c3c848d7ec8034",
+      "language": "zh-Hans",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "6f33911901be6822a5b296b3e3252a5a7289f82a9291a32b37034be130a8da4a",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "S686",
+          "subject_sha256": "3996b8dccf36136f279705ed88f72032c12045e6e49a5e219574d0878f4fe206",
+          "key_sha256": "8750bb733bd99ad0b4bd79417c29d9dfa56a0bd06a5597e859c57d401986295d",
+          "text_sha256": "af914fd401b624cf08818d7a93e49c3506e41a748145e1dd6dc2be7b51840b0e"
+        }
+      ]
+    },
+    {
+      "frame_id": 6,
+      "image_sha256": "bdd02634600755cfb6a2c83df1532045539df3ed9ffca46d15712cc908638561",
+      "language": "zh-Hans",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "254f1fd26e467dffdecc24998ae192ab91734628ff35e2873d0344d85a031e4e",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "S686命中头部",
+          "subject_sha256": "b5e81b126da63cfcbcafbb19c8e3c82218bd16ed92ecea55eb33e253690b008f",
+          "key_sha256": "bd6a366d4a6429530e387eaf5627be806efb0c69b966419659408100a070a63c",
+          "text_sha256": "254f1fd26e467dffdecc24998ae192ab91734628ff35e2873d0344d85a031e4e"
+        }
+      ]
+    },
+    {
+      "frame_id": 7,
+      "image_sha256": "3e233b6841c5c5b7ef8e3fb0d24035903fd3fe3fd1dbff6a366a9e37fa50c7a0",
+      "language": "zh-Hant",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "2dcd7d4d7d03a3407c1c5499446ea4ec5c68f08bcfc3cb82e359fc5939f7c428",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "knock",
+          "weapon": "BerylM762",
+          "subject_sha256": "4f6ea7b084e33ace83de250058023ca213ab1315216aadbb6d027e117633af2b",
+          "key_sha256": "db5e32006159324755b042a4cf292737117b656bb2c0df0e83af9a66b5e671ca",
+          "text_sha256": "2dcd7d4d7d03a3407c1c5499446ea4ec5c68f08bcfc3cb82e359fc5939f7c428"
+        }
+      ]
+    },
+    {
+      "frame_id": 8,
+      "image_sha256": "4196c366a37e4ca41fd0a21edf77a3e6769e3f0d0fb12858ed0ef6b09d3472b0",
+      "language": "zh-Hant",
+      "event_kind": "eliminate",
+      "normalized_ocr_sha256": "6fdd24fcfe1bceb5e107f13df49731c85bcdab9511a035fc3d65f531377461b2",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "eliminate",
+          "weapon": "MP5K",
+          "subject_sha256": "95b842efa17bf4f6b7fdb6b290d48cb2fc1a082bcbfddb9146fe0b3a9b8f99bb",
+          "key_sha256": "fc2cb664dc8ca3f600d040534eb4c468ec2dbc479bfd19550f8f9d4369d4d834",
+          "text_sha256": "6fdd24fcfe1bceb5e107f13df49731c85bcdab9511a035fc3d65f531377461b2"
+        }
+      ]
+    },
+    {
+      "frame_id": 9,
+      "image_sha256": "de62a802fec2d8bd46401bc9af9737353c1fe7545c66556d465316aa8bece25c",
+      "language": "zh-Hant",
+      "event_kind": "eliminate",
+      "normalized_ocr_sha256": "c06cb4fa90a2ff7c39210303a4bbd8633f8c1ec9b539a48f80d770c0f44007e7",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "eliminate",
+          "weapon": "MP5K",
+          "subject_sha256": "fc20653d807b42330617eb31d9da4e277dca9d6c0c6e0c1ccc8359760b08572a",
+          "key_sha256": "44f6427a8c9d067583ac72ac3493a9663f1785fc52186454d17641ada12f09d2",
+          "text_sha256": "c06cb4fa90a2ff7c39210303a4bbd8633f8c1ec9b539a48f80d770c0f44007e7"
+        }
+      ]
+    },
+    {
+      "frame_id": 10,
+      "image_sha256": "ef80360e6ad2da76cfc96f028dea1ab378c6988082db0242d476d42de3b508c8",
+      "language": "zh-Hans",
+      "event_kind": "eliminate",
+      "normalized_ocr_sha256": "bb4dafabd548999847009d611a2e421ffbab4feb7c4284433932c406946991da",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "eliminate",
+          "weapon": "BeryIM762",
+          "subject_sha256": "437ec198f53c08f4012892b65f3b6eb94b9a31fbb330115282a400a66bb384cf",
+          "key_sha256": "0a0bf6829ffe3661bb4445159f808041cbfdd251aa86825b89119812d8c70a44",
+          "text_sha256": "ed1a863cb1bd513232a8088a8f515ec03ac1ee2838a200552e5a92316453270e"
+        }
+      ]
+    },
+    {
+      "frame_id": 11,
+      "image_sha256": "556f213f47a08af579083f82828f1a44d6b349de2a0292071bba4f98c89ae11d",
+      "language": "zh-Hant",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "ec7d73d454708ac09d48b6d7eda2e8d6c232f2c01a223f3e311a9b62b2506b8c",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "M16A4爆頭",
+          "subject_sha256": "cd929971944d9f3b19bd42a936519eddd59b6f4d40212c9a80e691e47f1af75d",
+          "key_sha256": "5e662ddaf402c4bc08288ebbe406d430bf4de296bc3fedc37ef251533815814d",
+          "text_sha256": "ec7d73d454708ac09d48b6d7eda2e8d6c232f2c01a223f3e311a9b62b2506b8c"
+        }
+      ]
+    },
+    {
+      "frame_id": 12,
+      "image_sha256": "bc8a5a01024d7e09e3834a7be37fffd470f4e13016e6fc1321582616b25026af",
+      "language": "zh-Hans",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "642fd09959694807660419d0d2d4ec83baa598d36fe5d4e22a6861fc9a925a12",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "BerylM762",
+          "subject_sha256": "c4d60166ab43da0cb30994808c60ff48c4522311f35549bfdbf8cc02c1a5efe0",
+          "key_sha256": "2935e617255ba7b4e1f825509674a701e5a664ac8ca9b967a2f5d3c98e27bfec",
+          "text_sha256": "642fd09959694807660419d0d2d4ec83baa598d36fe5d4e22a6861fc9a925a12"
+        }
+      ]
+    },
+    {
+      "frame_id": 13,
+      "image_sha256": "602ba82ec9f4659e5105daaf081f5447c6f53a384ec5eec1e2f1f777449add61",
+      "language": "en",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "426a598e3fdc161246427f3ec4ecccaa0a39daa96970741b9c7af348e3e351fa",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "knock",
+          "weapon": "UMP",
+          "subject_sha256": "ea90ca488e94240b077ab8f8b9d9f34f5f5337908ff554b017a1fac0b803a63d",
+          "key_sha256": "85b8aa4287cfb819844bd74cd0784c0c8c0ee9be3017cd0c239c101973ead1b6",
+          "text_sha256": "426a598e3fdc161246427f3ec4ecccaa0a39daa96970741b9c7af348e3e351fa"
+        }
+      ]
+    },
+    {
+      "frame_id": 14,
+      "image_sha256": "3acc085d2754dd9b1f88d4ff99f3ad06598562549964f715e492ec45caad182c",
+      "language": "en",
+      "event_kind": "eliminate",
+      "normalized_ocr_sha256": "49e1d275d59242d6723d5df83e86707dda3970657021fd72966a6abb2f82cc06",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-fuzzy-self-text",
+          "action": "eliminate",
+          "weapon": "",
+          "subject_sha256": "ab0c8d2d547bf67cb7f21c4f8ef869f96e94ee62fb182a1b597824995504527e",
+          "key_sha256": "24da5a5b4e3123cfa77c7cf0fc3113f09c7e2370c8d8abfb1f8ff8378a21a8ac",
+          "text_sha256": "49e1d275d59242d6723d5df83e86707dda3970657021fd72966a6abb2f82cc06"
+        }
+      ]
+    },
+    {
+      "frame_id": 15,
+      "image_sha256": "6b483a71da73fbfe34ad45303c474ad706e7664b784e56de795f3c62ab0d94f7",
+      "language": "en",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "d2400b80cd894513eaf21e8e014d97bbb87d00989cd601f9a21669d80bdae4d6",
+      "event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "knock",
+          "weapon": "M249",
+          "subject_sha256": "fbfe8a2613066d6f3142fad095d395319b7f2398afaa322347d5955c973ae8c8",
+          "key_sha256": "a0825c3ed11ad3f949d50843285852984705f8bcb295d0c764e8361b48446972",
+          "text_sha256": "d2400b80cd894513eaf21e8e014d97bbb87d00989cd601f9a21669d80bdae4d6"
+        }
+      ]
+    },
+    {
+      "frame_id": 16,
+      "image_sha256": "8690cbcf6067a5d91c1dfcab427ac552c73f9573515b035e38d1172ed57719d6",
+      "language": "en",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "1d48a12af032681ef9425869a17164fbe6c05be7547a00f96f393e3bb5af578e",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "AKM",
+          "subject_sha256": "75c66c8606add022f6c6adcd9e3b0220fbe1f269b828e6aae958ec183ad1db06",
+          "key_sha256": "efa0aa8d0410c2b72affc568a7d894d5ff14d2bcafbb7dbe1c283e272a8e958a",
+          "text_sha256": "1d48a12af032681ef9425869a17164fbe6c05be7547a00f96f393e3bb5af578e"
+        }
+      ]
+    },
+    {
+      "frame_id": 17,
+      "image_sha256": "f248a54ed4b7fdff630abf1a1cb0036575dc4e8ca3ad542271ff1f8f852a486d",
+      "language": "en",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "ee060655d34a7ae17503761b2c237e5cf7aec337190472306b022be4acd265c8",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "MicroUZI",
+          "subject_sha256": "ba3d5ec4b3331475464dc4a43f049eed33067d2035a64139ac303f3df9e60f09",
+          "key_sha256": "751590fd71f9c310e625c3ef2c680c66124c53844bf63bb4abed95e4ea5934ca",
+          "text_sha256": "ee060655d34a7ae17503761b2c237e5cf7aec337190472306b022be4acd265c8"
+        }
+      ]
+    },
+    {
+      "frame_id": 18,
+      "image_sha256": "72a815bdf3e669cbc19b6198735dbab567eaee97447e132ba7ea5d7b225f5411",
+      "language": "en",
+      "event_kind": "knock",
+      "normalized_ocr_sha256": "59703ce59d3eae8ee3c6ae53e7c330f47b5f7273fe1f4381f18f142b8b814179",
+      "event_signatures": [
+        {
+          "target": "own-kill",
+          "method": "paddle-own-kill-text",
+          "action": "knock",
+          "weapon": "AKM",
+          "subject_sha256": "23b96ff92458a9f982d6bc3b1235812d5a3e00144cf7c037287310b579306186",
+          "key_sha256": "e29c4a84c47cc2033c5ef9940f32f4e4937d9a5ff4e2fd4bd0be9464fc783873",
+          "text_sha256": "59703ce59d3eae8ee3c6ae53e7c330f47b5f7273fe1f4381f18f142b8b814179"
+        }
+      ]
+    }
+  ],
+  "model_sha256": {
+    "det.onnx": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
+    "rec.onnx": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+    "dict.txt": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"
+  }
+}
