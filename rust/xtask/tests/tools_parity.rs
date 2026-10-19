@@ -3,12 +3,15 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
+    sync::atomic::{AtomicUsize, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+static TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 fn temp() -> PathBuf {
     let p = std::env::temp_dir().join(format!(
-        "xtask-parity-{}-{}",
+        "xtask-parity-{}-{}-{}",
         std::process::id(),
+        TEMP_ID.fetch_add(1, Ordering::Relaxed),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
