@@ -33,11 +33,8 @@ fn explicit_device_is_reported_on_fallback_and_strict_initialization_fails() {
     assert_eq!(info.requested, Provider::DirectMl);
     assert_eq!(info.provider, Provider::Cpu);
     assert_eq!(info.device_id, Some(i32::MAX));
-    assert!(info
-        .fallback_reason
-        .unwrap()
-        .contains("directml-init-failed"));
-    assert!(PpOcrRecognizer::from_model_dir_with_provider_and_device(
+    let fallback_reason = info.fallback_reason.unwrap();
+    let strict_reason = PpOcrRecognizer::from_model_dir_with_provider_and_device(
         &dir,
         &manifest,
         1,
@@ -46,6 +43,25 @@ fn explicit_device_is_reported_on_fallback_and_strict_initialization_fails() {
         i32::MAX,
     )
     .err()
-    .unwrap()
-    .contains("directml-init-failed"));
+    .unwrap();
+    for reason in [&fallback_reason, &strict_reason] {
+        #[cfg(all(feature = "directml", windows))]
+        if !reason.starts_with("directml-dll-missing:") {
+            assert!(reason.contains("Ort error: "), "{reason}");
+            if reason.contains("887A0002") || reason.contains("887a0002") {
+                assert!(reason.starts_with("directml-no-device:"), "{reason}");
+            } else {
+                // Some native ORT builds return an empty message. Retain their
+                // error code rather than falsely claim hardware is absent.
+                assert!(reason.contains("Error { code:"), "{reason}");
+                assert!(reason.starts_with("directml-init-failed:"), "{reason}");
+            }
+        }
+        assert!(
+            reason.starts_with("directml-init-failed:")
+                || reason.starts_with("directml-dll-missing:")
+                || reason.starts_with("directml-no-device:"),
+            "{reason}"
+        );
+    }
 }

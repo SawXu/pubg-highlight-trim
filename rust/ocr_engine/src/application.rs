@@ -343,6 +343,7 @@ mod production {
                             object.remove("source");
                         }
                         provider["source_index"] = json!(index + 1);
+                        provider["provider_mode"] = json!(c.ocr_provider.code());
                         if let Some(reason) = provider["fallback_reason"].as_str() {
                             provider["fallback_reason"] = json!(
                                 crate::provider_diagnostics::redact(reason, &settings.model_dir)
@@ -453,7 +454,7 @@ mod production {
                             }
                             let scan_result=scan(job, tools, &engines[lang]);
                             let info=engines[lang].provider_info();
-                            provider=Some(json!({"source_index":index + 1,"provider_requested":crate::provider_name(info.requested),"provider_actual":crate::provider_name(info.provider),"device_id":info.device_id,"model_version":settings.manifest.model_version,"fallback_reason":info.fallback_reason.as_deref().map(|reason| crate::provider_diagnostics::redact(reason, &settings.model_dir)),"cache_hit":false}));
+                            provider=Some(json!({"source_index":index + 1,"provider_mode":mode.code(),"provider_requested":crate::provider_name(info.requested),"provider_actual":crate::provider_name(info.provider),"device_id":info.device_id,"model_version":settings.manifest.model_version,"fallback_reason":info.fallback_reason.as_deref().map(|reason| crate::provider_diagnostics::redact(reason, &settings.model_dir)),"cache_hit":false}));
                             let mut result=scan_result?;
                             result.provider=provider.clone();
                             Ok(result)

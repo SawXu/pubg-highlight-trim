@@ -265,7 +265,7 @@ fn build_cpu_pipeline(
             utf8_path(dictionary)?,
             threads,
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| provider_diagnostics::error_chain(&error))?;
     Ok(pipeline)
 }
 
@@ -290,24 +290,50 @@ static DIRECTML_INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(all(feature = "directml", windows))]
 fn directml_runtime_available() -> Result<(), String> {
+    directml_runtime_library_available("directml.dll")
+}
+
+#[cfg(all(feature = "directml", windows))]
+fn directml_runtime_library_available(library: &str) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
 
+    #[link(name = "kernel32")]
     extern "system" {
-        fn LoadLibraryW(name: *const u16) -> *mut std::ffi::c_void;
+        fn LoadLibraryExW(
+            name: *const u16,
+            file: *mut std::ffi::c_void,
+            flags: u32,
+        ) -> *mut std::ffi::c_void;
         fn FreeLibrary(handle: *mut std::ffi::c_void) -> i32;
+        fn SetThreadErrorMode(mode: u32, old_mode: *mut u32) -> i32;
+        fn GetThreadErrorMode() -> u32;
     }
 
-    let name: Vec<u16> = std::ffi::OsStr::new("directml.dll")
+    let name: Vec<u16> = std::ffi::OsStr::new(library)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
     unsafe {
-        let handle = LoadLibraryW(name.as_ptr());
-        if handle.is_null() {
+        let mut old_mode = 0;
+        // Thread-local: do not affect concurrent CPU workers or show loader UI.
+        if SetThreadErrorMode(GetThreadErrorMode() | 0x0001 | 0x8000, &mut old_mode) == 0 {
             return Err(format!(
-                "directml.dll unavailable: {}",
+                "could not suppress DirectML loader dialogs: {}",
                 std::io::Error::last_os_error()
             ));
+        }
+        // Only deployment/system locations; avoid slow current-directory/PATH
+        // searches (which may include disconnected network shares).
+        let handle = LoadLibraryExW(name.as_ptr(), std::ptr::null_mut(), 0x0200 | 0x0800);
+        let error = std::io::Error::last_os_error();
+        SetThreadErrorMode(old_mode, std::ptr::null_mut());
+        if handle.is_null() {
+            let code = if matches!(error.raw_os_error(), Some(126 | 1157)) {
+                "directml-dll-missing: "
+            } else {
+                ""
+            };
+            return Err(format!("{code}{library} unavailable: {error}"));
         }
         FreeLibrary(handle);
     }
@@ -363,7 +389,7 @@ fn build_directml_pipeline(
             threads,
             Some(directml_session_builder),
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| provider_diagnostics::error_chain(&error))?;
     Ok(pipeline)
 }
 
@@ -483,11 +509,15 @@ impl PpOcrRecognizer {
                             provider: Provider::Cpu,
                             requested: Provider::DirectMl,
                             device_id: Some(device_id),
-                            fallback_reason: Some(format!("directml-init-failed: {error}")),
+                            fallback_reason: Some(
+                                provider_diagnostics::directml_initialization_failure(&error),
+                            ),
                         },
                     ),
                     Err(error) => {
-                        return Err(format!("directml-init-failed: {error}"));
+                        return Err(provider_diagnostics::directml_initialization_failure(
+                            &error,
+                        ));
                     }
                 }
             }
@@ -517,7 +547,7 @@ impl PpOcrRecognizer {
         let result = state
             .pipeline
             .detect(&image, 0, 960, 0.3, 0.6, 1.6, false, false)
-            .map_err(|error| error.to_string());
+            .map_err(|error| provider_diagnostics::error_chain(&error));
         let result = match result {
             Err(error)
                 if state.info.provider == Provider::DirectMl && self.allow_provider_fallback =>
@@ -534,7 +564,7 @@ impl PpOcrRecognizer {
                 state
                     .pipeline
                     .detect(&image, 0, 960, 0.3, 0.6, 1.6, false, false)
-                    .map_err(|error| error.to_string())?
+                    .map_err(|error| provider_diagnostics::error_chain(&error))?
             }
             other => other?,
         };
@@ -977,6 +1007,37 @@ mod tests {
         });
         assert_eq!(r.status, OcrStatus::InvalidRoi);
     }
+    #[cfg(all(feature = "directml", windows))]
+    #[test]
+    fn missing_directml_runtime_precheck_is_fast_and_restores_error_mode() {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetThreadErrorMode() -> u32;
+        }
+        let before = unsafe { GetThreadErrorMode() };
+        let started = Instant::now();
+        let error = super::directml_runtime_library_available(
+            "pubg-ocr-definitely-missing-directml-runtime.dll",
+        )
+        .unwrap_err();
+        assert!(error.starts_with("directml-dll-missing:"), "{error}");
+        assert!(error.contains("os error 126"), "{error}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert_eq!(unsafe { GetThreadErrorMode() }, before);
+    }
+
+    #[cfg(all(feature = "directml", windows))]
+    #[test]
+    fn successful_runtime_precheck_restores_error_mode() {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetThreadErrorMode() -> u32;
+        }
+        let before = unsafe { GetThreadErrorMode() };
+        super::directml_runtime_library_available("kernel32.dll").unwrap();
+        assert_eq!(unsafe { GetThreadErrorMode() }, before);
+    }
+
     #[test]
     fn missing_model_is_explicit() {
         let c = OcrEngineConfig {

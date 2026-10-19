@@ -16,6 +16,7 @@ $inputDir = Join-Path $tempRoot $unicodeInputName
 $outputDir = Join-Path $tempRoot "output"
 $oldTemp = $env:TEMP; $oldTmp = $env:TMP
 $oldBackend = $env:PUBG_OCR_BACKEND; $oldProvider = $env:PUBG_OCR_PROVIDER
+$oldDevice = $env:PUBG_OCR_DIRECTML_DEVICE_ID
 $aclLocked = $false
 $firewallRules = @()
 $networkIsolation = ($env:GITHUB_ACTIONS -eq 'true')
@@ -43,6 +44,26 @@ function Verify-Models([string]$ModelDir) {
             # Full ONNX protobuf decoding and contract names are enforced by
             # cargo xtask verify during packaging; inference below validates that
             # the shipped bytes can actually be loaded by the Rust engine.
+        }
+    }
+}
+function Assert-DefaultProvider($Summary) {
+    $providers = @($Summary.ocr_providers)
+    if ($providers.Count -eq 0 -or $null -eq $providers[0]) { throw 'Default CLI scan produced no OCR provider diagnostics' }
+    foreach ($provider in $providers) {
+        if ($provider.provider_mode -ne 'auto' -or $provider.provider_requested -ne 'directml' -or $provider.device_id -ne 0) {
+            throw "Default CLI must select mode=auto/requested=directml/device_id=0: $($provider | ConvertTo-Json -Compress)"
+        }
+        if ($provider.provider_actual -eq 'directml') {
+            if (-not [string]::IsNullOrWhiteSpace([string]$provider.fallback_reason)) { throw 'Successful DirectML must not have a fallback reason' }
+        } elseif ($provider.provider_actual -eq 'cpu') {
+            if ([string]::IsNullOrWhiteSpace([string]$provider.fallback_reason) -or $provider.fallback_reason -notlike 'directml-*') {
+                throw 'Default CPU fallback must explain the DirectML failure'
+            }
+        } else { throw "Default CLI did not perform real CPU/DirectML OCR: $($provider.provider_actual)" }
+        # Only no-GPU CI declares this requirement. A local GPU may succeed.
+        if ($env:PUBG_OCR_REQUIRE_CPU_FALLBACK -eq '1' -and $provider.provider_actual -ne 'cpu') {
+            throw 'No-GPU assurance requires the default auto request to actually fall back to CPU'
         }
     }
 }
@@ -111,6 +132,7 @@ try {
     $env:PATH = (Join-Path $copy "_internal\vendor\ffmpeg") + ";" + $env:PATH
     Remove-Item Env:PUBG_OCR_BACKEND -ErrorAction SilentlyContinue
     Remove-Item Env:PUBG_OCR_PROVIDER -ErrorAction SilentlyContinue
+    Remove-Item Env:PUBG_OCR_DIRECTML_DEVICE_ID -ErrorAction SilentlyContinue
 
     # The shipped tree must remain read-only while model loading and inference run.
     $smokeUser = if ($env:USERDOMAIN) { "$env:USERDOMAIN\$env:USERNAME" } else { $env:USERNAME }
@@ -172,7 +194,7 @@ try {
         & $ffmpeg -hide_banner -loglevel error -f lavfi -i "color=c=black:s=320x240:d=1" -c:v mpeg4 -y $video
         if ($LASTEXITCODE -ne 0) { throw "Synthetic video creation failed" }
         Copy-Item -LiteralPath $video -Destination $videoCopy -Force
-        $args = @('--files', $video, $videoCopy, '--output-dir', $outputDir, '--scan-only', '--jobs', '2')
+        $args = @('--files', $video, $videoCopy, '--output-dir', $outputDir, '--scan-only', '--no-brightness-gate', '--jobs', '2')
         if ($VerboseScan) { $args += '--verbose' }
         $scanOutput = @(& $exe @args 2>&1)
         $scanExit = $LASTEXITCODE
@@ -188,6 +210,8 @@ try {
         }
         if ($null -eq $summaryData) { throw "Rust application CLI produced no summary.json or SUMMARY record; issue #69 is not integrated" }
         if ($summaryData.ocr_unavailable_reason) { throw "CLI scan OCR unavailable: $($summaryData.ocr_unavailable_reason)" }
+        Assert-DefaultProvider $summaryData
+        if (-not $VerboseScan -and ($scanOutput | Where-Object { [string]$_ -match 'OCR mode=' })) { throw 'Default non-verbose CLI leaked OCR provider diagnostics' }
         if (-not $summaryData.detectors -or $summaryData.detectors.PSObject.Properties.Count -eq 0 -or -not $summaryData.methods -or $summaryData.methods.PSObject.Properties.Count -eq 0) {
             throw "Rust application CLI has no real OCR inference result fields; #69 app integration is not complete"
         }
@@ -204,6 +228,7 @@ try {
         $eventSummaryLine = $eventLog | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^SUMMARY\s+' } | Select-Object -Last 1
         if (-not $eventSummaryLine) { throw "Offline public OCR-to-trim CLI returned no SUMMARY" }
         $eventSummary = ($eventSummaryLine -replace '^SUMMARY\s+', '') | ConvertFrom-Json
+        Assert-DefaultProvider $eventSummary
         Assert-PublicSmokeResult $eventSummary $eventVideo $sourceHash $ffmpeg (Join-Path $copy '_internal\vendor\ffmpeg\ffprobe.exe')
         Write-Host 'Offline public-fixture OCR, legacy report, trim, decode, duration and source-hash checks passed.'
     }
@@ -215,5 +240,6 @@ try {
     if ($null -ne $oldPath) { $env:PATH = $oldPath }
     if ($null -eq $oldBackend) { Remove-Item Env:PUBG_OCR_BACKEND -ErrorAction SilentlyContinue } else { $env:PUBG_OCR_BACKEND = $oldBackend }
     if ($null -eq $oldProvider) { Remove-Item Env:PUBG_OCR_PROVIDER -ErrorAction SilentlyContinue } else { $env:PUBG_OCR_PROVIDER = $oldProvider }
+    if ($null -eq $oldDevice) { Remove-Item Env:PUBG_OCR_DIRECTML_DEVICE_ID -ErrorAction SilentlyContinue } else { $env:PUBG_OCR_DIRECTML_DEVICE_ID = $oldDevice }
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -131,7 +131,7 @@ OCR options (advanced):
 | `--refine-step` | `0.5` | Seconds between refine-scan frames |
 | `--roi` | `0.30,0.66,0.70,0.75` | OCR crop ratios `x1,y1,x2,y2` |
 | `--ocr-width` | `768` | Downscale OCR ROI to this width; `0` disables |
-| `--ocr-provider` | `cpu` | Inference mode: `auto`, `cpu`, `directml`, or `directml-only`; case-insensitive, `dml` aliases `directml` |
+| `--ocr-provider` | `auto` | Inference mode: `auto`, `cpu`, `directml`, or `directml-only`; case-insensitive, `dml` aliases `directml` |
 | `--ocr-device-id` | `0` | Non-negative inference device index (0–2147483647), used by DirectML |
 | `--no-brightness-gate` | off | Disable the Rust bright outlined-text gate before coarse OCR |
 | `--brightness-gate-mode` | `light` | Gate strictness before coarse OCR: `light` only skips near-empty dark frames, `full` adds outlined-glyph and horizontal-structure checks, `none` disables filtering |
@@ -144,13 +144,13 @@ OCR options (advanced):
 - The selected output directory is the run's root. Trimmed clips are written under its `clips\` subdirectory; the default merged mp4, concat list, CSV, and summary remain in the root.
 - Use `--profile` to print per-clip timings for ffprobe, OCR predict, video frame seek/read, trim encoding, and total clip time. The same timing columns are also written to `检测与裁剪记录.csv`.
 
-OCR selection uses **CLI > environment > built-in default** independently for each option. `PUBG_OCR_PROVIDER` and the legacy `PUBG_OCR_DIRECTML_DEVICE_ID` remain supported; legacy provider aliases `default` (CPU) and `dml-only` also remain accepted. Explicit empty or whitespace-only provider values (CLI or environment) are invalid; unset the environment variable to use the default. With no settings, the backend is explicitly CPU, unchanged from v0.3.6; `auto` currently also means CPU, not automatic GPU selection. For example:
+OCR selection uses **CLI > environment > built-in default** independently for each option. `PUBG_OCR_PROVIDER` and the legacy `PUBG_OCR_DIRECTML_DEVICE_ID` remain supported; legacy provider aliases `default` (CPU) and `dml-only` also remain accepted. Explicit empty or whitespace-only provider values (CLI or environment) are invalid; unset the environment variable to use the default. With no settings, `auto` attempts a real DirectML session (DirectX 12) and falls back to CPU if unavailable. No hardware enumeration is performed. Use `--ocr-provider cpu` to restore the v0.3.6 CPU behavior; integrated GPUs may be slower than CPU. For example:
 
 ```powershell
 .\pubg-highlight-trim.exe "<input-directory>" --ocr-provider directml --ocr-device-id 0 --verbose
 ```
 
-`directml` falls back to CPU if DirectML initialization or inference fails; `directml-only` fails instead of silently downgrading. `--verbose` reports the selected mode, requested/actual backend, device index, fallback reason, and cache-hit state, including cache-only and failed runs (`actual=unknown` if initialization failed). The cache separates resolved backend, device index, and fallback policy (strict mode never reuses a permissive fallback cache); identical configurations still reuse cached scans. Invalid provider/device values exit with code 2 before producing a summary. Existing summary fields and CSV columns are unchanged.
+`directml` falls back to CPU if DirectML initialization or inference fails; `directml-only` fails instead of silently downgrading. `--verbose` reports the selected mode, requested/actual backend, device index, fallback reason, and cache-hit state, including cache-only and failed runs (`actual=unknown` if initialization failed). The cache separates resolved backend, device index, and fallback policy (strict mode never reuses a permissive fallback cache); identical configurations still reuse cached scans. Invalid provider/device values exit with code 2 before producing a summary. Provider diagnostics in `summary.json` include `provider_mode` (`auto`/`cpu`/`directml`/`directml-only`); `provider_requested` identifies the backend actually attempted (`directml` for auto). Fallback reasons distinguish a missing `directml.dll`, no usable DX12 device, and other initialization failures. Existing summary field names/types and CSV columns are unchanged.
 
 GUI and CLI use the same output layout. `<output>\clips\` contains individual trimmed videos; merged videos and their `.concat.txt` FFmpeg lists are in the output root. In split mode, each target with clips gets its own video. `检测与裁剪记录.csv` records per-source detection status, event time, clip range, and timings; `candidate_events.csv` stores candidate hints for later scans; `profile.json` stores phase timings. `summary.json` records source, retained/skipped counts, output paths, scan mode, language, merge state, and OCR/cache metadata; `merge_outputs` lists every generated target output while legacy single-output fields remain compatible.
 

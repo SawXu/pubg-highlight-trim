@@ -84,6 +84,9 @@ jobs:
     env:
       # Match the formal release build so tests reuse compatible Cargo outputs.
       RUSTFLAGS: "-C link-args=/DELAYLOAD:directml.dll -C link-args=delayimp.lib"
+      # Hosted runners have no GPU: real release inference must prove that the
+      # default auto/DirectML request falls back to working CPU OCR, not a mock.
+      PUBG_OCR_REQUIRE_CPU_FALLBACK: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-windows-setup
@@ -160,6 +163,8 @@ jobs:
         run: |
           cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test application_e2e -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { throw "CLI acceptance failed" }
+          cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test ocr_provider_e2e -- --ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw "Default auto fallback, provider cache and diagnostic acceptance failed" }
           cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test dedupe_cli -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { throw "Upstream overlapping-source batch acceptance failed" }
           cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test nonfinite_summary -- --ignored
