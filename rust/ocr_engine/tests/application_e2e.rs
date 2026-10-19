@@ -500,8 +500,15 @@ fn own_kill_cli_trims_merges_reports_and_reuses_valid_cache_without_touching_ori
     let s = summary(&o);
     assert_eq!(s["cache_hits"], 1);
     assert_eq!(s["cache_misses"], 0);
-    assert_eq!(s["ocr_providers"][0]["provider_requested"], "cpu");
-    assert_eq!(s["ocr_providers"][0]["provider_actual"], "cpu");
+    assert_eq!(s["ocr_providers"][0]["provider_mode"], "auto");
+    assert_eq!(s["ocr_providers"][0]["provider_requested"], "directml");
+    let provider = &s["ocr_providers"][0];
+    if provider["provider_actual"] == "cpu" {
+        assert!(provider["fallback_reason"].is_string());
+    } else {
+        assert_eq!(provider["provider_actual"], "directml");
+        assert!(provider["fallback_reason"].is_null());
+    }
     assert_eq!(
         s["ocr_providers"][0]["model_version"],
         "PP-OCRv6_medium_onnx"

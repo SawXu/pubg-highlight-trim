@@ -83,12 +83,12 @@ impl OcrProviderMode {
     }
     pub fn provider(self) -> crate::Provider {
         match self {
-            Self::Auto | Self::Cpu => crate::Provider::Cpu,
-            Self::Directml | Self::DirectmlOnly => crate::Provider::DirectMl,
+            Self::Cpu => crate::Provider::Cpu,
+            Self::Auto | Self::Directml | Self::DirectmlOnly => crate::Provider::DirectMl,
         }
     }
     pub fn allows_fallback(self) -> bool {
-        self == Self::Directml
+        matches!(self, Self::Auto | Self::Directml)
     }
 }
 fn ocr_provider(v: &str) -> Result<OcrProviderMode, String> {
@@ -281,8 +281,8 @@ pub struct Config {
     pub roi: [f64; 4],
     #[arg(long, default_value = "768", allow_hyphen_values = true)]
     pub ocr_width: i32,
-    /// OCR inference mode (auto currently uses CPU).
-    #[arg(long, env = "PUBG_OCR_PROVIDER", default_value = "cpu", value_parser = ocr_provider)]
+    /// OCR inference mode (auto tries DirectML, falling back to CPU).
+    #[arg(long, env = "PUBG_OCR_PROVIDER", default_value = "auto", value_parser = ocr_provider)]
     pub ocr_provider: OcrProviderMode,
     /// Inference device index; CLI overrides the legacy environment variable.
     #[arg(long, env = "PUBG_OCR_DIRECTML_DEVICE_ID", default_value = "0", value_parser = ocr_device, allow_hyphen_values = true)]

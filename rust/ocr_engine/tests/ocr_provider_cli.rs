@@ -10,8 +10,27 @@ fn provider_cli_accepts_modes_aliases_case_and_defaults() {
         assert_eq!(c.ocr_device_id, 3);
     }
     let c = Config::try_parse_from(["trim"]).unwrap();
-    assert_eq!(c.ocr_provider.code(), "cpu");
+    assert_eq!(c.ocr_provider.code(), "auto");
+    assert_eq!(
+        c.ocr_provider.provider(),
+        pubg_ocr_engine::Provider::DirectMl
+    );
+    assert!(c.ocr_provider.allows_fallback());
     assert_eq!(c.ocr_device_id, 0);
+}
+
+#[test]
+fn provider_modes_select_backend_and_fallback_policy() {
+    use pubg_ocr_engine::{config::OcrProviderMode, Provider};
+    for (mode, provider, fallback) in [
+        (OcrProviderMode::Auto, Provider::DirectMl, true),
+        (OcrProviderMode::Cpu, Provider::Cpu, false),
+        (OcrProviderMode::Directml, Provider::DirectMl, true),
+        (OcrProviderMode::DirectmlOnly, Provider::DirectMl, false),
+    ] {
+        assert_eq!(mode.provider(), provider);
+        assert_eq!(mode.allows_fallback(), fallback);
+    }
 }
 
 #[test]
