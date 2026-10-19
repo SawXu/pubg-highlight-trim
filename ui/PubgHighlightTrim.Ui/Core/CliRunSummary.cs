@@ -14,6 +14,9 @@ public sealed class CliRunSummary
     [JsonPropertyName("skipped_count")]
     public int SkippedCount { get; init; }
 
+    [JsonPropertyName("unreadable_count")]
+    public int UnreadableCount { get; init; }
+
     [JsonPropertyName("dry_run")]
     public bool DryRun { get; init; }
 
