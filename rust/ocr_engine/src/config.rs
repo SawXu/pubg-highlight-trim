@@ -64,6 +64,48 @@ pub enum GateMode {
     Light,
     None,
 }
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OcrProviderMode {
+    Auto,
+    Cpu,
+    Directml,
+    DirectmlOnly,
+}
+impl OcrProviderMode {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Cpu => "cpu",
+            Self::Directml => "directml",
+            Self::DirectmlOnly => "directml-only",
+        }
+    }
+    pub fn provider(self) -> crate::Provider {
+        match self {
+            Self::Auto | Self::Cpu => crate::Provider::Cpu,
+            Self::Directml | Self::DirectmlOnly => crate::Provider::DirectMl,
+        }
+    }
+    pub fn allows_fallback(self) -> bool {
+        self == Self::Directml
+    }
+}
+fn ocr_provider(v: &str) -> Result<OcrProviderMode, String> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "auto" => Ok(OcrProviderMode::Auto),
+        "cpu" | "default" => Ok(OcrProviderMode::Cpu),
+        "directml" | "dml" => Ok(OcrProviderMode::Directml),
+        "directml-only" | "dml-only" => Ok(OcrProviderMode::DirectmlOnly),
+        _ => Err("expected one of: auto, cpu, directml, directml-only (alias: dml)".into()),
+    }
+}
+fn ocr_device(v: &str) -> Result<i32, String> {
+    v.parse::<i32>()
+        .ok()
+        .filter(|n| *n >= 0)
+        .ok_or_else(|| "expected device id in 0..=2147483647".into())
+}
 fn number(v: &str) -> Result<f64, String> {
     // argparse's float accepts surrounding whitespace, digit separators and
     // signed/case-insensitive NaN/Infinity. Finite checks belong to OcrConfig,
@@ -239,6 +281,12 @@ pub struct Config {
     pub roi: [f64; 4],
     #[arg(long, default_value = "768", allow_hyphen_values = true)]
     pub ocr_width: i32,
+    /// OCR inference mode (auto currently uses CPU).
+    #[arg(long, env = "PUBG_OCR_PROVIDER", default_value = "cpu", value_parser = ocr_provider)]
+    pub ocr_provider: OcrProviderMode,
+    /// Inference device index; CLI overrides the legacy environment variable.
+    #[arg(long, env = "PUBG_OCR_DIRECTML_DEVICE_ID", default_value = "0", value_parser = ocr_device, allow_hyphen_values = true)]
+    pub ocr_device_id: i32,
     #[arg(long)]
     pub no_brightness_gate: bool,
     #[arg(long, alias = "gate-mode", value_enum)]
