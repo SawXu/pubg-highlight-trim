@@ -179,7 +179,7 @@ struct ReadingBlock {
 /// A row's anchor is never moved by later blocks, preventing a small noise box
 /// from chaining two otherwise separate rows together.
 #[cfg(any(feature = "onnx", test))]
-fn order_reading_blocks(mut blocks: Vec<ReadingBlock>) -> Vec<ReadingBlock> {
+fn reading_rows(mut blocks: Vec<ReadingBlock>) -> Vec<Vec<ReadingBlock>> {
     let mut rows: Vec<(u32, u32, Vec<ReadingBlock>)> = Vec::new();
     blocks.sort_by_key(|block| (block.bbox[1], block.bbox[0]));
     for block in blocks {
@@ -197,12 +197,17 @@ fn order_reading_blocks(mut blocks: Vec<ReadingBlock>) -> Vec<ReadingBlock> {
         }
     }
     rows.sort_by_key(|(anchor, _, _)| *anchor);
-    let mut ordered = Vec::with_capacity(rows.iter().map(|row| row.2.len()).sum());
-    for (_, _, mut row) in rows {
-        row.sort_by_key(|block| block.bbox[0]);
-        ordered.extend(row);
-    }
-    ordered
+    rows.into_iter()
+        .map(|(_, _, mut row)| {
+            row.sort_by_key(|block| block.bbox[0]);
+            row
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn order_reading_blocks(blocks: Vec<ReadingBlock>) -> Vec<ReadingBlock> {
+    reading_rows(blocks).into_iter().flatten().collect()
 }
 
 pub trait Recognizer: Send + Sync {
@@ -508,7 +513,7 @@ impl PpOcrRecognizer {
             }
             other => other?,
         };
-        let blocks = order_reading_blocks(
+        let rows = reading_rows(
             result
                 .text_blocks
                 .into_iter()
@@ -545,11 +550,17 @@ impl PpOcrRecognizer {
                 })
                 .collect(),
         );
-        let text = blocks
+        let text = rows
             .iter()
-            .map(|block| block.text.as_str())
+            .map(|row| {
+                row.iter()
+                    .map(|block| block.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
             .collect::<Vec<_>>()
-            .join(" ");
+            .join("\n");
+        let blocks: Vec<_> = rows.into_iter().flatten().collect();
         let scores = blocks.iter().map(|block| block.score).collect();
         let boxes = blocks.iter().map(|block| block.bbox).collect();
         Ok((text, scores, boxes))
@@ -756,6 +767,8 @@ mod tests {
                 bbox: [10, 22, 40, 42],
             },
         ];
+        let rows = reading_rows(blocks.clone());
+        assert_eq!(rows.iter().map(Vec::len).collect::<Vec<_>>(), [2, 1]);
         let ordered = order_reading_blocks(blocks);
         assert_eq!(
             ordered

@@ -25,7 +25,11 @@ fn baseline_text_cases_replay_exact_detached_python_outputs() {
             _ => panic!("unsupported baseline target"),
         };
         let language = language_profile(&case.language).unwrap();
-        let actual = extract_text_events(&case.text, target, Some(&language));
+        // This oracle records the old flat-text parser contract. Visual OCR row
+        // boundaries intentionally have new semantics since #73; their behavior
+        // is covered by events_contract/scanner and the real frame-008 test.
+        let flat = pubg_ocr_engine::events::normalize_text(&case.text);
+        let actual = extract_text_events(&flat, target, Some(&language));
         if actual != case.expected {
             differences.push(format!(
                 "{}: actual={actual:?}; expected={:?}",

@@ -63,6 +63,57 @@ fn real_roi_preprocessing_keeps_recognized_subjects() {
         );
     }
 }
+#[cfg(feature = "onnx")]
+#[test]
+#[ignore = "requires PUBG_OCR_MODEL_DIR and native ONNX runtime"]
+fn frame_008_hud_does_not_change_self_death_identity() {
+    use pubg_ocr_engine::events::{extract_self_events, language_profile};
+    use pubg_ocr_engine::{PpOcrRecognizer, Recognizer};
+    let dir = std::path::PathBuf::from(
+        std::env::var_os("PUBG_OCR_MODEL_DIR").expect("PUBG_OCR_MODEL_DIR"),
+    );
+    let recognizer = PpOcrRecognizer::from_paths(
+        &dir.join("det.onnx"),
+        &dir.join("rec.onnx"),
+        &dir.join("dict.txt"),
+        1,
+    )
+    .unwrap();
+    let mut rgb = image::open(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/real/frame_008.jpg"),
+    )
+    .unwrap()
+    .to_rgb8();
+    let (text, _) = recognizer
+        .recognize(rgb.as_raw(), rgb.width(), rgb.height())
+        .unwrap();
+    assert!(
+        text.contains('\n'),
+        "real OCR must preserve distinct HUD rows"
+    );
+    let profile = language_profile("zh-Hant").unwrap();
+    let noisy = extract_self_events(&text, Some(&profile));
+    // Remove only the preceding HUD row, without moving/resizing the notification.
+    for y in 0..18 {
+        for x in 0..rgb.width() {
+            rgb.put_pixel(x, y, image::Rgb([0, 0, 0]));
+        }
+    }
+    let (clean_text, _) = recognizer
+        .recognize(rgb.as_raw(), rgb.width(), rgb.height())
+        .unwrap();
+    let clean = extract_self_events(&clean_text, Some(&profile));
+    assert_eq!(noisy.len(), 1);
+    assert_eq!(clean.len(), 1);
+    assert_eq!(
+        noisy[0].key, clean[0].key,
+        "HUD visibility must not affect identity"
+    );
+    assert_eq!(noisy[0].subject, clean[0].subject);
+    assert_eq!(noisy[0].weapon, "MP5K");
+    assert_eq!(noisy[0].action, "eliminate");
+}
+
 #[test]
 fn color_grid_matches_all_frozen_opencv_color_conversions() {
     let f = fixture();

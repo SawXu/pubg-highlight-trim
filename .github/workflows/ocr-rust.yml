@@ -119,7 +119,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Upstream overlapping-source batch acceptance failed" }
           cargo test --locked --manifest-path rust/Cargo.toml --features cli --test nonfinite_summary -- --ignored
           if ($LASTEXITCODE -ne 0) { throw "Legacy explicit infinite-value wire compatibility failed" }
-          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test preprocess real_roi_preprocessing_keeps_recognized_subjects -- --ignored
+          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test preprocess -- --ignored
           if ($LASTEXITCODE -ne 0) { throw "Real ROI preprocessing acceptance failed" }
           cargo test --locked --manifest-path rust/Cargo.toml --features cli --lib ppocr_cpu_smoke_test -- --ignored
           if ($LASTEXITCODE -ne 0) { throw "Real model CPU acceptance failed" }

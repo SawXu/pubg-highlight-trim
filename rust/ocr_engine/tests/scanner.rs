@@ -135,6 +135,52 @@ impl ScanBackend for FixedBackend<'_> {
         self.clock
     }
 }
+#[test]
+fn multiline_hud_survives_scanner_refinement_and_cache() {
+    let mut case = fixtures()
+        .cases
+        .into_iter()
+        .find(|c| c.name == "ocr_cache_shared_by_multiple_subjects")
+        .unwrap();
+    case.config.target = "self-death".into();
+    case.config.language = "zh-Hant".into();
+    for interval in &mut case.primary {
+        interval.text =
+            "HUDNOISE EnemyB\n[TAG]EnemyAlpha以MP5K擊倒您\nOpponentBravo以M416擊倒您".into();
+    }
+    let mut backend = FixedBackend {
+        case: &case,
+        clock: 0.0,
+        decodes: 0,
+    };
+    let rules = language_profile("zh-Hant").unwrap();
+    let report = detect_events(
+        &mut backend,
+        &rules,
+        case.duration,
+        &case.candidates,
+        &case.config,
+    )
+    .unwrap();
+    let clean =
+        pubg_ocr_engine::events::extract_self_events("[TAG]EnemyAlpha以MP5K擊倒您", Some(&rules));
+    assert_eq!(
+        report.detections.len(),
+        2,
+        "different actors must not be merged"
+    );
+    assert_eq!(report.detections[0].event_key, clean[0].key);
+    let other =
+        pubg_ocr_engine::events::extract_self_events("OpponentBravo以M416擊倒您", Some(&rules));
+    assert_eq!(report.detections[1].event_key, other[0].key);
+    assert_eq!(report.detections[0].event_sec, Some(28.0));
+    assert_eq!(report.detections[1].event_sec, Some(28.0));
+    assert!(
+        report.stats.ocr_cache_hits > 0,
+        "must exercise cached refinement reads"
+    );
+}
+
 fn fixtures() -> Fixture {
     serde_json::from_str(include_str!("fixtures/scanner.json")).unwrap()
 }

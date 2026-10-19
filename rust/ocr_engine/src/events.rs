@@ -107,6 +107,19 @@ pub fn normalize_text(text: &str) -> String {
         .collect()
 }
 
+/// Normalize within OCR rows without discarding their semantic boundaries.
+pub fn normalize_ocr_text(text: &str) -> String {
+    text.lines()
+        .map(normalize_text)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn lines(text: &str) -> impl Iterator<Item = &str> {
+    text.lines().filter(|line| !line.is_empty())
+}
+
 fn resolve_profile(profile: Option<&LanguageProfile>) -> LanguageProfile {
     profile.cloned().unwrap_or_else(default_language_profile)
 }
@@ -480,6 +493,12 @@ pub fn extract_own_kill_events(
 }
 
 pub fn extract_self_events(text: &str, profile: Option<&LanguageProfile>) -> Vec<TextEvent> {
+    lines(text)
+        .flat_map(|line| extract_self_events_line(line, profile))
+        .collect()
+}
+
+fn extract_self_events_line(text: &str, profile: Option<&LanguageProfile>) -> Vec<TextEvent> {
     let profile = resolve_profile(profile);
     let p = profile.language;
     let s = normalize_text(text);
