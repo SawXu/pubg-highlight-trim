@@ -79,11 +79,18 @@ mod production {
         pub manifest: ModelManifest,
         pub provider: Provider,
         pub fallback: bool,
+        pub device_id: i32,
         pub threads: usize,
         pub identity: String,
     }
     impl EngineSettings {
         pub fn discover() -> Result<Self, String> {
+            use clap::Parser;
+            Self::from_config(
+                &Config::try_parse_from(["pubg-highlight-trim"]).map_err(|e| e.to_string())?,
+            )
+        }
+        pub fn from_config(config: &Config) -> Result<Self, String> {
             let mut roots = Vec::new();
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(p) = exe.parent() {
@@ -105,18 +112,10 @@ mod production {
                 ModelManifest::from_json_file(&manifest_path).map_err(|e| e.to_string())?;
             // Validation is required even for cache-only runs; names alone are not identity.
             crate::validate_manifest(&model_dir, &manifest).map_err(|e| e.to_string())?;
-            let raw = std::env::var("PUBG_OCR_PROVIDER").unwrap_or_default();
-            let p = raw.trim().to_lowercase();
-            let (provider, fallback) = match p.as_str() {
-                "" | "cpu" | "default" | "auto" => (Provider::Cpu, false),
-                "dml" | "directml" => (Provider::DirectMl, true),
-                "dml-only" | "directml-only" => (Provider::DirectMl, false),
-                _ => {
-                    return Err(format!(
-                        "unknown OCR provider {raw:?}; expected cpu, directml or directml-only"
-                    ))
-                }
-            };
+            let provider = config.ocr_provider.provider();
+            let fallback = config.ocr_provider.allows_fallback();
+            let device_id = config.ocr_device_id;
+            let p = crate::provider_name(provider);
             let threads = std::env::var("PUBG_OCR_THREADS")
                 .map(|s| {
                     s.parse::<usize>()
@@ -125,7 +124,7 @@ mod production {
                 .unwrap_or(Ok(1))?
                 .max(1);
             let identity = format!(
-                "application-scanner-v3:reading-order-v3:{}:{}:{}:{}:{p}:{threads}",
+                "application-scanner-v4:reading-order-v3:{}:{}:{}:{}:{p}:{device_id}:fallback={fallback}:{threads}",
                 manifest.model_version,
                 manifest.detector_sha256,
                 manifest.recognizer_sha256,
@@ -136,17 +135,19 @@ mod production {
                 manifest,
                 provider,
                 fallback,
+                device_id,
                 threads,
                 identity,
             })
         }
         pub fn engine(&self) -> Result<OcrEngine<PpOcrRecognizer>, String> {
-            let recognizer = PpOcrRecognizer::from_model_dir_with_provider(
+            let recognizer = PpOcrRecognizer::from_model_dir_with_provider_and_device(
                 &self.model_dir,
                 &self.manifest,
                 self.threads,
                 self.provider,
                 self.fallback,
+                self.device_id,
             )?;
             OcrEngine::new(
                 OcrEngineConfig {

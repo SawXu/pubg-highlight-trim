@@ -126,6 +126,8 @@ OCR 选项（进阶）：
 | `--refine-step` | `0.5` | 精修扫描帧间隔（秒） |
 | `--roi` | `0.30,0.66,0.70,0.75` | OCR 裁剪比例 `x1,y1,x2,y2` |
 | `--ocr-width` | `768` | OCR ROI 降采样宽度；`0` 禁用 |
+| `--ocr-provider` | `cpu` | 推理模式：`auto`、`cpu`、`directml`、`directml-only`；大小写不敏感，`dml` 为 `directml` 别名 |
+| `--ocr-device-id` | `0` | 非负推理设备序号（0–2147483647），用于 DirectML |
 | `--no-brightness-gate` | 关 | 禁用粗扫描前的 OpenCV 亮色描边文字门控 |
 | `--brightness-gate-mode` | `light` | 粗扫描前的门控严格度：`light` 仅跳过近乎全黑的帧，`full` 额外检查亮色描边字形和横向文字结构，`none` 完全不过滤 |
 
@@ -137,6 +139,14 @@ OCR 选项（进阶）：
 - 使用 `--split-merge-by-target --target both` 时每个源文件只扫描一次，但按被击杀/击杀分别合并；没有某类事件时不创建该类空视频。显式路径会追加 `_self-death` 或 `_own-kill` 后缀；中文 Windows 使用中文目标文件名，其他系统回退为英文名。
 - 使用 `--dry-run` / `--scan-only` 时只生成扫描记录和摘要，不生成 Trim 或 Merge 视频，也不要求创建空的 `clips/` 目录。
 - 使用 `--profile` 打印每个片段的 ffprobe、OCR 预测、视频帧定位 / 读取、裁剪编码及总耗时。同样的耗时列也会写入 `检测与裁剪记录.csv`。
+
+OCR 配置逐项遵循 **CLI > 环境变量 > 内置默认值**。继续支持 `PUBG_OCR_PROVIDER` 和旧 `PUBG_OCR_DIRECTML_DEVICE_ID`；历史 provider 别名 `default`（CPU）及 `dml-only` 也保持兼容。CLI 或环境变量显式提供空串或纯空白 provider 值均属非法；需要默认值时应取消设置环境变量。未配置时仍显式使用 CPU，与 v0.3.6 一致；`auto` 当前同样使用 CPU，并不自动选择 GPU。例如：
+
+```powershell
+.\pubg-highlight-trim.exe "<输入目录>" --ocr-provider directml --ocr-device-id 0 --verbose
+```
+
+`directml` 初始化或推理失败时回退 CPU，`directml-only` 则明确失败，不静默降级。`--verbose` 显示所选模式、请求/实际后端、设备序号、回退原因及缓存命中状态，全部命中缓存或运行失败时也会显示（初始化失败时 `actual=unknown`）。缓存按解析后的后端、设备序号与回退策略隔离（严格模式不会复用宽松模式的回退缓存）；相同配置重复运行仍命中缓存。非法 provider/设备值以退出码 2 失败，且不生成 summary。已有 summary 字段及 CSV 列序保持不变。
 
 GUI 和 CLI 使用相同的输出结构。`<output>/clips/` 保存逐段 Trim 视频；根目录中的合并视频（如启用合并）及旁边的 `.concat.txt` 是 FFmpeg 使用的拼接清单。按目标合并时，每个实际有片段的目标各有一个视频和清单。`检测与裁剪记录.csv` 记录每个源视频的检测状态、事件时间、裁剪范围和耗时；`candidate_events.csv` 保存候选事件提示，`profile.json` 保存阶段耗时（启用 `--profile` 时还会额外打印 `PROFILE` 行）。`summary.json` 保存本次运行的源文件数、保留/跳过数量、输出路径、扫描模式、语言、合并状态及 OCR/缓存信息；`merge_outputs` 列出所有目标输出，旧字段仍指向第一个输出，GUI 用它更新最终结果。
 

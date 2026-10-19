@@ -31,7 +31,7 @@ highlight-cli = []
 cli = ["highlight-cli", "onnx", "dep:base64", "ppocr-rs/test-binaries"]
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 regex = "1"
 csv = "1"
 ctrlc = "3"

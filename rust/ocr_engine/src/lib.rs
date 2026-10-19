@@ -332,7 +332,8 @@ fn directml_session_builder(
         .with_intra_threads(DIRECTML_INTRA_THREADS.load(Ordering::Relaxed))?
         .with_execution_providers([DirectMLExecutionProvider::default()
             .with_device_id(DIRECTML_DEVICE_ID.load(Ordering::Relaxed))
-            .build()])?
+            .build()
+            .error_on_failure()])?
         .with_parallel_execution(false)?
         .with_memory_pattern(false)
 }
@@ -392,6 +393,7 @@ impl PpOcrRecognizer {
             threads,
             Provider::Cpu,
             false,
+            0,
         )
     }
 
@@ -410,6 +412,28 @@ impl PpOcrRecognizer {
         requested: Provider,
         allow_provider_fallback: bool,
     ) -> Result<Self, String> {
+        Self::from_model_dir_with_provider_and_device(
+            model_dir,
+            manifest,
+            threads,
+            requested,
+            allow_provider_fallback,
+            directml_device_id(),
+        )
+    }
+
+    /// Initialize with an explicit device index without changing process environment.
+    pub fn from_model_dir_with_provider_and_device(
+        model_dir: &Path,
+        manifest: &ModelManifest,
+        threads: usize,
+        requested: Provider,
+        allow_provider_fallback: bool,
+        device_id: i32,
+    ) -> Result<Self, String> {
+        if device_id < 0 {
+            return Err("device id must be non-negative".into());
+        }
         validate_manifest(model_dir, manifest).map_err(|error| error.to_string())?;
         Self::for_provider(
             &model_dir.join(&manifest.detector_file),
@@ -418,6 +442,7 @@ impl PpOcrRecognizer {
             threads,
             requested,
             allow_provider_fallback,
+            device_id,
         )
     }
 
@@ -428,6 +453,7 @@ impl PpOcrRecognizer {
         threads: usize,
         requested: Provider,
         allow_provider_fallback: bool,
+        device_id: i32,
     ) -> Result<Self, String> {
         let (pipeline, info) = match requested {
             Provider::Cpu => (
@@ -440,7 +466,6 @@ impl PpOcrRecognizer {
                 },
             ),
             Provider::DirectMl => {
-                let device_id = directml_device_id();
                 match build_directml_pipeline(detector, recognizer, dictionary, threads, device_id)
                 {
                     Ok(pipeline) => (

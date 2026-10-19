@@ -758,6 +758,47 @@ fn parallel_completion_keeps_source_order_and_detections_equal_to_single_worker(
     assert_eq!(outcomes[1], outcomes[2]);
 }
 
+#[test]
+#[ignore = "requires pinned PUBG_OCR_MODEL_DIR and FFmpeg; run in local/release acceptance"]
+fn verbose_scan_failure_preserves_initialized_provider_diagnostics() {
+    let t = Temp::new();
+    let src = t.0.join("blank.mp4");
+    blank(&src);
+    let wrapper = media_wrapper(&t.0, "probe-other");
+    let out = Command::new(env!("CARGO_BIN_EXE_pubg_highlight_trim"))
+        .arg(&src)
+        .args([
+            "--scan-only",
+            "--verbose",
+            "--ocr-provider",
+            "cpu",
+            "--jobs",
+            "1",
+            "--no-auto-candidate-csv",
+            "--ffprobe",
+        ])
+        .arg(wrapper)
+        .arg("-o")
+        .arg(t.0.join("out"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("SUMMARY "));
+    assert!(!stdout.contains("OCR mode="));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    for expected in [
+        "mode=cpu",
+        "requested=cpu",
+        "actual=cpu",
+        "device_id=0",
+        "fallback=",
+        "cache_hit=false",
+    ] {
+        assert!(stderr.contains(expected), "missing {expected}: {stderr}");
+    }
+}
+
 // Native marker wrappers exercise the actual CLI subprocess diagnostic boundary.
 fn media_wrapper(root: &Path, name: &str) -> PathBuf {
     let source = root.join("wrapper.rs");

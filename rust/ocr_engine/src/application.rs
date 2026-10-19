@@ -260,7 +260,7 @@ mod production {
         tools.verbose = c.verbose;
         let candidates_path = source_files::discover_candidates(&c, &inputs);
         let candidates = source_files::read_candidates(candidates_path.as_deref())?;
-        let mut settings = EngineSettings::discover()?;
+        let mut settings = EngineSettings::from_config(&c)?;
         let jobs = workers(&c, inputs.sources.len());
         let cpu = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -419,8 +419,9 @@ mod production {
             for _ in 0..jobs.min(queue.len()) {
                 let (tx, queue, next, settings, tools, cache_dir) =
                     (tx.clone(), &queue, &next, &settings, &tools, &cache_dir);
-                let verbose = c.verbose;
                 let profile = c.profile;
+                let verbose = c.verbose;
+                let mode = c.ocr_provider;
                 scope.spawn(move || {
                     let mut engines = HashMap::new();
                     loop {
@@ -432,7 +433,8 @@ mod production {
                             break;
                         };
                         let source_started = Instant::now();
-                        let result = (|| {
+                        let mut provider = None;
+                        let result: Result<ScanResult, String> = (|| {
                             let lang = if job.source.language.code() == "en" {
                                 "en"
                             } else {
@@ -441,15 +443,6 @@ mod production {
                             if !engines.contains_key(lang) {
                                 let init = Instant::now();
                                 let engine = settings.engine()?;
-                                if verbose {
-                                    let info = engine.provider_info();
-                                    eprintln!(
-                                        "OCR provider={} requested={} fallback={}",
-                                        crate::provider_name(info.provider),
-                                        crate::provider_name(info.requested),
-                                        info.fallback_reason.as_deref().unwrap_or("")
-                                    );
-                                }
                                 engines.insert(lang, engine);
                                 if profile {
                                     println!(
@@ -458,9 +451,11 @@ mod production {
                                     );
                                 }
                             }
-                            let mut result=scan(job, tools, &engines[lang])?;
+                            let scan_result=scan(job, tools, &engines[lang]);
                             let info=engines[lang].provider_info();
-                            result.provider=Some(json!({"source_index":index + 1,"provider_requested":crate::provider_name(info.requested),"provider_actual":crate::provider_name(info.provider),"device_id":info.device_id,"model_version":settings.manifest.model_version,"fallback_reason":info.fallback_reason.as_deref().map(|reason| crate::provider_diagnostics::redact(reason, &settings.model_dir)),"cache_hit":false}));
+                            provider=Some(json!({"source_index":index + 1,"provider_requested":crate::provider_name(info.requested),"provider_actual":crate::provider_name(info.provider),"device_id":info.device_id,"model_version":settings.manifest.model_version,"fallback_reason":info.fallback_reason.as_deref().map(|reason| crate::provider_diagnostics::redact(reason, &settings.model_dir)),"cache_hit":false}));
+                            let mut result=scan_result?;
+                            result.provider=provider.clone();
                             Ok(result)
                         })();
                         let mut write_seconds = 0.0;
@@ -475,6 +470,18 @@ mod production {
                             }
                             Ok(r)
                         });
+                        if verbose {
+                            if let Err(error) = &result {
+                                eprintln!(
+                                    "OCR mode={} requested={} actual={} device_id={} fallback={} cache_hit=false",
+                                    mode.code(),
+                                    crate::provider_name(settings.provider),
+                                    provider.as_ref().and_then(|p| p["provider_actual"].as_str()).unwrap_or("unknown"),
+                                    settings.device_id,
+                                    provider.as_ref().map(|p| p["fallback_reason"].as_str().unwrap_or("").to_owned()).unwrap_or_else(|| crate::provider_diagnostics::redact(error, &settings.model_dir)),
+                                );
+                            }
+                        }
                         if tx.send((*index, result, write_seconds)).is_err() {
                             break;
                         }
@@ -498,16 +505,29 @@ mod production {
             }
             failure
         });
+        let providers = results
+            .iter()
+            .filter_map(|r| r.as_ref().and_then(|r| r.provider.clone()))
+            .collect::<Vec<_>>();
+        if c.verbose {
+            for provider in &providers {
+                eprintln!(
+                    "OCR mode={} requested={} actual={} device_id={} fallback={} cache_hit={}",
+                    c.ocr_provider.code(),
+                    provider["provider_requested"].as_str().unwrap_or("unknown"),
+                    provider["provider_actual"].as_str().unwrap_or("unknown"),
+                    c.ocr_device_id,
+                    provider["fallback_reason"].as_str().unwrap_or(""),
+                    provider["cache_hit"].as_bool().unwrap_or(false),
+                );
+            }
+        }
         if let Some(error) = scan_error {
             return Err(error);
         }
         crate::cancellation::check()?;
         // Never destroy old output merely because a model or scanning backend failed.
         paths.prepare(&c, &inputs).map_err(|e| e.to_string())?;
-        let providers = results
-            .iter()
-            .filter_map(|r| r.as_ref().and_then(|r| r.provider.clone()))
-            .collect::<Vec<_>>();
         let mut records = Vec::<Record>::new();
         let mut clips = Vec::new();
         let mut targets: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
