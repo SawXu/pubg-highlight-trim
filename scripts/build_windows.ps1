@@ -1,6 +1,8 @@
 param(
     [switch]$SkipInstall,
-    [switch]$WithRustOcr
+    [switch]$WithRustOcr,
+    [string]$ModelDirectory,
+    [string]$ReleaseDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,13 +18,8 @@ function Require-Command([string]$Name) {
     }
 }
 function Invoke-Xtask([string[]]$Arguments) {
-    $manifest = Join-Path $repoRoot "rust\Cargo.toml"
-    $workspace = Get-Content -LiteralPath $manifest -Raw -ErrorAction Stop
-    if ($workspace -notmatch 'xtask') {
-        throw "Rust xtask is not integrated in rust/Cargo.toml yet (issue #68 dependency); release assurance remains blocked."
-    }
-    & cargo run --locked --manifest-path $manifest --release --bin xtask -- @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "cargo xtask $($Arguments -join ' ') failed with exit code $LASTEXITCODE" }
+    & $xtaskSource @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "xtask $($Arguments -join ' ') failed with exit code $LASTEXITCODE" }
 }
 function Assert-NoForbiddenRuntime([string]$Root) {
     $forbidden = @('python', 'python3', 'python312', 'python311', 'pyinstaller', 'paddle', 'paddlex', 'numpy', 'opencv')
@@ -45,28 +42,36 @@ if (-not (Test-Path -LiteralPath "vendor\ffmpeg\ffmpeg.exe") -or -not (Test-Path
     if ($LASTEXITCODE -ne 0) { throw "FFmpeg download failed" }
 }
 
+# Reuse inputs must survive cleanup; reject an old bundle as an input rather
+# than deleting it and only then discovering that its assets were requested.
+foreach ($inputDirectory in @($ModelDirectory, $ReleaseDirectory)) {
+    if (-not $inputDirectory) { continue }
+    $resolved = (Resolve-Path -LiteralPath $inputDirectory).Path.TrimEnd('\', '/')
+    foreach ($cleanDirectory in @('build', 'dist')) {
+        $cleanPath = Join-Path $repoRoot $cleanDirectory
+        if ($resolved -ieq $cleanPath -or $resolved.StartsWith("$cleanPath\", [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Reuse directory must be outside build/dist cleanup: $resolved"
+        }
+    }
+}
 Remove-Item -LiteralPath "build", "dist" -Recurse -Force -ErrorAction SilentlyContinue
 $bundle = Join-Path $repoRoot "dist\pubg-highlight-trim"
 $models = Join-Path $bundle "ocr_models"
 $ffmpeg = Join-Path $bundle "_internal\vendor\ffmpeg"
 New-Item -ItemType Directory -Path $bundle, $models, $ffmpeg -Force | Out-Null
 
-# The source target keeps its historical Cargo name; the shipped application has
-# the public, hyphenated name used by the CLI and WPF contract. Keep DirectML
-# optional at runtime by delay-loading directml.dll; CPU does not require it.
-$oldRustFlags = $env:RUSTFLAGS
-try {
-    $env:RUSTFLAGS = "$oldRustFlags -C link-args=/DELAYLOAD:directml.dll -C link-args=delayimp.lib".Trim()
-    & cargo build --locked --manifest-path rust\Cargo.toml --release --features cli,directml --bin pubg_highlight_trim
-    if ($LASTEXITCODE -ne 0) { throw "Rust application build failed with exit code $LASTEXITCODE" }
-    & cargo build --locked --manifest-path rust\Cargo.toml --release --features cli,directml --bin ocr_engine
-    if ($LASTEXITCODE -ne 0) { throw "Rust OCR engine build failed with exit code $LASTEXITCODE" }
-} finally {
-    if ($null -eq $oldRustFlags) { Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue }
-    else { $env:RUSTFLAGS = $oldRustFlags }
+# Standalone builds still compile all release tools. Explicit reuse is accepted
+# only with the current commit/configuration manifest and matching binary hashes.
+if ($ReleaseDirectory) {
+    $ReleaseDirectory = (Resolve-Path -LiteralPath $ReleaseDirectory).Path
+    & "$PSScriptRoot\build_rust_release.ps1" -ReleaseDirectory $ReleaseDirectory -VerifyOnly
+} else {
+    & "$PSScriptRoot\build_rust_release.ps1"
+    $ReleaseDirectory = Join-Path $repoRoot "rust\target\release"
 }
-$appSource = "rust\target\release\pubg_highlight_trim.exe"
-$engineSource = "rust\target\release\ocr_engine.exe"
+$appSource = Join-Path $ReleaseDirectory "pubg_highlight_trim.exe"
+$engineSource = Join-Path $ReleaseDirectory "ocr_engine.exe"
+$xtaskSource = Join-Path $ReleaseDirectory "xtask.exe"
 if (-not (Test-Path -LiteralPath $appSource -PathType Leaf)) {
     throw "Rust application binary is missing: $appSource (issue #69 is not integrated)"
 }
@@ -85,8 +90,15 @@ Copy-Item -Path "vendor\ffmpeg\*" -Destination $ffmpeg -Recurse -Force
 Copy-Item -LiteralPath "README.md", "README_zh.md", "LICENSE", "THIRD_PARTY_NOTICES.md" -Destination $bundle -Force
 Copy-Item -LiteralPath "rust\ocr_engine\models\pp_ocrv6_medium.json" -Destination (Join-Path $models "pp_ocrv6_medium.json") -Force
 
-# #68 supplies these commands. Do not substitute a weaker check while it is absent.
-Invoke-Xtask @("download", "--output-dir", $models)
+if ($ModelDirectory) {
+    $ModelDirectory = (Resolve-Path -LiteralPath $ModelDirectory).Path
+    Write-Host "Reusing OCR models from $ModelDirectory; pinned hash/ONNX verification remains mandatory."
+    Copy-Item -Path (Join-Path $ModelDirectory "*") -Destination $models -Recurse -Force
+    # Use the repository's pinned descriptor, never a cached replacement.
+    Copy-Item -LiteralPath "rust\ocr_engine\models\pp_ocrv6_medium.json" -Destination (Join-Path $models "pp_ocrv6_medium.json") -Force
+} else {
+    Invoke-Xtask @("download", "--output-dir", $models)
+}
 Invoke-Xtask @("verify", "--model-dir", $models, "--check-onnx", "--engine", $engineSource)
 
 @"

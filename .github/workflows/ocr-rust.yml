@@ -4,51 +4,106 @@ on:
   pull_request:
     paths:
       - "rust/**"
+      - "vendor/ppocr-rs/**"
+      - ".github/actions/rust-windows-setup/**"
       - "scripts/**"
       - ".github/workflows/ocr-rust.yml"
   push:
     branches: [main]
     paths:
       - "rust/**"
+      - "vendor/ppocr-rs/**"
+      - ".github/actions/rust-windows-setup/**"
       - "scripts/**"
       - ".github/workflows/ocr-rust.yml"
 
+  workflow_dispatch:
+    inputs:
+      cold_cache:
+        description: Bypass all cache restores and saves
+        type: boolean
+        default: false
+      cargo_timings:
+        description: Upload Cargo build timing reports
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  rust-and-windows-assurance:
+  rust-quality:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Enforce clean no-Python build host
-        shell: powershell
-        run: |
-          # GitHub-hosted runners are disposable; remove preinstalled Python distributions
-          # and the py launcher instead of merely hiding them from PATH.
-          $roots = @("C:\hostedtoolcache\windows\Python", "C:\Python27", "C:\Python38", "C:\Python39", "C:\Python310", "C:\Python311", "C:\Python312", "C:\Python313")
-          foreach ($root in $roots) {
-            if (Test-Path -LiteralPath $root) {
-              Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop
-            }
-          }
-          foreach ($launcher in @("$env:WINDIR\py.exe", "$env:WINDIR\pyw.exe")) {
-            if (Test-Path -LiteralPath $launcher) {
-              Remove-Item -LiteralPath $launcher -Force -ErrorAction Stop
-            }
-          }
-          $env:PATH = (($env:PATH -split ';') | Where-Object { $_ -and $_ -notmatch '(?i)python|windowsapps' }) -join ';'
-          "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          foreach ($name in @('python', 'python3', 'py')) {
-            if (Get-Command $name -ErrorAction SilentlyContinue) {
-              throw "Python command remains on the clean runner: $name"
-            }
-          }
-          Write-Host "Confirmed python, python3 and py are unavailable before Cargo tests/build."
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-windows-setup
         with:
-          toolchain: stable-x86_64-pc-windows-msvc
-          components: rustfmt
+          cache-role: quality-all-features-debug-onnx-cli-directml
+          cold-cache: ${{ inputs.cold_cache || false }}
       - name: Rust format
         shell: powershell
         run: cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+      - name: Restore pinned FFmpeg archive
+        id: ffmpeg-cache
+        if: ${{ !inputs.cold_cache }}
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg-cache
+          key: ffmpeg-windows-x64-${{ hashFiles('scripts/ffmpeg-lock.json') }}
+      - name: Prepare required media test tools
+        shell: powershell
+        run: |
+          ./scripts/download_ffmpeg.ps1
+          "PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR=$env:GITHUB_WORKSPACE\vendor\ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Rust tests (including required real media behaviors)
+        shell: powershell
+        run: cargo test --locked --manifest-path rust/Cargo.toml --all-features
+      - name: Rust highlight planner contract
+        shell: powershell
+        run: cargo test --locked --manifest-path rust/Cargo.toml --features highlight-cli --test highlight_plan_cli
+      - name: Rust optional OCR features
+        shell: powershell
+        run: |
+          cargo check --locked --manifest-path rust/Cargo.toml --features onnx,cli
+          if ($LASTEXITCODE -ne 0) { throw "ONNX/CLI check failed" }
+          cargo check --locked --manifest-path rust/Cargo.toml --features directml
+          if ($LASTEXITCODE -ne 0) { throw "DirectML check failed" }
+      - name: Report cache status
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Quality FFmpeg cache-hit=${{ steps.ffmpeg-cache.outputs.cache-hit }}; cold-cache=${{ inputs.cold_cache || false }}"
+          "Quality FFmpeg cache-hit=${{ steps.ffmpeg-cache.outputs.cache-hit }}; cold-cache=${{ inputs.cold_cache || false }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+  windows-assurance:
+    runs-on: windows-latest
+    env:
+      # Match the formal release build so tests reuse compatible Cargo outputs.
+      RUSTFLAGS: "-C link-args=/DELAYLOAD:directml.dll -C link-args=delayimp.lib"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-windows-setup
+        with:
+          cache-role: assurance-release-cli-directml-delay-load
+          cold-cache: ${{ inputs.cold_cache || false }}
+      - name: Restore pinned FFmpeg archive
+        id: ffmpeg-cache
+        if: ${{ !inputs.cold_cache }}
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg-cache
+          key: ffmpeg-windows-x64-${{ hashFiles('scripts/ffmpeg-lock.json') }}
+      - name: Restore pinned OCR models
+        id: model-cache
+        if: ${{ !inputs.cold_cache }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ocr_models
+          key: ocr-models-${{ hashFiles('rust/ocr_engine/models/pp_ocrv6_medium.json') }}
       - name: Prepare required media test tools
         shell: powershell
         run: |
@@ -63,23 +118,12 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Required media test tool failed: $binary" }
           }
           "PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR=$tools" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Rust tests (including required real media behaviors)
+      - name: Build formal application, OCR engine and xtask (Cargo timings)
         shell: powershell
-        run: cargo test --locked --manifest-path rust/Cargo.toml --all-features
-      - name: Rust highlight planner contract
+        run: ./scripts/build_rust_release.ps1
+      - name: Release reuse integrity contract
         shell: powershell
-        run: cargo test --locked --manifest-path rust/Cargo.toml --features highlight-cli --test highlight_plan_cli
-      - name: Rust optional OCR features
-        shell: powershell
-        run: |
-          cargo check --locked --manifest-path rust/Cargo.toml --features onnx,cli
-          cargo check --locked --manifest-path rust/Cargo.toml --features directml
-      - name: Build formal application and OCR engine binaries
-        shell: powershell
-        run: |
-          $env:RUSTFLAGS = "-C link-args=/DELAYLOAD:directml.dll -C link-args=delayimp.lib"
-          cargo build --locked --manifest-path rust/Cargo.toml --release --features cli,directml --bin pubg_highlight_trim
-          cargo build --locked --manifest-path rust/Cargo.toml --release --features cli,directml --bin ocr_engine
+        run: ./scripts/tests/test_release_reuse.ps1
       - name: Verify pinned model source, hashes, dictionary and ONNX format
         shell: powershell
         run: |
@@ -87,25 +131,26 @@ jobs:
             throw "Rust xtask is not integrated in rust/Cargo.toml yet (#68 dependency); model assurance is intentionally blocked."
           }
           New-Item -ItemType Directory -Path $env:RUNNER_TEMP\ocr_models -Force | Out-Null
-          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- download --output-dir $env:RUNNER_TEMP\ocr_models
-          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- verify --model-dir $env:RUNNER_TEMP\ocr_models --check-onnx --engine rust\target\release\ocr_engine.exe
+          & rust/target/release/xtask.exe download --output-dir $env:RUNNER_TEMP\ocr_models
+          if ($LASTEXITCODE -ne 0) { throw "Model provisioning failed" }
+          & rust/target/release/xtask.exe verify --model-dir $env:RUNNER_TEMP\ocr_models --check-onnx --engine rust\target\release\ocr_engine.exe
       - name: Rust end-to-end OCR pipeline (real pinned models)
         shell: powershell
         env:
           PUBG_OCR_MODEL_DIR: ${{ runner.temp }}\ocr_models
           PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR: ${{ github.workspace }}\vendor\ffmpeg
-        run: cargo test --locked --manifest-path rust/Cargo.toml --features cli --test end_to_end -- --ignored
+        run: cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test end_to_end -- --ignored
       - name: Rust OCR inference smoke
         shell: powershell
         run: |
-          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- onnx-smoke --model-dir $env:RUNNER_TEMP\ocr_models --engine rust\target\release\ocr_engine.exe
+          & rust/target/release/xtask.exe onnx-smoke --model-dir $env:RUNNER_TEMP\ocr_models --engine rust\target\release\ocr_engine.exe
       - name: Rust real ROI event semantic parity
         shell: powershell
         env:
           PUBG_OCR_MODEL_DIR: ${{ runner.temp }}\ocr_models
         run: |
           New-Item -ItemType Directory -Path $env:RUNNER_TEMP\real-roi -Force | Out-Null
-          cargo run --locked --manifest-path rust/Cargo.toml --release --bin xtask -- real-roi --executable rust\target\release\ocr_engine.exe --model-dir $env:RUNNER_TEMP\ocr_models --fixture rust\ocr_engine\fixtures\real --output $env:RUNNER_TEMP\real-roi\roi.jsonl
+          & rust/target/release/xtask.exe real-roi --executable rust\target\release\ocr_engine.exe --model-dir $env:RUNNER_TEMP\ocr_models --fixture rust\ocr_engine\fixtures\real --output $env:RUNNER_TEMP\real-roi\roi.jsonl
           if ($LASTEXITCODE -ne 0) { throw "xtask real-roi semantic parity failed with exit code $LASTEXITCODE" }
       - name: Complete CLI fault, cache, provider and cancellation acceptance
         shell: powershell
@@ -113,21 +158,21 @@ jobs:
           PUBG_OCR_MODEL_DIR: ${{ runner.temp }}\ocr_models
           PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR: ${{ github.workspace }}\vendor\ffmpeg
         run: |
-          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test application_e2e -- --ignored --test-threads=1
+          cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test application_e2e -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { throw "CLI acceptance failed" }
-          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test dedupe_cli -- --ignored --test-threads=1
+          cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test dedupe_cli -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { throw "Upstream overlapping-source batch acceptance failed" }
-          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test nonfinite_summary -- --ignored
+          cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test nonfinite_summary -- --ignored
           if ($LASTEXITCODE -ne 0) { throw "Legacy explicit infinite-value wire compatibility failed" }
-          cargo test --locked --manifest-path rust/Cargo.toml --features cli --test preprocess -- --ignored
+          cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --test preprocess -- --ignored
           if ($LASTEXITCODE -ne 0) { throw "Real ROI preprocessing acceptance failed" }
-          cargo test --locked --manifest-path rust/Cargo.toml --features cli --lib ppocr_cpu_smoke_test -- --ignored
+          cargo test --locked --manifest-path rust/Cargo.toml --release --features cli,directml --lib ppocr_cpu_smoke_test -- --ignored
           if ($LASTEXITCODE -ne 0) { throw "Real model CPU acceptance failed" }
-          cargo test --locked --manifest-path rust/Cargo.toml -p xtask --test retirement_contract bad_https_download -- --ignored
+          cargo test --locked --manifest-path rust/Cargo.toml --release -p xtask --features pubg-ocr-engine/cli,pubg-ocr-engine/directml --test retirement_contract bad_https_download -- --ignored
           if ($LASTEXITCODE -ne 0) { throw "Pinned HTTPS download failure safety failed" }
       - name: Windows bundle assurance
         shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -SkipInstall
+        run: ./scripts/build_windows.ps1 -SkipInstall -ModelDirectory "$env:RUNNER_TEMP\ocr_models" -ReleaseDirectory "rust\target\release"
       - name: Verify shipped license inventory and manifest coverage
         shell: powershell
         run: |
@@ -153,3 +198,31 @@ jobs:
             if ($paths -notcontains $notice.path) { throw "Supply-chain manifest does not cover notice: $($notice.path)" }
           }
           Write-Host "Verified $($inventory.packages.Count) Cargo packages and $($inventory.notice_files.Count) pinned notices are shipped and manifest-hashed."
+      - name: Upload diagnostic Cargo timings
+        if: ${{ always() && inputs.cargo_timings }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rust/target/cargo-timings/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Report cache and asset reuse
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Assurance FFmpeg cache-hit=${{ steps.ffmpeg-cache.outputs.cache-hit }}; model cache-hit=${{ steps.model-cache.outputs.cache-hit }}; cold-cache=${{ inputs.cold_cache || false }}"
+          "Assurance FFmpeg cache-hit=${{ steps.ffmpeg-cache.outputs.cache-hit }}; model cache-hit=${{ steps.model-cache.outputs.cache-hit }}; cold-cache=${{ inputs.cold_cache || false }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Models and release binaries remain in this job: no target artifact transfer or second release build. See step durations for preparation, inference and packaging timings." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+  # Retain the existing required-check name; both independent gates must pass.
+  rust-and-windows-assurance:
+    needs: [rust-quality, windows-assurance]
+    if: always()
+    runs-on: windows-latest
+    steps:
+      - name: Require all Rust assurance gates
+        shell: powershell
+        run: |
+          if ('${{ needs.rust-quality.result }}' -ne 'success' -or '${{ needs.windows-assurance.result }}' -ne 'success') {
+            throw "Quality and complete Windows assurance must both pass"
+          }

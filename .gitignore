@@ -24,6 +24,7 @@ ui/**/obj/
 summary.json
 
 # Runtime-bundled third-party binaries are fetched in CI.
+vendor/ffmpeg-cache/
 vendor/ffmpeg/*
 !vendor/ffmpeg/README.md
 vendor/paddlex_cache/
