@@ -20,10 +20,13 @@ confirmed by inspecting the existing images:
   not visible in this image.
 - Frame 13 contains a self-knock and unrelated assist text; self-knocks are not
   filtered by the own-kill assist rule.
-- Frame 8 includes a preceding HUD line. The old parser includes its noise in the
-  subject key. This existing defect is tracked separately in #73, not a
-  migration fix or a claim that the historical result is human ground truth.
+- Frame 8 includes a preceding HUD line. The old parser included its noise in the
+  subject key. Issue #73 fixes this by retaining visual OCR rows through scanning
+  and parsing self-death notifications per row. Its event signature is the sole
+  intentional correction to the migration reference; the historical signature is
+  retained in `behavior_corrections` for audit, not treated as human ground truth.
 
+Except for the explicitly documented #73 frame-8 event correction,
 `reference.json` freezes **actual** image OCR and event results from a detached
 `a070076526f918b0ef7f1848994d69363d5c1291` source build, using that commit's
 compiled Rust engine and Python event parser. It records the engine SHA-256,
@@ -57,5 +60,7 @@ Every semantic regression or inference/protocol failure exits nonzero. For the
 hash-bound reference, every critical event-identity/context field must match exactly.
 OCR text differences are fingerprinted diagnostics, never raw player text in
 shared tool output; whitespace is normalized before fingerprinting. Per-frame output preserves evidence for
-review. The 18-frame reference passed this gate after the metadata audit; this
-is complementary to, not a substitute for, complete source-video regression.
+review. The 18-frame reference passed this gate after the metadata audit. After #73,
+all 18 frames pass with the frame-8 event correction; the other 17 identity
+signatures are unchanged. This is complementary to, not a substitute for,
+complete source-video regression.

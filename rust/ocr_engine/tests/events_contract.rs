@@ -4,6 +4,65 @@ use pubg_ocr_engine::events::{
 };
 
 #[test]
+fn multiline_hud_isolated_from_previous_row() {
+    use pubg_ocr_engine::events::{same_followup_subject, same_noisy_close_event, same_text_event};
+    for (language, knock, eliminate, other) in [
+        (
+            "zh-Hans",
+            "[TAG]EnemyAlpha用M416击倒了你",
+            "[TAG]EnemyAlpha用AKM淘汰了你",
+            "OpponentBravo用M416击倒了你",
+        ),
+        (
+            "zh-Hant",
+            "[TAG]EnemyAlpha以M416擊倒您",
+            "[TAG]EnemyAlpha以MP5K擎殺您",
+            "OpponentBravo以M416擊倒您",
+        ),
+        (
+            "en",
+            "EnemyAlpha KNOCKED YOU OUT with M416",
+            "EnemyAlpha KILLED YOU with AKM",
+            "OpponentBravo KNOCKED YOU OUT with M416",
+        ),
+    ] {
+        let profile = language_profile(language).unwrap();
+        let clean = extract_text_events(knock, Target::SelfDeath, Some(&profile));
+        let noisy = extract_text_events(
+            &format!("HUDNOISE EnemyB\r\n{knock}"),
+            Target::SelfDeath,
+            Some(&profile),
+        );
+        assert_eq!(
+            noisy, clean,
+            "{language}: HUD must not enter any event field"
+        );
+        let followup = extract_text_events(
+            &format!("Different HUD\n{eliminate}"),
+            Target::SelfDeath,
+            Some(&profile),
+        );
+        assert!(same_followup_subject(
+            &noisy[0],
+            &followup[0],
+            Some(&profile)
+        ));
+        let different = extract_text_events(
+            &format!("HUDNOISE EnemyB\n{other}"),
+            Target::SelfDeath,
+            Some(&profile),
+        );
+        assert!(!same_text_event(&noisy[0], &different[0]));
+        assert!(!same_noisy_close_event(&noisy[0], &different[0]));
+        assert!(!same_followup_subject(
+            &noisy[0],
+            &different[0],
+            Some(&profile)
+        ));
+    }
+}
+
+#[test]
 fn multilingual_events_keep_historical_keys_weapons_and_perspectives() {
     let cases = [
         (

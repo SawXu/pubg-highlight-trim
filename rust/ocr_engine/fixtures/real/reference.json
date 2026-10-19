@@ -141,9 +141,9 @@
           "method": "paddle-strict-self-text",
           "action": "eliminate",
           "weapon": "MP5K",
-          "subject_sha256": "95b842efa17bf4f6b7fdb6b290d48cb2fc1a082bcbfddb9146fe0b3a9b8f99bb",
-          "key_sha256": "fc2cb664dc8ca3f600d040534eb4c468ec2dbc479bfd19550f8f9d4369d4d834",
-          "text_sha256": "6fdd24fcfe1bceb5e107f13df49731c85bcdab9511a035fc3d65f531377461b2"
+          "subject_sha256": "6204027d3aa968c41afff339d2e846c09b700afeb03921f62a7b843755c600df",
+          "key_sha256": "f86b4419d2c9a8387a55fb544dae8147eb6c28ea76b69bcfb1af47ee6e1bf805",
+          "text_sha256": "37c7b39df2c7fba852be543aaba19b8e3fac8669396cb0af654a92add8af841c"
         }
       ]
     },
@@ -324,6 +324,24 @@
           "subject_sha256": "23b96ff92458a9f982d6bc3b1235812d5a3e00144cf7c037287310b579306186",
           "key_sha256": "e29c4a84c47cc2033c5ef9940f32f4e4937d9a5ff4e2fd4bd0be9464fc783873",
           "text_sha256": "59703ce59d3eae8ee3c6ae53e7c330f47b5f7273fe1f4381f18f142b8b814179"
+        }
+      ]
+    }
+  ],
+  "behavior_corrections": [
+    {
+      "frame_id": 8,
+      "issue": "https://github.com/SawXu/pubg-highlight-trim/issues/73",
+      "reason": "Preserve visual OCR rows so preceding HUD text cannot enter the self-death subject/key. Only this frame's event signature is corrected; OCR text fingerprint remains historical.",
+      "historical_event_signatures": [
+        {
+          "target": "self-death",
+          "method": "paddle-strict-self-text",
+          "action": "eliminate",
+          "weapon": "MP5K",
+          "subject_sha256": "95b842efa17bf4f6b7fdb6b290d48cb2fc1a082bcbfddb9146fe0b3a9b8f99bb",
+          "key_sha256": "fc2cb664dc8ca3f600d040534eb4c468ec2dbc479bfd19550f8f9d4369d4d834",
+          "text_sha256": "6fdd24fcfe1bceb5e107f13df49731c85bcdab9511a035fc3d65f531377461b2"
         }
       ]
     }

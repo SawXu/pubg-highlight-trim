@@ -125,7 +125,7 @@ mod production {
                 .unwrap_or(Ok(1))?
                 .max(1);
             let identity = format!(
-                "application-scanner-v2:reading-order-v2:{}:{}:{}:{}:{p}:{threads}",
+                "application-scanner-v3:reading-order-v3:{}:{}:{}:{}:{p}:{threads}",
                 manifest.model_version,
                 manifest.detector_sha256,
                 manifest.recognizer_sha256,

@@ -364,7 +364,7 @@ fn times(start: f64, end: f64, step: f64) -> Vec<f64> {
     result
 }
 fn normalize(text: &str) -> String {
-    crate::events::normalize_text(text)
+    crate::events::normalize_ocr_text(text)
 }
 
 impl<B: ScanBackend, R: EventRules> Scanner<'_, B, R> {
