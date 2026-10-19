@@ -231,13 +231,7 @@ public partial class MainWindow : Window
             IncludedMetricText.Text = _summary.IncludedCount.ToString(CultureInfo.InvariantCulture);
             SkippedMetricText.Text = _summary.SkippedCount.ToString(CultureInfo.InvariantCulture);
             DurationMetricText.Text = FormatDuration(_summary.TotalSeconds);
-            SetActivity(
-                _summary.IncludedCount > 0 ? "处理完成" : "扫描完成",
-                _summary.IncludedCount > 0
-                    ? $"已生成 {_summary.IncludedCount} 个片段，输出目录已就绪。"
-                    : "没有发现符合当前条件的事件。",
-                $"保留 {_summary.IncludedCount} · 跳过 {_summary.SkippedCount}",
-                "✓");
+
         }
     }
 
@@ -246,30 +240,15 @@ public partial class MainWindow : Window
         _elapsedTimer.Stop();
         _runStopwatch.Stop();
         RunProgressBar.IsIndeterminate = false;
-        if (result.Cancelled)
+        var outcome = CliRunOutcome.From(result, _summary);
+        RunTitleText.Text = outcome.Title;
+        RunSubtitleText.Text = outcome.Description;
+        FooterStatusText.Text = outcome.Status;
+        SetActivity(outcome.Title, outcome.Description, outcome.Status, outcome.Glyph);
+        OpenOutputButton.IsEnabled = _summary is not null && Directory.Exists(_summary.OutputDirectory);
+        if (outcome.Completed)
         {
-            RunTitleText.Text = "任务已停止";
-            RunSubtitleText.Text = "已终止 CLI 及其子进程";
-            FooterStatusText.Text = "已取消";
-            SetActivity("任务已停止", "CLI 及其子进程已经终止。", "已取消", "■");
-            return;
-        }
-
-        var successful = result.ExitCode == 0 || (result.ExitCode == 2 && _summary is not null);
-        if (successful && _summary is not null)
-        {
-            RunTitleText.Text = _summary.IncludedCount > 0 ? "处理完成" : "扫描完成，没有匹配事件";
-            RunSubtitleText.Text = $"扫描 {_summary.SourceCount} 个源文件，保留 {_summary.IncludedCount} 个片段";
-            OpenOutputButton.IsEnabled = Directory.Exists(_summary.OutputDirectory);
-            FooterStatusText.Text = _summary.DryRun ? "仅扫描结果已写入输出目录" : "输出已生成";
             RunProgressBar.Value = RunProgressBar.Maximum;
-        }
-        else
-        {
-            RunTitleText.Text = "处理失败";
-            RunSubtitleText.Text = $"CLI 退出码：{result.ExitCode}，请检查运行记录";
-            FooterStatusText.Text = "运行失败";
-            SetActivity("处理失败", "请展开运行日志查看 CLI 返回的信息。", $"退出码 {result.ExitCode}", "!");
         }
 
         AppendLog($"EXIT   code={result.ExitCode}");
