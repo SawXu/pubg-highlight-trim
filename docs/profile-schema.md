@@ -23,9 +23,9 @@ freeze boundary. The sum of the eight stages equals total before rounding
   two disjoint intervals accumulate; neither contains dedupe time. Output
   directory preparation (still after successful scans) is included here.
 - `dedupe`: cross-source duplicate ranking and optional frame verification.
-- `trim`: the unchanged serial execution loop, including record/decision
-  bookkeeping, reservation, encoding, strict output probe and atomic publication.
-  Dry runs still perform the loop but execute no media writes.
+- `trim`: bounded parallel execution and ordered publication, including
+  record/decision bookkeeping, reservation, encoding, strict output probe and
+  atomic publication. Dry runs still process decisions but execute no media writes.
 - `merge`: merge orchestration, reservation, concatenation, output probe,
   concat-list and media publication. **Not** merged media duration.
 - `archive`: existing conditional source archival after successful media work.
@@ -49,7 +49,8 @@ published tasks by stable `sequence`, with `encode_seconds` (all production
 attempts including fallback), `output_probe_seconds` (strict FFprobe duration
 validation), `publication_seconds` (sync/atomic publish and owned staging cleanup),
 and `total_seconds` (reservation through publication). The three operations do
-not overlap; total contains them plus reservation/bookkeeping, and must **not**
+not overlap within a task; total contains them plus reservation/bookkeeping and,
+with parallel Trim, time waiting for earlier sequences to publish. It must **not**
 be added to them. Corresponding aggregates are `trim_encode_seconds_sum`,
 `trim_output_probe_seconds_sum`, `trim_publication_seconds_sum`, and
 `trim_task_total_seconds_sum`, summed before rounding. They are nested work,
@@ -99,7 +100,7 @@ conservative missing/mismatching-frame rejections are not decoder errors.
 
 `runtime` records OCR worker capacity and the launched current OCR worker pool
 (`ocr_workers_active`, zero on all-cache-hit runs), effective per-worker OCR
-threads, serial `trim_workers: 1`, provider mode, strict validation, scan/gate
+threads, requested/effective Trim concurrency, provider mode, strict validation, scan/gate
 settings, dry-run and per-source effective scanner configs keyed only by source
 index. Cache enabled/hits/misses remain under `cache`. `source_codec_counts`
 counts inputs (including cached ones); failed diagnostic probes count as
@@ -118,6 +119,24 @@ cache hit describe the **historical** execution, not provider execution now.
 Legacy entries without provider data stay unknown rather than implying a new
 session ran. CSV columns, candidate schema, summary fields, cache payloads,
 ordering, output safety and scan/decode/strict-validation policies are unchanged.
+
+## Trim concurrency (#90)
+
+`runtime.trim_jobs_requested` is the CLI string `"auto"`, `"1"`, or `"2"`.
+`auto` conservatively resolves to one worker; it does not infer GPU capacity.
+`runtime.trim_workers` is the effective integer: the minimum of resolved request
+and planned clip count, or zero for dry-run/no-clips. This is independent of
+`--jobs` and the OCR worker fields. A request of `"2"` with one clip therefore
+records one effective worker, not two.
+
+At most `trim_workers` tasks are running or waiting for ordered publication.
+Encoding and strict output probes may finish out of order, but publication,
+`trim_tasks`, CSV decisions, numbering and Merge inputs retain stable planning
+order. A slow early task can stall publication; this bounded window deliberately
+avoids an unbounded staging backlog. `stages.trim` is elapsed phase time, while
+`aggregates.trim_*_seconds_sum` is summed task work and may exceed phase time
+with two workers. Neither task totals nor encode sums measure throughput by
+themselves. See the [repeatable benchmark method](trim-performance-benchmark.md).
 
 ## Trim encoder capability (#89)
 

@@ -39,9 +39,9 @@ GUI 发布包是 CLI 发布包之上的桌面外壳：WPF UI 通过参数、标�
 3. 在“检测目标”中选择“全部”“自己倒地”或“我的击杀”；两个具体目标可以同时选择（此时分别生成两个集锦），并选择游戏语言（自动识别、简体中文、繁体中文、English）。
 4. 设置“扫描模式”（自动、快速、完整）和“剪辑范围”（事件前/后秒数）。
 5. 常用复选项包括“合并输出”“仅扫描”和“覆盖输出”。“仅扫描”只检测并写入记录，不生成视频；“覆盖输出”允许复用同名输出目录或合并文件。
-6. 展开“专家设置”可调整忽略开场事件秒数、燃烧瓶前置秒数、并行任务（`auto` 或正整数）以及亮色描边文字预筛选。命令预览会显示 GUI 将要执行的 CLI 命令，便于复核配置。
+6. 展开“专家设置”可调整忽略开场事件秒数、燃烧瓶前置秒数、OCR 并行度（`auto` 或正整数）、独立的 Trim 并行度（`auto`、`1`、`2`）以及亮色描边文字预筛选。命令预览会显示 GUI 将要执行的 CLI 命令，便于复核配置。
 
-运行时右侧面板显示当前阶段（OCR 扫描或整理输出）、已完成文件数/总数、已保留和已跳过计数以及耗时。点击“显示日志”可查看 CLI 原始运行日志，必要时可清空记录。点击停止按钮会终止 CLI 及其子进程；窗口关闭时若任务仍在运行，也会先询问是否停止。
+运行时右侧面板分别显示 Scan、Dedupe、Trim、Merge 阶段、已完成工作数/总数、worker 数和完成/跳过状态，以及已保留和已跳过计数与耗时。点击“显示日志”可查看 CLI 原始运行日志，必要时可清空记录。点击停止按钮会终止 CLI 及其子进程；窗口关闭时若任务仍在运行，也会先询问是否停止。
 
 任务完成后，“打开输出”会在资源管理器中打开本次输出目录。没有匹配事件时仍会写入扫描记录和 `summary.json`，界面会显示“扫描完成，没有匹配事件”。
 
@@ -77,9 +77,10 @@ pubg-highlight-trim "." --scan-only --scan-mode full --coarse-step 2 -o ".\fulls
 pubg-highlight-trim "." --scan-mode fast
 pubg-highlight-trim "." --profile
 
-# 自动选择并行度，一般无需手动设置
+# OCR 自动选择并行度；Trim 的 auto 保守使用 1 个 worker
 pubg-highlight-trim "." --scan-only -o ".\parallel_scan" -y
-pubg-highlight-trim "." --scan-only --jobs 1  # 关闭并行 worker
+pubg-highlight-trim "." --scan-only --jobs 1  # 关闭 OCR 并行 worker
+pubg-highlight-trim "." --jobs 1 --trim-jobs 2 --profile  # 独立启用两个 Trim worker
 ```
 
 运行 `pubg-highlight-trim --help` 查看全部选项。
@@ -104,8 +105,9 @@ pubg-highlight-trim "." --scan-only --jobs 1  # 关闭并行 worker
 | `--split-merge-by-target` | 关 | `--target both` 时按被击杀/击杀分别生成合并视频；默认关闭以保持混合输出兼容 |
 | `-y`, `--overwrite` | 关 | 覆盖输出目录 / 合并文件，而非生成唯一名称 |
 | `--verbose` | 关 | 打印启动配置和第三方 OCR 诊断；默认输出会抑制依赖库噪声 |
-| `--profile` | 关 | 打印每个片段的耗时明细（ffprobe、OCR、读帧、裁剪） |
+| `--profile` | 关 | 打印逐源耗时和最终阶段耗时；不加此参数也会写入 `profile.json` |
 | `--jobs` | `auto` | 根据视频数量、CPU 和可用内存自动选择 1 或 2 个 OCR worker；用 `1` 关闭并行，也可手动覆盖 |
+| `--trim-jobs` | `auto` | 独立的 Trim 并行度，仅接受 `auto`、`1`、`2`；auto 保守选 1，实际不超过计划片段数；dry-run/无片段为 0 |
 | `--ffmpeg` / `--ffprobe` | 自动 | 显式指定 ffmpeg.exe / ffprobe.exe 路径 |
 
 OCR 选项（进阶）：
@@ -130,6 +132,16 @@ OCR 选项（进阶）：
 | `--ocr-device-id` | `0` | 非负推理设备序号（0–2147483647），用于 DirectML |
 | `--no-brightness-gate` | 关 | 禁用粗扫描前的 OpenCV 亮色描边文字门控 |
 | `--brightness-gate-mode` | `light` | 粗扫描前的门控严格度：`light` 仅跳过近乎全黑的帧，`full` 额外检查亮色描边字形和横向文字结构，`none` 完全不过滤 |
+
+### 性能、阶段进度与验证
+
+`--jobs` 只控制 OCR 扫描，`--trim-jobs` 独立控制 Trim 编码。两个 Trim worker 会争用 CPU/GPU、内存和磁盘，并不保证更快。有界窗口中运行或等待发布的片段总数不超过有效 worker 数；即使编码乱序完成，仍按计划顺序发布，保持命名、CSV 和 Merge 顺序稳定。资源紧张时可使用 `--trim-jobs 1`。
+
+Trim 进度只统计已严格验证并发布的片段，不统计刚启动的编码；慢的前序任务可能暂时阻塞进度。dry-run 跳过 Trim/Merge，不把计划片段计作已编码。结构化 `PROGRESS` 的阶段、worker 和完成/跳过语义见[进度协议](docs/progress-protocol.md)。
+
+每次成功运行均写入 `profile.json`。`stages` 是阶段墙钟耗时；`aggregates` 与逐任务耗时是嵌套工作量，不能再加到阶段总耗时上，并行 Trim 的任务耗时之和可能超过阶段耗时。比较运行时应同时检查 `runtime.trim_jobs_requested`/`trim_workers`、源编码格式、缓存命中/未命中、当前与历史缓存 OCR provider，以及编码器能力探测/回退元数据。`--profile` 额外打印耗时记录，不开启 verbose 诊断。字段见 [Profile schema](docs/profile-schema.md)，重复测量见[固定源集基准方法](docs/trim-performance-benchmark.md)。
+
+验证始终严格：`runtime.trim_validation` 为 `ffprobe_duration_strict`，兼容字段 `runtime.validation` 仍为 `strict`。每个 Trim 输出在原子发布前均执行 FFprobe 时长验证，Merge 输出也会验证。当前没有快速/关闭验证模式或绕过验证的 CLI 开关；分析成本时应单独看 `trim_output_probe_seconds_sum`，而不是移除验证。
 
 ### 输出行为
 

@@ -11,7 +11,7 @@ progress. Stderr is diagnostic only and must never update progress or summary.
 | `event` | string, optional | `start`, `done`, or `skipped`; absent on intermediate updates and legacy scan records. |
 | `current` | integer | Completed work units, including `0` on start/skipped. |
 | `total` | integer | Work actually scheduled in this phase. |
-| `workers` | integer | Configured phase concurrency: OCR scan jobs, serial dedupe/trim/merge `1`, no work/skipped `0`. Not a live thread census. |
+| `workers` | integer | Selected phase concurrency: OCR scan jobs; effective Trim workers (`1` or `2`); serial dedupe/merge `1`; no work/skipped `0`. Not a live thread census. |
 | `reason` | string, optional | On skipped phases: `dry-run`, `disabled`, or `no-clips`. |
 | `planned` | integer, optional | On skipped phases; dry-run trim retains the number of planned clips, without counting them as completed. |
 
@@ -31,6 +31,12 @@ a phase instead of leaving a spinner running.
   emit `start 0/N`, intermediate `k/N`, then `done N/N`. Zero clips emit start
   and done `0/0 workers=0`. Dry-run emits only `skipped 0/0 workers=0`,
   `reason:dry-run`, `planned:N`; no encoding or publication is implied.
+  `--trim-jobs auto|1|2` is independent of OCR `--jobs`; auto conservatively
+  selects one worker. Normal Trim uses `min(resolved request, clip count)`.
+  A bounded window holds at most that many running or waiting-to-publish tasks.
+  Completion advances only after strict validation and ordered publication,
+  not when an out-of-order encoder finishes. Stable clip/Merge ordering is
+  unchanged; a slow early task can temporarily leave progress unchanged.
 - **Merge:** published merge targets, independently counted (including split
   targets). Nonempty work emits start, intermediate updates, then done.
   Otherwise emit `skipped 0/0 workers=0`: `disabled` when merge is disabled,
@@ -49,6 +55,12 @@ PROGRESS {"phase":"trim","current":1,"total":1,"workers":1}
 PROGRESS {"phase":"trim","event":"done","current":1,"total":1,"workers":1}
 PROGRESS {"phase":"merge","event":"skipped","current":0,"total":0,"workers":0,"reason":"disabled","planned":0}
 ```
+
+For example, three planned clips with `--trim-jobs 2` start with
+`PROGRESS {"phase":"trim","event":"start","current":0,"total":3,"workers":2}`
+and finish with `current:3,total:3,workers:2`. One planned clip uses `workers:1`.
+The worker count is a capacity, not a promise that both encoders are busy.
+See [profile metadata](profile-schema.md) for requested versus effective counts.
 
 ## Invariants and GUI compatibility
 
