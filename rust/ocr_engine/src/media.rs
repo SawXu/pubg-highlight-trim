@@ -216,6 +216,103 @@ fn safe_token(token: &str) -> Option<String> {
     .then(|| token.to_owned())
 }
 
+const NVENC_OPTIONS: &[&str] = &["-preset", "p4", "-rc", "vbr", "-cq", "22", "-b:v", "0"];
+
+#[derive(Debug, serde::Serialize)]
+pub struct EncoderDiagnostics {
+    pub capability: &'static str,
+    pub probe_seconds: f64,
+    pub fallback_reason: Option<&'static str>,
+    pub production_fallbacks: usize,
+}
+
+/// Owned by one application run. Never global: a later run re-evaluates the GPU.
+pub struct TrimEncoder<'a> {
+    tools: &'a FfmpegTools,
+    diagnostics: EncoderDiagnostics,
+}
+impl<'a> TrimEncoder<'a> {
+    pub fn new(tools: &'a FfmpegTools) -> Self {
+        Self {
+            tools,
+            diagnostics: EncoderDiagnostics {
+                capability: "not_probed",
+                probe_seconds: 0.0,
+                fallback_reason: None,
+                production_fallbacks: 0,
+            },
+        }
+    }
+    pub fn diagnostics(&self) -> &EncoderDiagnostics {
+        &self.diagnostics
+    }
+    /// Probe separately so callers never charge capability discovery to clip encoding.
+    pub fn ensure_capability(&mut self) -> Result<(), MediaError> {
+        if self.diagnostics.capability != "not_probed" {
+            return Ok(());
+        }
+        crate::cancellation::check().map_err(|_| MediaError::Cancelled)?;
+        let started = Instant::now();
+        // Reuse owned staging cleanup, but never publish a capability artifact.
+        let destination =
+            std::env::temp_dir().join(format!("pubg-nvenc-{}.mp4", std::process::id()));
+        let staging = crate::media_output::MediaOutput::reserve(&destination, true, &[])?;
+        let result = checked(
+            Command::new(&self.tools.ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=black:size=320x240:rate=30",
+                    "-t",
+                    "0.1",
+                    "-map",
+                    "0:v:0",
+                    "-c:v",
+                    "h264_nvenc",
+                ])
+                .args(NVENC_OPTIONS)
+                .args(["-movflags", "+faststart"])
+                .arg(staging.temporary()),
+            Duration::from_secs(15),
+            self.tools.verbose,
+        );
+        self.diagnostics.probe_seconds = started.elapsed().as_secs_f64();
+        match result {
+            Ok(_) => self.diagnostics.capability = "available",
+            Err(MediaError::Cancelled) => return Err(MediaError::Cancelled),
+            Err(_) => {
+                self.diagnostics.capability = "unavailable";
+                // Fixed codes only; native stderr can contain private paths.
+                self.diagnostics.fallback_reason = Some("capability_probe_failed");
+            }
+        }
+        Ok(())
+    }
+    pub fn trim_clip(
+        &mut self,
+        src: &Path,
+        out: &Path,
+        start: f64,
+        length: f64,
+    ) -> Result<&'static str, MediaError> {
+        self.ensure_capability()?;
+        let nvenc = self.diagnostics.capability == "available";
+        let codec = self
+            .tools
+            .trim_clip_with_encoder(src, out, start, length, nvenc)?;
+        if nvenc && codec == "libx264" {
+            self.diagnostics.production_fallbacks += 1;
+            self.diagnostics.fallback_reason = Some("production_nvenc_failed");
+        }
+        Ok(codec)
+    }
+}
+
 /// Search explicit path, release roots, environment directory, PATH, then Shutter Encoder.
 pub fn find_binary(name: &str, explicit: Option<&Path>) -> Result<PathBuf, MediaError> {
     if let Some(path) = explicit {
@@ -361,18 +458,28 @@ impl FfmpegTools {
         start: f64,
         length: f64,
     ) -> Result<&'static str, MediaError> {
+        self.trim_clip_with_encoder(src, out, start, length, true)
+    }
+    fn trim_clip_with_encoder(
+        &self,
+        src: &Path,
+        out: &Path,
+        start: f64,
+        length: f64,
+        nvenc: bool,
+    ) -> Result<&'static str, MediaError> {
         if !start.is_finite() || start < 0.0 || !length.is_finite() || length <= 0.0 {
             return Err(MediaError::InvalidInput("invalid trim window".into()));
         }
         ensure_distinct(src, out)?;
         create_parent(out)?;
         for (codec, options) in [
-            (
-                "h264_nvenc",
-                vec!["-preset", "p4", "-rc", "vbr", "-cq", "22", "-b:v", "0"],
-            ),
+            ("h264_nvenc", NVENC_OPTIONS.to_vec()),
             ("libx264", vec!["-preset", "veryfast", "-crf", "20"]),
         ] {
+            if codec == "h264_nvenc" && !nvenc {
+                continue;
+            }
             let result = checked(
                 Command::new(&self.ffmpeg)
                     .args([

@@ -222,9 +222,12 @@ fn trim_and_merge_encode_only_the_supplied_event_windows() {
     let one = dir.join("一' clip.mp4");
     let two = dir.join("two.mp4");
     let merged = dir.join("merged.mp4");
-    let codec = tools.trim_clip(&src, &one, 0.5, 0.75).unwrap();
+    let mut encoder = pubg_ocr_engine::media::TrimEncoder::new(&tools);
+    let codec = encoder.trim_clip(&src, &one, 0.5, 0.75).unwrap();
+    assert!(["available", "unavailable"].contains(&encoder.diagnostics().capability));
+    assert!(encoder.diagnostics().probe_seconds > 0.0);
     assert!(["libx264", "h264_nvenc"].contains(&codec));
-    tools.trim_clip(&src, &two, 2.0, 0.5).unwrap();
+    encoder.trim_clip(&src, &two, 2.0, 0.5).unwrap();
     assert!((tools.duration_sec(&one).unwrap() - 0.75).abs() < 0.06);
     assert!((tools.duration_sec(&two).unwrap() - 0.5).abs() < 0.06);
     let list = tools

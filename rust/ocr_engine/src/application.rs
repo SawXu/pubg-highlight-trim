@@ -786,6 +786,10 @@ mod production {
             progress_phase_start("trim", trim_total_clips, trim_workers);
         }
         let mut trim_completed_clips: usize = 0;
+        let mut trim_encoder = crate::media::TrimEncoder::new(&tools);
+        let mut trim_tasks = Vec::new();
+        let (mut encode_sum, mut output_probe_sum, mut publication_sum, mut task_total_sum) =
+            (0.0, 0.0, 0.0, 0.0);
         // Execute serially. Never recompute a destination after encoding starts:
         // reservation/publication must reject a late collision, not renumber it.
         for (index, source) in inputs.sources.iter().enumerate() {
@@ -879,11 +883,15 @@ mod production {
                 let mut trim_seconds = 0.0;
                 if let Some(path) = task.output {
                     debug_assert_eq!(task.sequence, clips.len() + 1);
+                    trim_encoder
+                        .ensure_capability()
+                        .map_err(|e| e.to_string())?;
+                    let task_started = Instant::now();
                     let staged =
                         crate::media_output::MediaOutput::reserve(&path, false, &input_files)
                             .map_err(|e| e.to_string())?;
                     let trim_started = Instant::now();
-                    encoder = tools
+                    encoder = trim_encoder
                         .trim_clip(
                             &source.path,
                             staged.temporary(),
@@ -893,12 +901,26 @@ mod production {
                         .map_err(|e| e.to_string())?
                         .into();
                     trim_seconds = trim_started.elapsed().as_secs_f64();
+                    let probe_started = Instant::now();
                     tools
                         .duration_sec(staged.temporary())
                         .map_err(|e| e.to_string())?;
+                    let output_probe_seconds = probe_started.elapsed().as_secs_f64();
+                    let publication_started = Instant::now();
                     staged
                         .publish(&input_files, false)
                         .map_err(|e| e.to_string())?;
+                    let publication_seconds = publication_started.elapsed().as_secs_f64();
+                    let total_seconds = task_started.elapsed().as_secs_f64();
+                    encode_sum += trim_seconds;
+                    output_probe_sum += output_probe_seconds;
+                    publication_sum += publication_seconds;
+                    task_total_sum += total_seconds;
+                    trim_tasks.push(json!({"sequence":task.sequence,
+                        "encode_seconds":reports::round3(trim_seconds),
+                        "output_probe_seconds":reports::round3(output_probe_seconds),
+                        "publication_seconds":reports::round3(publication_seconds),
+                        "total_seconds":reports::round3(total_seconds)}));
                     *encoders.entry(encoder.clone()).or_default() += 1;
                     clips.push(path.clone());
                     if c.split_targets() {
@@ -1059,18 +1081,15 @@ mod production {
         let csv_path = paths.directory.join("检测与裁剪记录.csv");
         let mut termination = reports::counts(&records, "TerminationReason");
         termination.remove("");
-        let trim_total = records
-            .iter()
-            .map(|r| r["TrimSeconds"].parse::<f64>().unwrap_or(0.0))
-            .sum::<f64>();
         let mut profile = json!({
             "schema_version":"2", "run_id":run_id,
             "timing_boundary":"before_final_timing_serialization_and_emission",
-            "aggregates":{"cache_read_seconds_sum":reports::round3(cache_read_seconds),"cache_write_seconds_sum":reports::round3(cache_write_seconds),"trim_encode_seconds_sum":reports::round3(trim_total)},
+            "aggregates":{"cache_read_seconds_sum":reports::round3(cache_read_seconds),"cache_write_seconds_sum":reports::round3(cache_write_seconds),"trim_encode_seconds_sum":reports::round3(encode_sum),"trim_output_probe_seconds_sum":reports::round3(output_probe_sum),"trim_publication_seconds_sum":reports::round3(publication_sum),"trim_task_total_seconds_sum":reports::round3(task_total_sum)},
             "telemetry":{"current":telemetry_current,"cached_historical":telemetry_historical,"current_basis":"completed_scan_report","cached_historical_basis":"maximum_detection_snapshot_through_last_accepted_event_not_completed_scan"},
+            "trim_tasks":trim_tasks,
             "dedupe_work":dedupe_work,
             "counts":{"sources":total,"candidates":records.iter().filter(|r|!r["EventSec"].is_empty()).count(),"outputs":clips.len()},
-            "runtime":{"ocr_worker_capacity":jobs.min(total),"ocr_workers_active":active_ocr_workers,"trim_workers":1,"ocr_provider_mode":c.ocr_provider.code(),"ocr_threads_per_worker":settings.threads,"source_codec_counts":codec_counts,"ffmpeg_version":ffmpeg_version,"scan_mode":format!("{:?}",c.scan_mode).to_lowercase(),"full_scan":full_scan,"candidate_input_present":candidates_path.is_some(),"brightness_gate_mode":format!("{:?}",c.brightness_gate_mode.unwrap_or(crate::config::GateMode::Light)).to_lowercase(),"validation":"strict","dry_run":c.dry_run,"source_scan_configs":source_scan_configs},
+            "runtime":{"ocr_worker_capacity":jobs.min(total),"ocr_workers_active":active_ocr_workers,"trim_workers":1,"trim_encoder":trim_encoder.diagnostics(),"trim_validation":"ffprobe_duration_strict","ocr_provider_mode":c.ocr_provider.code(),"ocr_threads_per_worker":settings.threads,"source_codec_counts":codec_counts,"ffmpeg_version":ffmpeg_version,"scan_mode":format!("{:?}",c.scan_mode).to_lowercase(),"full_scan":full_scan,"candidate_input_present":candidates_path.is_some(),"brightness_gate_mode":format!("{:?}",c.brightness_gate_mode.unwrap_or(crate::config::GateMode::Light)).to_lowercase(),"validation":"strict","dry_run":c.dry_run,"source_scan_configs":source_scan_configs},
             "cache":{"enabled":cache_dir.is_some(),"directory":cache_dir.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),"hits":cache_hits,"misses":cache_misses,"hit_rate":if cache_hits+cache_misses==0{0.0}else{reports::round3(cache_hits as f64/(cache_hits+cache_misses)as f64)}},
             "candidate_csv":candidate_output,"termination_reasons":termination,"ocr_providers":providers,
             "ocr_providers_current":providers.iter().filter(|p|p["cache_hit"] != true).collect::<Vec<_>>(),

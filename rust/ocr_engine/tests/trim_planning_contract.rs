@@ -46,6 +46,7 @@ fn media() -> &'static PathBuf {
                     println!("h264"); return;
                 }
                 if a.iter().any(|v|v=="format=duration") {
+                    if std::env::var_os("FAIL_VALIDATION").is_some() && a.last().unwrap().contains(".partial") { std::process::exit(1); }
                     if std::env::var_os("SLOW_VALIDATION").is_some() { std::thread::sleep(std::time::Duration::from_millis(80)); }
                     println!("60"); return;
                 }
@@ -60,6 +61,11 @@ fn media() -> &'static PathBuf {
                     let i = a.iter().position(|v|v=="-ss").unwrap();
                     let t: f64 = a[i+1].parse().unwrap();
                     std::io::stdout().write_all(&vec![((t*100.).round() as u64 % 256) as u8;16*16*3]).unwrap(); return;
+                }
+                if a.iter().any(|v|v=="lavfi") {
+                    let mut log = fs::OpenOptions::new().append(true).create(true).open(root.join("capability.log")).unwrap();
+                    writeln!(log, "probe").unwrap();
+                    fs::write(a.last().unwrap(), b"probe").unwrap(); return;
                 }
                 let out = a.last().unwrap();
                 if a.iter().any(|v|v=="concat") {
@@ -229,6 +235,35 @@ fn detection(sec: f64, target: &str, key: &str) -> Value {
 }
 
 #[test]
+fn no_planned_clips_never_probe_nvenc() {
+    let f = Fixture::with_detections(&[], [vec![], vec![]]);
+    let out = f.command().output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(!f.root.join("capability.log").exists());
+    assert!(!f.root.join("encode.log").exists());
+}
+
+#[test]
+fn strict_output_validation_failure_never_publishes_merges_or_archives() {
+    let f = Fixture::new(&["--merge", "--move-originals"]);
+    let out = f.command().env("FAIL_VALIDATION", "1").output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        if let Some(payload) = line.strip_prefix("PROGRESS ") {
+            let progress: Value = serde_json::from_str(payload).unwrap();
+            assert!(!(progress["phase"] == "trim" && progress["event"] == "done"));
+            if progress["phase"] == "trim" {
+                assert_eq!(progress["current"], 0);
+            }
+        }
+    }
+    assert_eq!(fs::read_dir(f.root.join("out/clips")).unwrap().count(), 0);
+    assert!(!f.root.join("out/profile.json").exists());
+    assert!(f.root.join("a.mp4").exists());
+    assert!(f.root.join("b.mp4").exists());
+}
+
+#[test]
 fn production_profile_separates_wall_clock_media_and_historical_cache_telemetry() {
     let f = Fixture::new(&["--merge", "--profile"]);
     let out = f.command().env("SLOW_VALIDATION", "1").output().unwrap();
@@ -277,6 +312,39 @@ fn production_profile_separates_wall_clock_media_and_historical_cache_telemetry(
     assert_eq!(p["runtime"]["ocr_workers_active"], 0);
     assert_eq!(p["runtime"]["trim_workers"], 1);
     assert_eq!(p["runtime"]["validation"], "strict");
+    assert_eq!(p["runtime"]["trim_validation"], "ffprobe_duration_strict");
+    let tasks = p["trim_tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 3);
+    for task in tasks {
+        assert!(task["output_probe_seconds"].as_f64().unwrap() >= 0.08);
+        let parts = [
+            "encode_seconds",
+            "output_probe_seconds",
+            "publication_seconds",
+        ]
+        .iter()
+        .map(|k| task[k].as_f64().unwrap())
+        .sum::<f64>();
+        assert!(task["total_seconds"].as_f64().unwrap() + 0.002 >= parts);
+    }
+    assert!(
+        p["aggregates"]["trim_output_probe_seconds_sum"]
+            .as_f64()
+            .unwrap()
+            >= 0.24
+    );
+    assert_eq!(p["runtime"]["trim_encoder"]["capability"], "available");
+    assert_eq!(
+        fs::read_to_string(f.root.join("capability.log")).unwrap(),
+        "probe\n"
+    );
+    let csv_encode: f64 = rows(&f)
+        .iter()
+        .map(|r| r["TrimSeconds"].parse::<f64>().unwrap())
+        .sum();
+    assert!(
+        (csv_encode - p["aggregates"]["trim_encode_seconds_sum"].as_f64().unwrap()).abs() <= 0.002
+    );
     assert_eq!(
         p["runtime"]["source_scan_configs"]
             .as_array()
@@ -586,6 +654,14 @@ fn dry_run_keeps_planned_windows_but_never_encodes_merges_or_archives() {
     assert_eq!(summary["originals_moved"], 0);
     assert!(!f.root.join("encode.log").exists());
     assert!(!f.root.join("out/clips").exists());
+    assert!(!f.root.join("capability.log").exists());
+    let profile: Value =
+        serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+    assert_eq!(
+        profile["runtime"]["trim_encoder"]["capability"],
+        "not_probed"
+    );
+    assert_eq!(profile["trim_tasks"], json!([]));
     let r = rows(&f);
     assert_eq!(
         r.iter()
