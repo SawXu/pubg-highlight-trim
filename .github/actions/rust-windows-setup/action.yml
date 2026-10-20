@@ -47,7 +47,7 @@ runs:
       if: inputs.cold-cache != 'true'
       with:
         workspaces: rust -> target
-        key: windows-x64-${{ inputs.cache-role }}-${{ hashFiles('.github/workflows/ocr-rust.yml', '.github/actions/rust-windows-setup/action.yml', 'scripts/build_rust_release.ps1', 'vendor/ppocr-rs/**/*.rs', 'vendor/ppocr-rs/**/Cargo.toml') }}
+        key: windows-x64-${{ inputs.cache-role }}-${{ hashFiles('.github/workflows/ocr-rust.yml', '.github/workflows/windows-assurance.yml', '.github/actions/rust-windows-setup/action.yml', 'scripts/build_rust_release.ps1', 'vendor/ppocr-rs/**/*.rs', 'vendor/ppocr-rs/**/Cargo.toml') }}
         cache-all-crates: true
     - name: Report Cargo cache status
       shell: powershell
