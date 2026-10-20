@@ -59,4 +59,56 @@ public sealed class CliOutputParserTests
 
         Assert.IsNull(result.Summary);
     }
+
+    [TestMethod]
+    public void Parse_DedupeStartEventReturnsPhaseTotalAndEvent()
+    {
+        var result = _parser.Parse("PROGRESS {\"phase\":\"dedupe\",\"event\":\"start\",\"total\":5}");
+
+        Assert.AreEqual("dedupe", result.Phase);
+        Assert.AreEqual("start", result.PhaseEvent);
+        Assert.AreEqual(5, result.Total);
+        Assert.IsNull(result.Current);
+    }
+
+    [TestMethod]
+    public void Parse_TrimProgressReturnsPhaseCurrentAndTotal()
+    {
+        var result = _parser.Parse("PROGRESS {\"phase\":\"trim\",\"current\":2,\"total\":7}");
+
+        Assert.AreEqual("trim", result.Phase);
+        Assert.AreEqual(2, result.Current);
+        Assert.AreEqual(7, result.Total);
+        Assert.IsNull(result.PhaseEvent);
+    }
+
+    [TestMethod]
+    public void Parse_MergeDoneEventReturnsPhaseCurrentTotalAndEvent()
+    {
+        var result = _parser.Parse("PROGRESS {\"phase\":\"merge\",\"event\":\"done\",\"current\":2,\"total\":2}");
+
+        Assert.AreEqual("merge", result.Phase);
+        Assert.AreEqual("done", result.PhaseEvent);
+        Assert.AreEqual(2, result.Current);
+        Assert.AreEqual(2, result.Total);
+    }
+
+    [TestMethod]
+    public void Parse_UnknownFuturePhaseDoesNotCrashAndReturnsPhase()
+    {
+        var result = _parser.Parse("PROGRESS {\"phase\":\"archive\",\"event\":\"start\",\"total\":1}");
+
+        Assert.AreEqual("archive", result.Phase);
+        Assert.AreEqual("start", result.PhaseEvent);
+        Assert.IsNull(result.Current);
+    }
+
+    [TestMethod]
+    public void Parse_LegacyIncludeLineHasNullPhaseEvent()
+    {
+        var result = _parser.Parse("[03/12] INCLUDE own-kill 42.000s 37.000-43.000 ocr lang=en | sample.mp4");
+
+        Assert.IsNull(result.PhaseEvent);
+        Assert.AreEqual("process", result.Phase);
+    }
 }

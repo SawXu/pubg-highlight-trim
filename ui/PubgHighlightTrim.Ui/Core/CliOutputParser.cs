@@ -13,19 +13,24 @@ public sealed partial class CliOutputParser
             {
                 using var document = JsonDocument.Parse(line[9..]);
                 var root = document.RootElement;
+                var phase = root.TryGetProperty("phase", out var phaseEl) ? phaseEl.GetString() : null;
+                var phaseEvent = root.TryGetProperty("event", out var eventEl) ? eventEl.GetString() : null;
+                var hasTotal = root.TryGetProperty("total", out var totalEl);
+                var hasCurrent = root.TryGetProperty("current", out var currentEl);
                 return new CliOutputEvent(
                     line,
-                    root.GetProperty("current").GetInt32(),
-                    root.GetProperty("total").GetInt32(),
+                    hasCurrent ? currentEl.GetInt32() : null,
+                    hasTotal ? totalEl.GetInt32() : null,
                     false,
                     false,
                     null,
-                    root.GetProperty("phase").GetString(),
-                    root.TryGetProperty("workers", out var workers) ? workers.GetInt32() : null);
+                    phase,
+                    root.TryGetProperty("workers", out var workers) ? workers.GetInt32() : null,
+                    phaseEvent);
             }
             catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException)
             {
-                return new CliOutputEvent(line, null, null, false, false, null, null, null);
+                return new CliOutputEvent(line, null, null, false, false, null, null, null, null);
             }
         }
 
@@ -41,6 +46,7 @@ public sealed partial class CliOutputParser
                 status.Equals("SKIP", StringComparison.OrdinalIgnoreCase),
                 null,
                 "process",
+                null,
                 null);
         }
 
@@ -49,15 +55,15 @@ public sealed partial class CliOutputParser
             try
             {
                 var summary = JsonSerializer.Deserialize<CliRunSummary>(line[8..]);
-                return new CliOutputEvent(line, null, null, false, false, summary, null, null);
+                return new CliOutputEvent(line, null, null, false, false, summary, null, null, null);
             }
             catch (JsonException)
             {
-                return new CliOutputEvent(line, null, null, false, false, null, null, null);
+                return new CliOutputEvent(line, null, null, false, false, null, null, null, null);
             }
         }
 
-        return new CliOutputEvent(line, null, null, false, false, null, null, null);
+        return new CliOutputEvent(line, null, null, false, false, null, null, null, null);
     }
 
     [GeneratedRegex(@"^\[(?<current>\d+)\/(?<total>\d+)\]\s+(?<status>INCLUDE|SKIP|full_scan=\S+)", RegexOptions.IgnoreCase)]
@@ -72,4 +78,5 @@ public sealed record CliOutputEvent(
     bool Skipped,
     CliRunSummary? Summary,
     string? Phase,
-    int? Workers);
+    int? Workers,
+    string? PhaseEvent);
