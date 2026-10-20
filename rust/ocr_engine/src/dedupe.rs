@@ -17,12 +17,28 @@ impl VerificationFrames for crate::media::FfmpegFrameSource {
 }
 type Factory<'a> = dyn FnMut(&Path) -> Result<Box<dyn VerificationFrames>, String> + 'a;
 
+#[derive(Default, serde::Serialize)]
+pub struct DedupeWork {
+    pub candidates: usize,
+    pub pair_comparisons: usize,
+    pub verification_windows: usize,
+    pub verification_failures: usize,
+    pub duplicates: usize,
+}
+
 /// Return source/detection positions to skip, ranked by available requested context.
 /// Inputs must be minimum-event filtered and context prepared, but not clip-merged.
 pub fn cross_source_duplicates(
     sources: &[(PathBuf, Vec<Detection>)],
     factory: &mut Factory<'_>,
 ) -> HashSet<(usize, usize)> {
+    cross_source_duplicates_profiled(sources, factory).0
+}
+pub fn cross_source_duplicates_profiled(
+    sources: &[(PathBuf, Vec<Detection>)],
+    factory: &mut Factory<'_>,
+) -> (HashSet<(usize, usize)>, DedupeWork) {
+    let mut work = DedupeWork::default();
     let mut candidates = Vec::new();
     for (s, (_, detections)) in sources.iter().enumerate() {
         for (d, detection) in detections.iter().enumerate() {
@@ -31,6 +47,7 @@ pub fn cross_source_duplicates(
             }
         }
     }
+    work.candidates = candidates.len();
     let context = |&(s, d): &(usize, usize)| {
         let detection = &sources[s].1[d];
         let event = detection.event_sec.unwrap();
@@ -48,15 +65,26 @@ pub fn cross_source_duplicates(
             .entry((&detection.target, &detection.event_key))
             .or_default();
         if matches.iter().any(|&(os, od)| {
-            src != &sources[os].0
-                && same_recorded_event(src, detection, &sources[os].0, &sources[os].1[od], factory)
+            if src == &sources[os].0 {
+                return false;
+            }
+            work.pair_comparisons += 1;
+            same_recorded_event(
+                src,
+                detection,
+                &sources[os].0,
+                &sources[os].1[od],
+                factory,
+                &mut work,
+            )
         }) {
             skipped.insert((s, d));
         } else {
             matches.push((s, d));
         }
     }
-    skipped
+    work.duplicates = skipped.len();
+    (skipped, work)
 }
 fn same_recorded_event(
     src: &Path,
@@ -64,6 +92,7 @@ fn same_recorded_event(
     other_src: &Path,
     other: &Detection,
     factory: &mut Factory<'_>,
+    work: &mut DedupeWork,
 ) -> bool {
     let event = detection.event_sec.unwrap();
     let other_event = other.event_sec.unwrap();
@@ -80,6 +109,7 @@ fn same_recorded_event(
     }
     windows.push(vec![left, (left + right) / 2., right]);
     windows.iter().any(|offsets| {
+        work.verification_windows += 1;
         matching_event_window(
             src,
             event,
@@ -89,7 +119,10 @@ fn same_recorded_event(
             offsets,
             factory,
         )
-        .unwrap_or(false)
+        .unwrap_or_else(|_| {
+            work.verification_failures += 1;
+            false
+        })
     })
 }
 fn tiles(frame: &BgrFrame) -> Vec<Vec<u8>> {

@@ -58,6 +58,10 @@ fn seek_outside_video_is_not_an_unreadable_video() {
         .status()
         .unwrap();
     assert!(status.success());
+    assert_eq!(tools.source_codec(&path).as_deref(), Some("h264"));
+    let version = tools.version_token().expect("real ffmpeg version token");
+    assert!(!version.contains(['/', '\\', ' ']));
+    assert_eq!(tools.source_codec(&dir.join("missing.mp4")), None);
     let mut source = FfmpegFrameSource::open(&path, &tools, None).unwrap();
     assert_eq!((source.width(), source.height()), (32, 24));
     assert!(source.read_at(99.0).unwrap().is_none());

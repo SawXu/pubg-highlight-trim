@@ -48,6 +48,43 @@ fn assert_provider(output: &Output, mode: &str, requested: &str, cache_hit: bool
         other => panic!("unexpected actual provider: {other}"),
     }
     assert!(!String::from_utf8_lossy(&output.stdout).contains("OCR mode="));
+    let p: Value = serde_json::from_slice(
+        &fs::read(PathBuf::from(result["output_dir"].as_str().unwrap()).join("profile.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(p["schema_version"], "2");
+    assert_eq!(p["stages"]["total"], result["profile_total_sec"]);
+    assert_eq!(
+        p["runtime"]["ocr_workers_active"],
+        if cache_hit { 0 } else { 1 }
+    );
+    let measured = if cache_hit {
+        "cached_historical"
+    } else {
+        "current"
+    };
+    let unmeasured = if cache_hit {
+        "current"
+    } else {
+        "cached_historical"
+    };
+    assert!(
+        p["telemetry"][measured]["ocr_requests"].as_u64().unwrap() > 0,
+        "real inference telemetry: {p}"
+    );
+    assert_eq!(p["telemetry"][unmeasured]["ocr_requests"], 0);
+    assert_eq!(
+        p["ocr_providers_current"].as_array().unwrap().len(),
+        if cache_hit { 0 } else { 1 }
+    );
+    assert_eq!(
+        p["ocr_providers_cached_historical"]
+            .as_array()
+            .unwrap()
+            .len(),
+        if cache_hit { 1 } else { 0 }
+    );
     result
 }
 #[test]

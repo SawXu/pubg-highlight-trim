@@ -37,7 +37,18 @@ fn media() -> &'static PathBuf {
                 use std::{fs, io::Write, path::PathBuf};
                 let a: Vec<String> = std::env::args().skip(1).collect();
                 let root = PathBuf::from(std::env::var_os("TRIM_FIXTURE").unwrap());
-                if a.iter().any(|v|v=="format=duration") { println!("60"); return; }
+                if a.iter().any(|v|v=="-version") {
+                    if std::env::var_os("BAD_DIAGNOSTICS").is_some() { println!("ffmpeg version C:/private/ffmpeg"); return; }
+                    println!("ffmpeg version fixture-1 private/build/path"); return;
+                }
+                if a.iter().any(|v|v=="stream=codec_name") {
+                    if std::env::var_os("BAD_DIAGNOSTICS").is_some() { std::process::exit(1); }
+                    println!("h264"); return;
+                }
+                if a.iter().any(|v|v=="format=duration") {
+                    if std::env::var_os("SLOW_VALIDATION").is_some() { std::thread::sleep(std::time::Duration::from_millis(80)); }
+                    println!("60"); return;
+                }
                 if a.iter().any(|v|v=="stream=width,height") { println!("16,16"); return; }
                 if a.iter().any(|v|v=="rawvideo") {
                     if let Some(path) = std::env::var_os("BLOCK_FUTURE") {
@@ -96,6 +107,9 @@ impl Fixture {
         )
     }
     fn with_detections(extra: &[&str], detections: [Vec<Value>; 2]) -> Self {
+        Self::with_paths(extra, detections, false)
+    }
+    fn with_paths(extra: &[&str], detections: [Vec<Value>; 2], same_basename: bool) -> Self {
         let root = std::env::temp_dir().join(format!(
             "trim-plan-{}-{}",
             std::process::id(),
@@ -116,7 +130,12 @@ impl Fixture {
         }
         fs::write(models.join("pp_ocrv6_medium.json"), manifest.to_string()).unwrap();
         let a = root.join("a.mp4");
-        let b = root.join("b.mp4");
+        let b = if same_basename {
+            fs::create_dir(root.join("other")).unwrap();
+            root.join("other/a.mp4")
+        } else {
+            root.join("b.mp4")
+        };
         fs::write(&a, b"original-a").unwrap();
         fs::write(&b, b"original-b").unwrap();
         let mut args = vec![
@@ -176,7 +195,7 @@ impl Fixture {
             persistent_cache::write(
                 c.cache_dir.as_ref().unwrap(),
                 &key,
-                &json!({"detections":detections[index],"provider":null}),
+                &json!({"detections":detections[index],"provider":{"provider_actual":"cpu","provider_requested":"directml","fallback_reason":"directml-unavailable","cache_hit":false}}),
             )
             .unwrap();
         }
@@ -206,7 +225,176 @@ impl Drop for Fixture {
     }
 }
 fn detection(sec: f64, target: &str, key: &str) -> Value {
-    json!({"duration_sec":60.,"event_sec":sec,"target":target,"event_key":key,"method":"ocr","detector":"ocr"})
+    json!({"duration_sec":60.,"event_sec":sec,"target":target,"event_key":key,"method":"ocr","detector":"ocr", "ocr_seconds":2.0,"ocr_requests":7,"detect_seconds":3.0})
+}
+
+#[test]
+fn production_profile_separates_wall_clock_media_and_historical_cache_telemetry() {
+    let f = Fixture::new(&["--merge", "--profile"]);
+    let out = f.command().env("SLOW_VALIDATION", "1").output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let summary = f.summary(&out);
+    let p: Value =
+        serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+    assert_eq!(p["schema_version"], "2");
+    let stages = p["stages"].as_object().unwrap();
+    assert_eq!(stages.len(), 9);
+    for name in [
+        "setup",
+        "scan",
+        "dedupe",
+        "planning",
+        "trim",
+        "merge",
+        "archive",
+        "reporting",
+        "total",
+    ] {
+        assert!(stages[name].as_f64().unwrap() >= 0.0);
+    }
+    assert!(p["stages"]["merge"].as_f64().unwrap() < 60.0);
+    assert!(p["stages"]["merge"].as_f64().unwrap() >= 0.08);
+    assert!(p["stages"]["trim"].as_f64().unwrap() >= 0.24);
+    assert!(
+        p["stages"]["trim"].as_f64().unwrap()
+            - p["aggregates"]["trim_encode_seconds_sum"].as_f64().unwrap()
+            >= 0.23
+    );
+    let sum: f64 = stages
+        .iter()
+        .filter(|(k, _)| k.as_str() != "total")
+        .map(|(_, v)| v.as_f64().unwrap())
+        .sum();
+    assert!((sum - stages["total"].as_f64().unwrap()).abs() <= 0.005);
+    assert_eq!(summary["merge_duration_sec"], 60.0);
+    assert_eq!(summary["profile_total_sec"], p["stages"]["total"]);
+    assert_eq!(p["runtime"]["ocr_worker_capacity"], 1);
+    assert_eq!(p["runtime"]["ocr_workers_active"], 0);
+    assert_eq!(p["runtime"]["trim_workers"], 1);
+    assert_eq!(p["runtime"]["validation"], "strict");
+    assert_eq!(
+        p["runtime"]["source_scan_configs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        p["runtime"]["source_scan_configs"][0]["config"]["coarse_step"],
+        4.0
+    );
+    assert_eq!(p["runtime"]["source_scan_configs"][0]["source_index"], 1);
+    assert_eq!(p["runtime"]["source_codec_counts"]["h264"], 2);
+    assert_eq!(p["runtime"]["ffmpeg_version"], "fixture-1");
+    assert_eq!(p["ocr_providers_current"], json!([]));
+    assert_eq!(
+        p["ocr_providers_cached_historical"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        p["ocr_providers_cached_historical"][0]["provider_actual"],
+        "cpu"
+    );
+    assert_eq!(
+        p["ocr_providers_cached_historical"][0]["fallback_reason"],
+        "directml-unavailable"
+    );
+    assert_eq!(p["telemetry"]["current"]["ocr_requests"], 0);
+    assert_eq!(p["telemetry"]["cached_historical"]["ocr_requests"], 14);
+    assert_eq!(
+        p["telemetry"]["cached_historical"]["ocr_predict_seconds_sum"],
+        4.0
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text
+        .lines()
+        .find_map(|l| l.strip_prefix("PROFILE {"))
+        .unwrap();
+    let stdout: Value = serde_json::from_str(&format!("{{{line}")).unwrap();
+    assert_eq!(stdout["stages"], p["stages"]);
+    assert_eq!(stdout["run_id"], p["run_id"]);
+    assert!(!p["runtime"]
+        .to_string()
+        .contains(&f.root.display().to_string()));
+}
+
+#[test]
+fn failed_codec_diagnostics_do_not_change_source_classification_or_leak_version_paths() {
+    let f = Fixture::new(&["--scan-only"]);
+    let out = f.command().env("BAD_DIAGNOSTICS", "1").output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(f.summary(&out)["unreadable_count"], 0);
+    let p: Value =
+        serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+    assert_eq!(p["runtime"]["source_codec_counts"]["unknown"], 2);
+    assert!(p["runtime"]["ffmpeg_version"].is_null());
+    assert!(!p.to_string().contains("C:/private"));
+}
+
+#[test]
+fn cache_hit_empty_detection_duration_probe_is_current_measurement_not_historical() {
+    let f = Fixture::with_detections(
+        &["--scan-only"],
+        [vec![], vec![detection(10., "own-kill", "b")]],
+    );
+    let out = f.command().env("SLOW_VALIDATION", "1").output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let p: Value =
+        serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+    assert!(
+        p["telemetry"]["current"]["probe_seconds_sum"]
+            .as_f64()
+            .unwrap()
+            >= 0.08
+    );
+    assert_eq!(
+        p["telemetry"]["cached_historical"]["probe_seconds_sum"],
+        0.0
+    );
+    assert_eq!(
+        p["telemetry"]["cached_historical"]["sources_without_detection_telemetry"],
+        1
+    );
+}
+
+#[test]
+fn telemetry_counts_distinct_same_named_sources_before_filtering_and_grouping() {
+    let mut early = detection(0.5, "own-kill", "early");
+    early["ocr_requests"] = json!(19);
+    let f = Fixture::with_paths(
+        &["--scan-only"],
+        [
+            vec![early, detection(10., "own-kill", "a")],
+            vec![detection(10., "own-kill", "b")],
+        ],
+        true,
+    );
+    let out = f.command().output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let p: Value =
+        serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+    assert_eq!(p["telemetry"]["cached_historical"]["sources"], 2);
+    assert_eq!(p["telemetry"]["cached_historical"]["ocr_requests"], 26);
+    assert_eq!(
+        p["telemetry"]["cached_historical"]["ocr_predict_seconds_sum"],
+        4.0
+    );
+    assert!(rows(&f)
+        .iter()
+        .any(|r| r["Method"] == "skipped-before-min-event-sec"));
 }
 
 #[test]
@@ -341,6 +529,13 @@ fn split_targets_cross_source_duplicates_and_early_skips_preserve_records_and_me
     let summary = f.summary(&out);
     assert_eq!(summary["included_count"], 3);
     assert_eq!(summary["skipped_count"], 2);
+    let profile: Value =
+        serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+    assert_eq!(profile["dedupe_work"]["candidates"], 4);
+    assert_eq!(profile["dedupe_work"]["pair_comparisons"], 1);
+    assert_eq!(profile["dedupe_work"]["verification_windows"], 1);
+    assert_eq!(profile["dedupe_work"]["verification_failures"], 0);
+    assert_eq!(profile["dedupe_work"]["duplicates"], 1);
     let r = rows(&f);
     assert_eq!(
         r.iter().map(|r| r["Method"].as_str()).collect::<Vec<_>>(),

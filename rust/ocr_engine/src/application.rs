@@ -18,7 +18,7 @@ mod production {
         media::{FfmpegTools, MediaError},
         persistent_cache,
         planning::{self, Detection, PlanningConfig},
-        reports::{self, Record, Timing},
+        reports::{self, Phase, PhaseTimings, Record, Timing},
         scan_adapter::{self, EngineSettings},
         scanner,
         source_files::Source,
@@ -35,7 +35,7 @@ mod production {
         },
         time::{Instant, SystemTime, UNIX_EPOCH},
     };
-    #[derive(Clone, Serialize, Deserialize)]
+    #[derive(Clone, Default, Serialize, Deserialize)]
     struct ScanResult {
         #[serde(default)]
         provider: Option<Value>,
@@ -44,6 +44,62 @@ mod production {
         source_seconds: f64,
         detections: Option<Vec<Detection>>,
         error: Option<String>,
+        #[serde(default)]
+        current_stats: Option<scanner::OcrRuntimeStats>,
+        #[serde(default)]
+        current_work: Option<scanner::ScanWork>,
+    }
+    /// Historical event-time snapshots only, not completed scan measurements.
+    /// Old cache payloads cannot recover work after the last accepted event.
+    #[derive(Default, Serialize)]
+    struct HistoricalSnapshotTelemetry {
+        sources: usize,
+        sources_without_detection_telemetry: usize,
+        probe_seconds_sum: f64,
+        detect_seconds_sum: f64,
+        ocr_predict_seconds_sum: f64,
+        ocr_frame_seconds_sum: f64,
+        refine_ocr_seconds_sum: f64,
+        assist_ocr_seconds_sum: f64,
+        ocr_requests: u64,
+        ocr_successes: u64,
+        ocr_skipped: u64,
+        ocr_cache_hits: u64,
+        refine_frames_snapshot: u64,
+        assist_budget_used_snapshot: u64,
+    }
+    impl HistoricalSnapshotTelemetry {
+        fn add(&mut self, r: &ScanResult) {
+            self.sources += 1;
+            let Some(d) = &r.detections else {
+                self.sources_without_detection_telemetry += 1;
+                return;
+            };
+            if d.is_empty() {
+                self.sources_without_detection_telemetry += 1;
+            }
+            macro_rules! seconds {
+                ($out:ident, $field:ident) => {
+                    self.$out += d.iter().map(|d| d.$field).fold(0.0, f64::max);
+                };
+            }
+            macro_rules! count {
+                ($out:ident, $field:ident) => {
+                    self.$out += d.iter().map(|d| d.$field as u64).max().unwrap_or(0);
+                };
+            }
+            seconds!(detect_seconds_sum, detect_seconds);
+            seconds!(ocr_predict_seconds_sum, ocr_seconds);
+            seconds!(ocr_frame_seconds_sum, ocr_frame_seconds);
+            seconds!(refine_ocr_seconds_sum, refine_ocr_seconds);
+            seconds!(assist_ocr_seconds_sum, assist_ocr_seconds);
+            count!(ocr_requests, ocr_requests);
+            count!(ocr_successes, ocr_successes);
+            count!(ocr_skipped, ocr_skipped);
+            count!(ocr_cache_hits, ocr_cache_hits);
+            count!(refine_frames_snapshot, ocr_refine_frames);
+            count!(assist_budget_used_snapshot, assist_budget_used);
+        }
     }
     #[derive(Serialize, Deserialize)]
     struct CachedScan {
@@ -146,6 +202,7 @@ mod production {
                         "ffprobe duration probe failed for {}: {e}",
                         job.source.path.display()
                     )),
+                    ..ScanResult::default()
                 })
             }
             Err(e) => return Err(e.to_string()),
@@ -161,6 +218,7 @@ mod production {
                     probe_seconds,
                     detections: None,
                     error: Some(e.to_string()),
+                    ..ScanResult::default()
                 })
             }
             Err(e) => return Err(e.to_string()),
@@ -173,6 +231,8 @@ mod production {
                 probe_seconds,
                 source_seconds: 0.0,
                 detections: Some(scan_adapter::planning_detections(report.detections)?),
+                current_stats: Some(report.stats),
+                current_work: Some(report.work),
                 error: None,
             }),
             Err(e)
@@ -186,6 +246,7 @@ mod production {
                     probe_seconds,
                     detections: None,
                     error: Some(e),
+                    ..ScanResult::default()
                 })
             }
             Err(e) => Err(e),
@@ -254,6 +315,7 @@ mod production {
     pub fn run(c: Config) -> Result<u8, String> {
         crate::cancellation::check()?;
         let started = Instant::now();
+        let mut phases = PhaseTimings::default();
         let run_id = run_id();
         if c.ocr_width < 0 {
             return Err("OCR widths must be non-negative".into());
@@ -292,13 +354,22 @@ mod production {
         if c.verbose {
             println!("windows_only=true\nsources={}\ndetector=ocr\ngame_lang={}\ndetected_game_langs={}\ntarget={}\nmin_event_sec={:.3}\nmolotov_elim_before={:.3}\nffmpeg={}\noutput_dir={}\nmerge_output={}\nmerge={}\njobs={}{}\nfast_path={}\nbrightness_gate_mode={}\ncache_dir={}\nscan_mode={}\nfull_scan={}\ncandidate_csv={}",inputs.sources.len(),c.game_lang.code(),source_files::language_counts(&inputs).into_iter().map(|(k,v)|format!("{k}:{v}")).collect::<Vec<_>>().join(","),c.target.code(),c.min_event_sec.max(0.0),c.molotov_elim_before.max(0.0),tools.ffmpeg.display(),paths.directory.display(),paths.merged.display(),c.merge_enabled(inputs.single_file),jobs,if c.jobs=="auto"{" (auto)"}else{""},c.fast_path,match c.brightness_gate_mode.unwrap_or(crate::config::GateMode::Light){crate::config::GateMode::Full=>"full",crate::config::GateMode::Light=>"light",crate::config::GateMode::None=>"none"},cache_dir.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),format!("{:?}",c.scan_mode).to_lowercase(),full_scan,candidates_path.as_ref().map(|p|p.display().to_string()).unwrap_or_default());
         }
-        let setup_seconds = started.elapsed().as_secs_f64();
-        if c.profile {
-            println!("profile=true setup={setup_seconds:.3}s")
+        let ffmpeg_version = tools.version_token();
+        let mut codec_counts = BTreeMap::<String, usize>::new();
+        for source in &inputs.sources {
+            *codec_counts
+                .entry(
+                    tools
+                        .source_codec(&source.path)
+                        .unwrap_or_else(|| "unknown".into()),
+                )
+                .or_default() += 1;
         }
         let total = inputs.sources.len();
         progress(0, total, jobs);
-        let scan_started = Instant::now();
+        phases.enter(Phase::Scan, started.elapsed().as_secs_f64());
+        let mut cached_sources = vec![false; total];
+        let mut source_scan_configs = Vec::new();
         let mut results: Vec<Option<ScanResult>> = vec![None; total];
         let mut queue = Vec::new();
         let mut cache_status = BTreeMap::new();
@@ -308,6 +379,7 @@ mod production {
         for (index, source) in inputs.sources.iter().enumerate() {
             let config = scan_adapter::source_config(&c, source, candidates_path.as_deref());
             config.validate()?;
+            source_scan_configs.push(json!({"source_index":index + 1,"force_full_scan":source.force_full_scan,"config":config}));
             let mut times = candidates
                 .get(
                     &source
@@ -376,6 +448,7 @@ mod production {
                             probe_seconds,
                             detections: Some(detections),
                             error: None,
+                            ..ScanResult::default()
                         },
                         Err(e) if is_unreadable(&e) => ScanResult {
                             provider: cached.provider,
@@ -387,11 +460,13 @@ mod production {
                                 "ffprobe duration probe failed for {}: {e}",
                                 source.path.display()
                             )),
+                            ..ScanResult::default()
                         },
                         Err(e) => return Err(e.to_string()),
                     });
                     cache_status.insert(name, "hit".to_string());
                     cache_hits += 1;
+                    cached_sources[index] = true;
                     completed += 1;
                     progress(completed, total, jobs);
                     continue;
@@ -511,6 +586,25 @@ mod production {
             }
             failure
         });
+        let active_ocr_workers = jobs.min(queue.len());
+        phases.enter(Phase::Planning, started.elapsed().as_secs_f64());
+        let mut telemetry_current = reports::ScanTelemetry::default();
+        let mut telemetry_historical = HistoricalSnapshotTelemetry::default();
+        for (index, result) in results.iter().enumerate() {
+            if let Some(result) = result {
+                telemetry_current.probe_seconds_sum += result.probe_seconds;
+                if cached_sources[index] {
+                    telemetry_historical.add(result);
+                } else if let (Some(stats), Some(work)) =
+                    (&result.current_stats, &result.current_work)
+                {
+                    telemetry_current.add_current(stats, work);
+                } else {
+                    telemetry_current.sources += 1;
+                    telemetry_current.sources_without_detection_telemetry += 1;
+                }
+            }
+        }
         let providers = results
             .iter()
             .filter_map(|r| r.as_ref().and_then(|r| r.provider.clone()))
@@ -573,11 +667,14 @@ mod production {
             prepared.push((source.path.clone(), kept));
             early_skips.push(skipped);
         }
-        let duplicates = crate::dedupe::cross_source_duplicates(&prepared, &mut |path| {
-            crate::media::FfmpegFrameSource::open(path, &tools, None)
-                .map(|source| Box::new(source) as Box<dyn crate::dedupe::VerificationFrames>)
-                .map_err(|e| e.to_string())
-        });
+        phases.enter(Phase::Dedupe, started.elapsed().as_secs_f64());
+        let (duplicates, dedupe_work) =
+            crate::dedupe::cross_source_duplicates_profiled(&prepared, &mut |path| {
+                crate::media::FfmpegFrameSource::open(path, &tools, None)
+                    .map(|source| Box::new(source) as Box<dyn crate::dedupe::VerificationFrames>)
+                    .map_err(|e| e.to_string())
+            });
+        phases.enter(Phase::Planning, started.elapsed().as_secs_f64());
         // Final grouping, sequence numbers and destinations are fixed for the
         // whole run before any encoding. Keep source and per-source plan order.
         let mut duplicate_skips = vec![Vec::new(); total];
@@ -633,6 +730,7 @@ mod production {
             }
             planned.push(tasks);
         }
+        phases.enter(Phase::Trim, started.elapsed().as_secs_f64());
         // Execute serially. Never recompute a destination after encoding starts:
         // reservation/publication must reject a late collision, not renumber it.
         for (index, source) in inputs.sources.iter().enumerate() {
@@ -790,13 +888,15 @@ mod production {
                 archived.push(source.path.clone())
             }
         }
-        let scan_seconds = scan_started.elapsed().as_secs_f64();
+        // Keep the historical CSV failure gate before merge/archive, but charge
+        // this reporting interval only to reporting, not to trim or merge.
+        phases.enter(Phase::Reporting, started.elapsed().as_secs_f64());
         reports::write_records(&paths.directory, &run_id, &records, &cache_status)
             .map_err(|e| e.to_string())?;
+        phases.enter(Phase::Merge, started.elapsed().as_secs_f64());
         let mut merge_outputs = Vec::new();
         let (mut merge_duration, mut merge_size) = (0.0, 0.0);
         if !clips.is_empty() && c.merge_enabled(inputs.single_file) && !c.dry_run {
-            let merge_started = Instant::now();
             let outputs = if c.split_targets() {
                 ["self-death", "own-kill"]
                     .into_iter()
@@ -845,14 +945,8 @@ mod production {
                 merge_size += size;
                 merge_outputs.push(json!({"target":target,"path":destination,"concat_list":list}));
             }
-            if c.profile {
-                println!(
-                    "PROFILE merge={:.3}s clips={}",
-                    merge_started.elapsed().as_secs_f64(),
-                    clips.len()
-                )
-            }
         }
+        phases.enter(Phase::Archive, started.elapsed().as_secs_f64());
         let (mut originals_dir, mut originals_moved, mut originals_failed) = (String::new(), 0, 0);
         if c.move_originals && !c.dry_run {
             crate::cancellation::check()?;
@@ -863,6 +957,7 @@ mod production {
             originals_moved = moved;
             originals_failed = failed;
         }
+        phases.enter(Phase::Reporting, started.elapsed().as_secs_f64());
         let included = records.iter().filter(|r| r["Status"] == "included").count();
         let skipped = records
             .iter()
@@ -872,7 +967,7 @@ mod production {
             .iter()
             .filter(|r| r["Status"] == "unreadable")
             .count();
-        let total_seconds = started.elapsed().as_secs_f64();
+        // Reporting is frozen below after ordinary report preparation.
         let candidate_output = paths.directory.join("candidate_events.csv");
         let profile_path = paths.directory.join("profile.json");
         let csv_path = paths.directory.join("检测与裁剪记录.csv");
@@ -882,16 +977,33 @@ mod production {
             .iter()
             .map(|r| r["TrimSeconds"].parse::<f64>().unwrap_or(0.0))
             .sum::<f64>();
-        let profile = json!({"schema_version":"1","run_id":run_id,"stages":{"setup":reports::round3(setup_seconds),"scan":reports::round3(scan_seconds),"decode_probe":reports::round3(reports::source_total(&records,"ProbeSeconds")),"roi_gate":reports::round3(reports::source_total(&records,"OcrFrameSeconds")),"sampling":reports::round3(scan_seconds),"candidate_generation":reports::round3(scan_seconds),"ocr":reports::round3(reports::source_total(&records,"OcrSeconds")),"refine":reports::round3(reports::source_total(&records,"RefineOcrSeconds")),"assist":reports::round3(reports::source_total(&records,"AssistOcrSeconds")),"cache_read":reports::round3(cache_read_seconds),"cache_write":reports::round3(cache_write_seconds),"trim":reports::round3(trim_total),"merge":reports::round3(merge_duration),"total":reports::round3(total_seconds)},"counts":{"sources":total,"candidates":records.iter().filter(|r|!r["EventSec"].is_empty()).count(),"outputs":clips.len(),"ocr_requests":reports::source_total(&records,"OcrRequests")as u64,"ocr_successes":reports::source_total(&records,"OcrSuccesses")as u64,"ocr_skipped":reports::source_total(&records,"OcrSkipped")as u64,"ocr_cache_hits":reports::source_total(&records,"OcrCacheHits")as u64,"refine_calls":reports::source_total(&records,"OcrRefineFrames")as u64,"assist_calls":reports::source_total(&records,"AssistBudgetUsed")as u64},"cache":{"enabled":cache_dir.is_some(),"directory":cache_dir.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),"hits":cache_hits,"misses":cache_misses,"hit_rate":if cache_hits+cache_misses==0{0.0}else{reports::round3(cache_hits as f64/(cache_hits+cache_misses)as f64)}},"candidate_csv":candidate_output,"termination_reasons":termination});
-        let mut profile = profile;
-        profile["ocr_providers"] = json!(providers);
-        reports::write_json(&profile_path, &profile).map_err(|e| e.to_string())?;
-        if c.profile {
-            println!("PROFILE run_id={run_id} scan={scan_seconds:.3}s outputs={} cache_hits={cache_hits}",clips.len())
-        }
-        let summary = json!({"source_count":total,"included_count":included,"skipped_count":skipped,"unreadable_count":unreadable,"dry_run":c.dry_run,"detector":"ocr","game_lang":c.game_lang.code(),"detected_game_langs":source_files::language_counts(&inputs),"min_event_sec":c.min_event_sec.max(0.0),"molotov_elim_before":c.molotov_elim_before.max(0.0),"ocr_unavailable_reason":"","output_dir":paths.directory,"merge":c.merge_enabled(inputs.single_file),"split_merge_by_target":c.split_targets(),"merge_outputs":merge_outputs,"merge_output":merge_outputs.first().and_then(|m|m.get("path")).cloned().unwrap_or(json!("")),"scan_mode":format!("{:?}",c.scan_mode).to_lowercase(),"full_scan":full_scan,"candidate_csv":candidates_path.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),"candidate_events_csv":candidate_output,"profile":profile_path,"run_id":run_id,"cache_enabled":cache_dir.is_some(),"cache_hits":cache_hits,"cache_misses":cache_misses,"concat_list":merge_outputs.first().and_then(|m|m.get("concat_list")).cloned().unwrap_or(json!("")),"originals_dir":originals_dir,"originals_moved":originals_moved,"originals_failed":originals_failed,"csv":csv_path,"merge_duration_sec":reports::round3(merge_duration),"merge_size_mb":(merge_size*10.0).round_ties_even()/10.0,"methods":reports::counts(&records,"Method"),"detectors":reports::counts(&records,"Detector"),"encoders":encoders,"profile_total_sec":reports::round3(total_seconds)});
+        let mut profile = json!({
+            "schema_version":"2", "run_id":run_id,
+            "timing_boundary":"before_final_timing_serialization_and_emission",
+            "aggregates":{"cache_read_seconds_sum":reports::round3(cache_read_seconds),"cache_write_seconds_sum":reports::round3(cache_write_seconds),"trim_encode_seconds_sum":reports::round3(trim_total)},
+            "telemetry":{"current":telemetry_current,"cached_historical":telemetry_historical,"current_basis":"completed_scan_report","cached_historical_basis":"maximum_detection_snapshot_through_last_accepted_event_not_completed_scan"},
+            "dedupe_work":dedupe_work,
+            "counts":{"sources":total,"candidates":records.iter().filter(|r|!r["EventSec"].is_empty()).count(),"outputs":clips.len()},
+            "runtime":{"ocr_worker_capacity":jobs.min(total),"ocr_workers_active":active_ocr_workers,"trim_workers":1,"ocr_provider_mode":c.ocr_provider.code(),"ocr_threads_per_worker":settings.threads,"source_codec_counts":codec_counts,"ffmpeg_version":ffmpeg_version,"scan_mode":format!("{:?}",c.scan_mode).to_lowercase(),"full_scan":full_scan,"candidate_input_present":candidates_path.is_some(),"brightness_gate_mode":format!("{:?}",c.brightness_gate_mode.unwrap_or(crate::config::GateMode::Light)).to_lowercase(),"validation":"strict","dry_run":c.dry_run,"source_scan_configs":source_scan_configs},
+            "cache":{"enabled":cache_dir.is_some(),"directory":cache_dir.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),"hits":cache_hits,"misses":cache_misses,"hit_rate":if cache_hits+cache_misses==0{0.0}else{reports::round3(cache_hits as f64/(cache_hits+cache_misses)as f64)}},
+            "candidate_csv":candidate_output,"termination_reasons":termination,"ocr_providers":providers,
+            "ocr_providers_current":providers.iter().filter(|p|p["cache_hit"] != true).collect::<Vec<_>>(),
+            "ocr_providers_cached_historical":providers.iter().filter(|p|p["cache_hit"] == true).collect::<Vec<_>>()
+        });
+        let summary = json!({"source_count":total,"included_count":included,"skipped_count":skipped,"unreadable_count":unreadable,"dry_run":c.dry_run,"detector":"ocr","game_lang":c.game_lang.code(),"detected_game_langs":source_files::language_counts(&inputs),"min_event_sec":c.min_event_sec.max(0.0),"molotov_elim_before":c.molotov_elim_before.max(0.0),"ocr_unavailable_reason":"","output_dir":paths.directory,"merge":c.merge_enabled(inputs.single_file),"split_merge_by_target":c.split_targets(),"merge_outputs":merge_outputs,"merge_output":merge_outputs.first().and_then(|m|m.get("path")).cloned().unwrap_or(json!("")),"scan_mode":format!("{:?}",c.scan_mode).to_lowercase(),"full_scan":full_scan,"candidate_csv":candidates_path.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),"candidate_events_csv":candidate_output,"profile":profile_path,"run_id":run_id,"cache_enabled":cache_dir.is_some(),"cache_hits":cache_hits,"cache_misses":cache_misses,"concat_list":merge_outputs.first().and_then(|m|m.get("concat_list")).cloned().unwrap_or(json!("")),"originals_dir":originals_dir,"originals_moved":originals_moved,"originals_failed":originals_failed,"csv":csv_path,"merge_duration_sec":reports::round3(merge_duration),"merge_size_mb":(merge_size*10.0).round_ties_even()/10.0,"methods":reports::counts(&records,"Method"),"detectors":reports::counts(&records,"Detector"),"encoders":encoders,"profile_total_sec":0.0});
         let mut summary = summary;
         summary["ocr_providers"] = json!(providers);
+        // Freeze once, after report preparation and CSV writes. Final timing
+        // JSON serialization, writes and stdout emission are excluded by contract.
+        profile["stages"] = phases.finish(started.elapsed().as_secs_f64());
+        summary["profile_total_sec"] = profile["stages"]["total"].clone();
+        reports::write_json(&profile_path, &profile).map_err(|e| e.to_string())?;
+        if c.profile {
+            println!(
+                "PROFILE {}",
+                json!({"run_id":run_id,"stages":profile["stages"]})
+            );
+        }
         let summary_text = reports::encode_summary(
             &summary,
             c.min_event_sec.max(0.0),
