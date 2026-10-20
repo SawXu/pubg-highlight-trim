@@ -32,11 +32,15 @@ pub fn cross_source_duplicates(
     sources: &[(PathBuf, Vec<Detection>)],
     factory: &mut Factory<'_>,
 ) -> HashSet<(usize, usize)> {
-    cross_source_duplicates_profiled(sources, factory).0
+    cross_source_duplicates_profiled(sources, factory, None).0
 }
+/// Like `cross_source_duplicates` but also returns work telemetry and accepts an optional
+/// progress callback invoked as `(current, total)` after each candidate is processed.
+/// This is O(candidates) to set up; no O(n²) precompute is added solely for the total.
 pub fn cross_source_duplicates_profiled(
     sources: &[(PathBuf, Vec<Detection>)],
     factory: &mut Factory<'_>,
+    progress: Option<&dyn Fn(usize, usize)>,
 ) -> (HashSet<(usize, usize)>, DedupeWork) {
     let mut work = DedupeWork::default();
     let mut candidates = Vec::new();
@@ -58,7 +62,13 @@ pub fn cross_source_duplicates_profiled(
     candidates.sort_by(|a, b| context(b).total_cmp(&context(a)));
     let mut retained: HashMap<(&str, &str), Vec<(usize, usize)>> = HashMap::new();
     let mut skipped = HashSet::new();
-    for (s, d) in candidates {
+    let total = work.candidates;
+    for (processed, (s, d)) in candidates.into_iter().enumerate() {
+        // Stop early on cancellation so the progress callback cannot fire at 100%
+        // for a run that has been interrupted; verification errors do not stop this.
+        if crate::cancellation::is_cancelled() {
+            break;
+        }
         let (src, detections) = &sources[s];
         let detection = &detections[d];
         let matches = retained
@@ -81,6 +91,9 @@ pub fn cross_source_duplicates_profiled(
             skipped.insert((s, d));
         } else {
             matches.push((s, d));
+        }
+        if let Some(f) = progress {
+            f(processed + 1, total);
         }
     }
     work.duplicates = skipped.len();

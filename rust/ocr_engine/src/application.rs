@@ -123,6 +123,33 @@ mod production {
             json!({"phase":"scan","current":current,"total":total,"workers":workers})
         );
     }
+    /// Emit phase start: current=0, workers=N (N=0 means no work/phase skipped).
+    fn progress_phase_start(phase: &str, total: usize, workers: usize) {
+        println!(
+            "PROGRESS {}",
+            json!({"phase":phase,"event":"start","current":0,"total":total,"workers":workers})
+        );
+    }
+    fn progress_phase_current(phase: &str, current: usize, total: usize, workers: usize) {
+        println!(
+            "PROGRESS {}",
+            json!({"phase":phase,"current":current,"total":total,"workers":workers})
+        );
+    }
+    fn progress_phase_done(phase: &str, total: usize, workers: usize) -> Result<(), String> {
+        crate::cancellation::check()?;
+        println!(
+            "PROGRESS {}",
+            json!({"phase":phase,"event":"done","current":total,"total":total,"workers":workers})
+        );
+        Ok(())
+    }
+    fn progress_phase_skipped(phase: &str, reason: &str, planned: usize) {
+        println!(
+            "PROGRESS {}",
+            json!({"phase":phase,"event":"skipped","current":0,"total":0,"workers":0,"reason":reason,"planned":planned})
+        );
+    }
     fn available_memory_gb() -> Option<f64> {
         #[cfg(windows)]
         {
@@ -668,12 +695,28 @@ mod production {
             early_skips.push(skipped);
         }
         phases.enter(Phase::Dedupe, started.elapsed().as_secs_f64());
-        let (duplicates, dedupe_work) =
-            crate::dedupe::cross_source_duplicates_profiled(&prepared, &mut |path| {
+        let dedupe_candidates: usize = prepared
+            .iter()
+            .flat_map(|(_, ds)| ds.iter())
+            .filter(|d| d.event_sec.is_some() && !d.event_key.is_empty())
+            .count();
+        let dedupe_workers = if dedupe_candidates > 0 { 1 } else { 0 };
+        progress_phase_start("dedupe", dedupe_candidates, dedupe_workers);
+        let (duplicates, dedupe_work) = crate::dedupe::cross_source_duplicates_profiled(
+            &prepared,
+            &mut |path| {
                 crate::media::FfmpegFrameSource::open(path, &tools, None)
                     .map(|source| Box::new(source) as Box<dyn crate::dedupe::VerificationFrames>)
                     .map_err(|e| e.to_string())
-            });
+            },
+            Some(&|current: usize, total: usize| {
+                // Guard: do not emit false done after cancellation.
+                if !crate::cancellation::is_cancelled() {
+                    progress_phase_current("dedupe", current, total, dedupe_workers);
+                }
+            }),
+        );
+        progress_phase_done("dedupe", dedupe_candidates, dedupe_workers)?;
         phases.enter(Phase::Planning, started.elapsed().as_secs_f64());
         // Final grouping, sequence numbers and destinations are fixed for the
         // whole run before any encoding. Keep source and per-source plan order.
@@ -731,6 +774,18 @@ mod production {
             planned.push(tasks);
         }
         phases.enter(Phase::Trim, started.elapsed().as_secs_f64());
+        let trim_total_clips: usize = planned.iter().map(|tasks| tasks.len()).sum();
+        let trim_workers = if trim_total_clips > 0 && !c.dry_run {
+            1
+        } else {
+            0
+        };
+        if c.dry_run {
+            progress_phase_skipped("trim", "dry-run", trim_total_clips);
+        } else {
+            progress_phase_start("trim", trim_total_clips, trim_workers);
+        }
+        let mut trim_completed_clips: usize = 0;
         // Execute serially. Never recompute a destination after encoding starts:
         // reservation/publication must reject a late collision, not renumber it.
         for (index, source) in inputs.sources.iter().enumerate() {
@@ -854,6 +909,14 @@ mod production {
                     }
                     output = path.display().to_string();
                     produced = true;
+                    // Only count clips that were successfully published (not dry-run).
+                    trim_completed_clips += 1;
+                    progress_phase_current(
+                        "trim",
+                        trim_completed_clips,
+                        trim_total_clips,
+                        trim_workers,
+                    );
                 }
                 let t = Timing {
                     probe: result.probe_seconds,
@@ -888,6 +951,9 @@ mod production {
                 archived.push(source.path.clone())
             }
         }
+        if !c.dry_run {
+            progress_phase_done("trim", trim_completed_clips, trim_workers)?;
+        }
         // Keep the historical CSV failure gate before merge/archive, but charge
         // this reporting interval only to reporting, not to trim or merge.
         phases.enter(Phase::Reporting, started.elapsed().as_secs_f64());
@@ -896,29 +962,42 @@ mod production {
         phases.enter(Phase::Merge, started.elapsed().as_secs_f64());
         let mut merge_outputs = Vec::new();
         let (mut merge_duration, mut merge_size) = (0.0, 0.0);
-        if !clips.is_empty() && c.merge_enabled(inputs.single_file) && !c.dry_run {
-            let outputs = if c.split_targets() {
-                ["self-death", "own-kill"]
-                    .into_iter()
-                    .filter_map(|target| {
-                        targets.get(target).map(|clips| {
-                            (
-                                target,
-                                clips,
-                                paths
-                                    .split_merges
-                                    .iter()
-                                    .find(|(t, _)| t == target)
-                                    .unwrap()
-                                    .1
-                                    .clone(),
-                            )
+        if c.merge_enabled(inputs.single_file) {
+            // Build the actual output list only when there are clips and not a dry-run.
+            let outputs: Vec<_> = if !clips.is_empty() && !c.dry_run {
+                if c.split_targets() {
+                    ["self-death", "own-kill"]
+                        .into_iter()
+                        .filter_map(|target| {
+                            targets.get(target).map(|clips| {
+                                (
+                                    target,
+                                    clips,
+                                    paths
+                                        .split_merges
+                                        .iter()
+                                        .find(|(t, _)| t == target)
+                                        .unwrap()
+                                        .1
+                                        .clone(),
+                                )
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>()
+                        .collect()
+                } else {
+                    vec![(c.target.code(), &clips, paths.merged.clone())]
+                }
             } else {
-                vec![(c.target.code(), &clips, paths.merged.clone())]
+                vec![]
             };
+            let merge_total = outputs.len();
+            let merge_workers = if merge_total > 0 { 1 } else { 0 };
+            if merge_total == 0 {
+                progress_phase_skipped("merge", if c.dry_run { "dry-run" } else { "no-clips" }, 0);
+            } else {
+                progress_phase_start("merge", merge_total, merge_workers);
+            }
+            let mut merge_done = 0;
             for (target, clips, destination) in outputs {
                 crate::cancellation::check()?;
                 let staged = crate::media_output::MediaOutput::reserve(
@@ -944,7 +1023,14 @@ mod production {
                 merge_duration += duration;
                 merge_size += size;
                 merge_outputs.push(json!({"target":target,"path":destination,"concat_list":list}));
+                merge_done += 1;
+                progress_phase_current("merge", merge_done, merge_total, merge_workers);
             }
+            if merge_total > 0 {
+                progress_phase_done("merge", merge_done, merge_workers)?;
+            }
+        } else {
+            progress_phase_skipped("merge", "disabled", 0);
         }
         phases.enter(Phase::Archive, started.elapsed().as_secs_f64());
         let (mut originals_dir, mut originals_moved, mut originals_failed) = (String::new(), 0, 0);
