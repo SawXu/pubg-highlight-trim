@@ -300,6 +300,62 @@ public sealed class MainWindowTests
     }
 
     [TestMethod]
+    public void TrimJobsSelectionUpdatesPreviewIndependentlyAndIsDisabledWhileRunning()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            MainWindow? window = null;
+            try
+            {
+                window = CreateWindowOnCurrentStaThread();
+                var trimJobs = window.FindName("TrimJobsComboBox") as ComboBox;
+                Assert.IsNotNull(trimJobs, "Trim concurrency must have its own selector");
+                CollectionAssert.AreEqual(new[] { "auto", "1", "2" },
+                    trimJobs.Items.Cast<ComboBoxItem>().Select(item => item.Tag.ToString()).ToArray());
+                Assert.AreEqual("auto", ((ComboBoxItem)trimJobs.SelectedItem).Tag);
+                Assert.IsFalse(trimJobs.IsEditable);
+
+                typeof(MainWindow).GetField("_cliPath", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .SetValue(window, @"C:\cli\pubg-highlight-trim.exe");
+                ((TextBox)window.FindName("InputPathTextBox")).Text = Path.GetTempPath();
+                var ocrJobs = (TextBox)window.FindName("JobsTextBox");
+                ocrJobs.Text = "4";
+                var preview = (TextBlock)window.FindName("CommandPreviewText");
+                StringAssert.Contains(preview.Text, "--trim-jobs auto");
+                foreach (var index in new[] { 1, 2, 0 })
+                {
+                    trimJobs.SelectedIndex = index;
+                    var expected = new[] { "--trim-jobs auto", "--trim-jobs 1", "--trim-jobs 2" }[index];
+                    StringAssert.Contains(preview.Text, expected);
+                    StringAssert.Contains(preview.Text, "--jobs 4");
+                    Assert.AreEqual("4", ocrJobs.Text);
+                }
+                trimJobs.SelectedIndex = 2;
+                ocrJobs.Text = "1";
+                StringAssert.Contains(preview.Text, "--jobs 1");
+                StringAssert.Contains(preview.Text, "--trim-jobs 2");
+
+                var setRunning = typeof(MainWindow).GetMethod("SetRunningState", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                setRunning.Invoke(window, [true]);
+                Assert.IsFalse(trimJobs.IsEnabled);
+                Assert.IsFalse(ocrJobs.IsEnabled);
+                setRunning.Invoke(window, [false]);
+                Assert.IsTrue(trimJobs.IsEnabled);
+                Assert.IsTrue(ocrJobs.IsEnabled);
+                Assert.AreEqual("2", ((ComboBoxItem)trimJobs.SelectedItem).Tag);
+            }
+            catch (Exception ex) { failure = ex; }
+            finally { window?.Close(); }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+    }
+
+    [TestMethod]
     public void OldScanProgressWithoutEventFieldIsCompatible()
     {
         Exception? failure = null;

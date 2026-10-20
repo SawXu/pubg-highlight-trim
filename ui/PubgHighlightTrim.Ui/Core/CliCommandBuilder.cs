@@ -31,6 +31,7 @@ public static class CliCommandBuilder
             "--molotov-elim-before", Format(options.MolotovSecondsBefore),
             "--scan-mode", options.ScanMode,
             "--jobs", options.Jobs,
+            "--trim-jobs", options.TrimJobs,
         ]);
 
         AddFlag(arguments, options.ScanMode.Equals("fast", StringComparison.OrdinalIgnoreCase), "--fast-path");

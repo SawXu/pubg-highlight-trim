@@ -418,7 +418,8 @@ public partial class MainWindow : Window
             OverwriteCheckBox.IsChecked == true,
             BrightnessGateCheckBox.IsChecked == true,
             MoveOriginalsCheckBox.IsChecked == true,
-            _targetSelection.SplitMergeByTarget);
+            _targetSelection.SplitMergeByTarget,
+            SelectedTag(TrimJobsComboBox));
         return true;
     }
 
@@ -472,6 +473,7 @@ public partial class MainWindow : Window
         MinEventTextBox.IsEnabled = !running;
         MolotovTextBox.IsEnabled = !running;
         JobsTextBox.IsEnabled = !running;
+        TrimJobsComboBox.IsEnabled = !running;
         MergeCheckBox.IsEnabled = !running;
         RecursiveCheckBox.IsEnabled = !running;
         ScanOnlyCheckBox.IsEnabled = !running;
@@ -522,7 +524,7 @@ public partial class MainWindow : Window
         {
             textBox.TextChanged += (_, _) => UpdateCommandPreview();
         }
-        foreach (var comboBox in new[] { LanguageComboBox, ScanModeComboBox })
+        foreach (var comboBox in new[] { LanguageComboBox, ScanModeComboBox, TrimJobsComboBox })
         {
             comboBox.SelectionChanged += (_, _) => UpdateCommandPreview();
         }

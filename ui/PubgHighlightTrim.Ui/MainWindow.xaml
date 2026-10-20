@@ -155,10 +155,19 @@
                                         <TextBox x:Name="MolotovTextBox" Text="10" ToolTip="秒；0 表示禁用特殊前置" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="4">
-                                        <TextBlock Text="并行任务" Style="{StaticResource FieldLabel}" />
+                                        <TextBlock Text="OCR 并行度" Style="{StaticResource FieldLabel}" />
                                         <TextBox x:Name="JobsTextBox" Text="auto" ToolTip="auto 或正整数" />
                                     </StackPanel>
                                 </Grid>
+                                <StackPanel Margin="0,14,0,0">
+                                    <TextBlock Text="Trim 并行度" Style="{StaticResource FieldLabel}" />
+                                    <ComboBox x:Name="TrimJobsComboBox" SelectedIndex="0"
+                                              ToolTip="独立于 OCR 并行度；auto 由 CLI 保守选择裁剪 worker 数">
+                                        <ComboBoxItem Content="自动" Tag="auto" />
+                                        <ComboBoxItem Content="1" Tag="1" />
+                                        <ComboBoxItem Content="2" Tag="2" />
+                                    </ComboBox>
+                                </StackPanel>
                                 <CheckBox x:Name="BrightnessGateCheckBox" Content="启用亮色描边文字预筛选"
                                           IsChecked="True" Margin="0,14,0,0" />
                             </StackPanel>

@@ -71,6 +71,18 @@ fn invalid_arguments_exit_two_without_a_fabricated_run_summary() {
     }
 }
 #[test]
+fn trim_parallelism_is_bounded_and_independent_of_ocr_jobs() {
+    assert_eq!(config(&[])["trim_jobs"], "auto");
+    for value in ["auto", "1", "2"] {
+        let c = config(&["--jobs", "7", "--trim-jobs", value]);
+        assert_eq!(c["jobs"], "7");
+        assert_eq!(c["trim_jobs"], value);
+    }
+    for value in ["0", "3", "-1", "many"] {
+        assert_eq!(invoke(&["--trim-jobs", value]).status.code(), Some(2));
+    }
+}
+#[test]
 fn default_input_is_current_directory_and_runtime_errors_exit_one() {
     let o = invoke(&["a-definitely-missing-input.mp4"]);
     assert_eq!(o.status.code(), Some(1));
