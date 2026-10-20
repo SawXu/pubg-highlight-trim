@@ -40,7 +40,7 @@ The controls map to these CLI settings:
 - **Recursive scan**: Include MP4 files in subdirectories when a folder is selected.
 - **Scan only**: Detect events and write records without creating trimmed or merged videos.
 - **Overwrite output**: Reuse/clean the selected output paths instead of choosing unique names.
-- **Expert settings**: Ignore events in the first N seconds (default 2), keep extra seconds before molotov/fire-bomb eliminations (default 10), choose OCR worker count (`auto` or a positive integer), and enable/disable the bright outlined-text prefilter.
+- **Expert settings**: Ignore events in the first N seconds (default 2), keep extra seconds before molotov/fire-bomb eliminations (default 10), choose OCR worker count (`auto` or a positive integer) and independent Trim concurrency (`auto`, `1`, or `2`), and enable/disable the bright outlined-text prefilter.
 
 Click **Start** to run. The right-hand panel reports scan/trim progress, retained and skipped counts, elapsed time, and the current phase. Expand **Show log** to inspect the raw CLI records; this is the first place to look when a run fails. Click **Stop** to cancel the current task; the GUI terminates the CLI and its child processes. After a successful run, **Open output** opens the output root in Explorer. When multiple merged outputs are produced, choose the desired video from that directory.
 
@@ -82,9 +82,10 @@ pubg-highlight-trim "." --scan-only --scan-mode full --coarse-step 2 -o ".\fulls
 pubg-highlight-trim "." --scan-mode fast
 pubg-highlight-trim "." --profile
 
-# Parallelism is selected automatically; override only when needed
+# OCR parallelism is selected automatically; Trim auto conservatively uses 1
 pubg-highlight-trim "." --scan-only -o ".\parallel_scan" -y
-pubg-highlight-trim "." --scan-only --jobs 1  # disable parallel workers
+pubg-highlight-trim "." --scan-only --jobs 1  # disable parallel OCR workers
+pubg-highlight-trim "." --jobs 1 --trim-jobs 2 --profile  # independently opt into two Trim workers
 ```
 
 Run `pubg-highlight-trim --help` to see all options.
@@ -109,8 +110,9 @@ Run `pubg-highlight-trim --help` to see all options.
 | `--split-merge-by-target` | off | With `--target both`, merge self-death and own-kill clips into separate videos; default remains the mixed output |
 | `-y`, `--overwrite` | off | Overwrite output dir/merged file instead of creating unique names |
 | `--verbose` | off | Print startup settings and third-party OCR diagnostics; default output suppresses library noise |
-| `--profile` | off | Print per-clip timing breakdown (ffprobe, OCR, frame read, trim) |
+| `--profile` | off | Print per-source timings and final stage timings; `profile.json` is written even without this flag |
 | `--jobs` | `auto` | Automatically use 1 or 2 per-video OCR workers based on source count, CPU, and available memory; use `1` to disable or a number to override |
+| `--trim-jobs` | `auto` | Independent Trim concurrency: `auto`, `1`, or `2`; auto conservatively selects 1, capped by planned clip count; dry-run/no-clips uses 0 |
 | `--ffmpeg` / `--ffprobe` | auto | Explicit path to ffmpeg.exe / ffprobe.exe |
 
 OCR options (advanced):
@@ -135,6 +137,16 @@ OCR options (advanced):
 | `--ocr-device-id` | `0` | Non-negative inference device index (0–2147483647), used by DirectML |
 | `--no-brightness-gate` | off | Disable the Rust bright outlined-text gate before coarse OCR |
 | `--brightness-gate-mode` | `light` | Gate strictness before coarse OCR: `light` only skips near-empty dark frames, `full` adds outlined-glyph and horizontal-structure checks, `none` disables filtering |
+
+### Performance, progress, and validation
+
+`--jobs` controls OCR scanning only; `--trim-jobs` controls Trim encoding separately. Two Trim workers can compete for CPU/GPU, memory, and disk bandwidth and are not guaranteed to be faster. At most the effective worker count of clips can be running or waiting for publication. Clips are published in planned order, so filenames, CSV and Merge order remain deterministic even if encoding finishes out of order. Try `--trim-jobs 1` if resources are constrained.
+
+The GUI reports Scan, Dedupe, Trim, and Merge separately, with completed/total work, selected workers, and completed/skipped state. Trim counts only validated, published clips, not encoder starts; dry-run skips Trim/Merge rather than reporting planned clips as encoded. Structured `PROGRESS` records are documented in [the progress protocol](docs/progress-protocol.md).
+
+Every successful run writes `profile.json`: `stages` are wall-clock phases, while `aggregates` and per-task timings are nested work and must not be added to the stage totals. With parallel Trim, summed task time may exceed elapsed Trim time. Use `runtime.trim_jobs_requested`/`trim_workers`, source codecs, cache hit/miss counts, current versus cached historical OCR providers, and encoder capability/fallback metadata when comparing runs. `--profile` additionally prints timing records; it does not enable verbose diagnostics. See [the schema](docs/profile-schema.md) and [fixed-source repeated benchmark procedure](docs/trim-performance-benchmark.md).
+
+Validation is always strict: `runtime.trim_validation` is `ffprobe_duration_strict` (`runtime.validation` remains `strict`). Every generated Trim output is probed for duration before atomic publication; Merge output is also probed. There is no fast/disabled validation mode or validation-bypass CLI switch. Separate `trim_output_probe_seconds_sum` from encode work when investigating cost rather than removing validation.
 
 ### Output behavior
 
