@@ -1,5 +1,5 @@
 //! Complete CLI batch with synthetic lossless recordings and the public persistent
-//! scan-cache boundary. OCR sampling is not mocked or changed by verification.
+//! scan-cache boundary. Cross-source identity comes only from cached OCR events.
 #![cfg(feature = "onnx")]
 use clap::Parser;
 use pubg_ocr_engine::{
@@ -184,9 +184,20 @@ fn full_batch_preserves_clips_concat_skipped_records_and_later_more_complete_con
         );
         let s: Value =
             serde_json::from_slice(&fs::read(out.join("summary.json")).unwrap()).unwrap();
+        let profile: Value =
+            serde_json::from_slice(&fs::read(out.join("profile.json")).unwrap()).unwrap();
+        assert_eq!(profile["dedupe_work"]["verification_windows"], 0, "{mode}");
+        assert_eq!(profile["dedupe_work"]["verification_failures"], 0, "{mode}");
         let duplicate = matches!(
             mode,
-            "duplicate" | "later-complete" | "early-mismatch" | "extra-event"
+            "duplicate"
+                | "later-complete"
+                | "early-mismatch"
+                | "different-game"
+                | "black"
+                | "static"
+                | "hud-only"
+                | "extra-event"
         );
         let count = if duplicate && mode != "extra-event" {
             1

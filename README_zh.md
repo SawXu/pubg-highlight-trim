@@ -139,6 +139,8 @@ OCR 选项（进阶）：
 
 Trim 进度只统计已严格验证并发布的片段，不统计刚启动的编码；慢的前序任务可能暂时阻塞进度。dry-run 跳过 Trim/Merge，不把计划片段计作已编码。结构化 `PROGRESS` 的阶段、worker 和完成/跳过语义见[进度协议](docs/progress-protocol.md)。
 
+跨视频去重仅比较 OCR 事件的 `target + event_key`，不重新取帧或验证画面。相同身份优先保留事件前后上下文更完整的片段，条件相同则按输入顺序保留；同源事件和空事件 key 不去重。不同录屏只要 OCR 身份相同也会被视为重复，不按对局隔离。
+
 每次成功运行均写入 `profile.json`。`stages` 是阶段墙钟耗时；`aggregates` 与逐任务耗时是嵌套工作量，不能再加到阶段总耗时上，并行 Trim 的任务耗时之和可能超过阶段耗时。比较运行时应同时检查 `runtime.trim_jobs_requested`/`trim_workers`、源编码格式、缓存命中/未命中、当前与历史缓存 OCR provider，以及编码器能力探测/回退元数据。`--profile` 额外打印耗时记录，不开启 verbose 诊断。字段见 [Profile schema](docs/profile-schema.md)，重复测量见[固定源集基准方法](docs/trim-performance-benchmark.md)。
 
 验证始终严格：`runtime.trim_validation` 为 `ffprobe_duration_strict`，兼容字段 `runtime.validation` 仍为 `strict`。每个 Trim 输出在原子发布前均执行 FFprobe 时长验证，Merge 输出也会验证。当前没有快速/关闭验证模式或绕过验证的 CLI 开关；分析成本时应单独看 `trim_output_probe_seconds_sum`，而不是移除验证。

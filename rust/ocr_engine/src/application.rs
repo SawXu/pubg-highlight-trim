@@ -793,11 +793,6 @@ mod production {
         progress_phase_start("dedupe", dedupe_candidates, dedupe_workers);
         let (duplicates, dedupe_work) = crate::dedupe::cross_source_duplicates_profiled(
             &prepared,
-            &mut |path| {
-                crate::media::FfmpegFrameSource::open(path, &tools, None)
-                    .map(|source| Box::new(source) as Box<dyn crate::dedupe::VerificationFrames>)
-                    .map_err(|e| e.to_string())
-            },
             Some(&|current: usize, total: usize| {
                 // Guard: do not emit false done after cancellation.
                 if !crate::cancellation::is_cancelled() {
