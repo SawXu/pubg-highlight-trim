@@ -470,6 +470,26 @@ fn own_kill_cli_trims_merges_reports_and_reuses_valid_cache_without_touching_ori
     assert_eq!(r[0]["Status"], "included");
     assert_eq!(r[0]["Target"], "own-kill");
     assert_eq!(r[0]["KeepDurationSec"], "1.000");
+    let profile: Value =
+        serde_json::from_slice(&fs::read(out.join("profile.json")).unwrap()).unwrap();
+    let snapshot_requests = r[0]["OcrRequests"].parse::<u64>().unwrap();
+    assert!(
+        profile["telemetry"]["current"]["ocr_requests"]
+            .as_u64()
+            .unwrap()
+            > snapshot_requests,
+        "scan continues after event snapshot: {profile}"
+    );
+    assert!(
+        profile["telemetry"]["current"]["ocr_predict_seconds_sum"]
+            .as_f64()
+            .unwrap()
+            > r[0]["OcrSeconds"].parse::<f64>().unwrap()
+    );
+    assert_eq!(
+        profile["telemetry"]["current_basis"],
+        "completed_scan_report"
+    );
     assert!(
         r[0]["TotalSeconds"].parse::<f64>().unwrap()
             >= r[0]["DetectSeconds"].parse::<f64>().unwrap(),
@@ -500,6 +520,23 @@ fn own_kill_cli_trims_merges_reports_and_reuses_valid_cache_without_touching_ori
     let s = summary(&o);
     assert_eq!(s["cache_hits"], 1);
     assert_eq!(s["cache_misses"], 0);
+    let profile: Value =
+        serde_json::from_slice(&fs::read(out.join("profile.json")).unwrap()).unwrap();
+    assert_eq!(profile["telemetry"]["current"]["ocr_requests"], 0);
+    assert_eq!(
+        profile["telemetry"]["cached_historical"]["ocr_requests"],
+        snapshot_requests
+    );
+    assert_eq!(
+        profile["telemetry"]["cached_historical_basis"],
+        "maximum_detection_snapshot_through_last_accepted_event_not_completed_scan"
+    );
+    assert!(profile["telemetry"]["cached_historical"]
+        .get("refine_calls")
+        .is_none());
+    assert!(profile["telemetry"]["cached_historical"]
+        .get("assist_calls")
+        .is_none());
     assert_eq!(s["ocr_providers"][0]["provider_mode"], "auto");
     assert_eq!(s["ocr_providers"][0]["provider_requested"], "directml");
     let provider = &s["ocr_providers"][0];

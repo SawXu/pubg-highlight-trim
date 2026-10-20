@@ -6,6 +6,96 @@ use std::{
     io::{self, Write},
     path::Path,
 };
+/// Current-run completed scanner work, never reconstructed from event snapshots.
+#[derive(Default, serde::Serialize)]
+pub struct ScanTelemetry {
+    pub sources: usize,
+    pub sources_without_detection_telemetry: usize,
+    pub probe_seconds_sum: f64,
+    pub detect_seconds_sum: f64,
+    pub ocr_predict_seconds_sum: f64,
+    pub ocr_frame_seconds_sum: f64,
+    pub refine_ocr_seconds_sum: f64,
+    pub assist_ocr_seconds_sum: f64,
+    pub ocr_requests: u64,
+    pub ocr_successes: u64,
+    pub ocr_skipped: u64,
+    pub ocr_cache_hits: u64,
+    pub refine_calls: u64,
+    pub assist_calls: u64,
+}
+impl ScanTelemetry {
+    pub fn add_current(
+        &mut self,
+        stats: &crate::scanner::OcrRuntimeStats,
+        work: &crate::scanner::ScanWork,
+    ) {
+        self.sources += 1;
+        self.detect_seconds_sum += work.detect_seconds;
+        self.ocr_predict_seconds_sum += work.ocr_seconds;
+        self.ocr_frame_seconds_sum += work.frame_seconds;
+        self.refine_ocr_seconds_sum += stats.refine_ocr_seconds;
+        self.assist_ocr_seconds_sum += stats.assist_ocr_seconds;
+        self.ocr_requests += stats.ocr_requests as u64;
+        self.ocr_successes += stats.ocr_successes as u64;
+        self.ocr_skipped += stats.ocr_skipped as u64;
+        self.ocr_cache_hits += stats.ocr_cache_hits as u64;
+        self.refine_calls += stats.refine_calls as u64;
+        self.assist_calls += stats.assist_calls as u64;
+    }
+}
+
+/// Sequential wall-clock phases. Planning may resume after dedupe.
+#[derive(Clone, Copy, Default)]
+pub enum Phase {
+    #[default]
+    Setup,
+    Scan,
+    Dedupe,
+    Planning,
+    Trim,
+    Merge,
+    Archive,
+    Reporting,
+}
+/// The caller supplies monotonic elapsed seconds, permitting controlled-clock tests.
+#[derive(Default)]
+pub struct PhaseTimings {
+    active: Phase,
+    boundary: f64,
+    seconds: [f64; 8],
+}
+impl PhaseTimings {
+    pub fn enter(&mut self, next: Phase, elapsed: f64) {
+        assert!(elapsed >= self.boundary);
+        self.seconds[self.active as usize] += elapsed - self.boundary;
+        self.boundary = elapsed;
+        self.active = next;
+    }
+    /// Freeze before final timing serialization: that serialization and emission
+    /// are deliberately outside the measured run, avoiding recursive timing.
+    pub fn finish(mut self, elapsed: f64) -> serde_json::Value {
+        self.enter(Phase::Reporting, elapsed);
+        let mut stages = serde_json::Map::new();
+        for (name, seconds) in [
+            "setup",
+            "scan",
+            "dedupe",
+            "planning",
+            "trim",
+            "merge",
+            "archive",
+            "reporting",
+        ]
+        .into_iter()
+        .zip(self.seconds)
+        {
+            stages.insert(name.into(), serde_json::json!(round3(seconds)));
+        }
+        stages.insert("total".into(), serde_json::json!(round3(elapsed)));
+        stages.into()
+    }
+}
 pub const RECORD_COLUMNS: &[&str] = &[
     "Index",
     "Name",

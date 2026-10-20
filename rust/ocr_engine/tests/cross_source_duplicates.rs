@@ -34,6 +34,24 @@ fn later_source_with_more_requested_context_wins_before_any_trims() {
     assert_eq!(skipped, [(0, 0)].into_iter().collect());
 }
 
+#[test]
+fn dedupe_reports_actual_work_without_changing_conservative_failures() {
+    let sources = vec![
+        (PathBuf::from("a"), vec![detection(3.)]),
+        (PathBuf::from("b"), vec![detection(3.)]),
+    ];
+    let (skipped, work) =
+        pubg_ocr_engine::dedupe::cross_source_duplicates_profiled(&sources, &mut |_| {
+            Err("unavailable".into())
+        });
+    assert!(skipped.is_empty());
+    assert_eq!(work.candidates, 2);
+    assert_eq!(work.pair_comparisons, 1);
+    assert_eq!(work.verification_windows, 2);
+    assert_eq!(work.verification_failures, 2);
+    assert_eq!(work.duplicates, 0);
+}
+
 struct Evidence {
     event: f64,
     second: bool,

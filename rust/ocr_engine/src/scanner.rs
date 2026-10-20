@@ -321,10 +321,19 @@ pub struct EventDetection {
     pub refine_ocr_seconds: f64,
     pub assist_ocr_seconds: f64,
 }
+/// Completed scan measurements, distinct from event-time detection snapshots.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ScanWork {
+    pub ocr_seconds: f64,
+    pub frame_seconds: f64,
+    pub detect_seconds: f64,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScanReport {
     pub detections: Vec<EventDetection>,
     pub stats: OcrRuntimeStats,
+    #[serde(default)]
+    pub work: ScanWork,
 }
 
 #[derive(Clone, Default)]
@@ -879,9 +888,15 @@ pub fn detect_events<B: ScanBackend, R: EventRules>(
         detection.target = config.target.clone();
         detections.push(detection);
     }
+    let work = ScanWork {
+        ocr_seconds: cost.ocr,
+        frame_seconds: cost.frame,
+        detect_seconds: scanner.backend.now() - started,
+    };
     Ok(ScanReport {
         detections,
         stats: scanner.stats,
+        work,
     })
 }
 fn fallback(preferred: &str, other: &str) -> String {

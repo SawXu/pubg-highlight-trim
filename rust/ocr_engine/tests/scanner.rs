@@ -210,6 +210,40 @@ fn assert_value(actual: &serde_json::Value, expected: &serde_json::Value, path: 
         _ => assert_eq!(actual, expected, "{path}"),
     }
 }
+#[test]
+fn completed_adaptive_scan_profile_uses_final_work_not_last_detection_snapshot() {
+    let case = fixtures()
+        .cases
+        .into_iter()
+        .find(|c| c.name == "adaptive_target_seeds_do_not_recurse")
+        .unwrap();
+    let mut backend = FixedBackend {
+        case: &case,
+        clock: 0.0,
+        decodes: 0,
+    };
+    let report = detect_events(
+        &mut backend,
+        &language_profile(&case.config.language).unwrap(),
+        case.duration,
+        &case.candidates,
+        &case.config,
+    )
+    .unwrap();
+    assert_eq!(report.detections[0].ocr_requests, 2);
+    assert!((report.detections[0].ocr_seconds - 0.02).abs() < 1e-9);
+    assert_eq!(report.stats.ocr_requests, 7);
+    assert!((report.work.ocr_seconds - 0.07).abs() < 1e-9);
+    assert!((report.work.detect_seconds - backend.clock).abs() < 1e-9);
+    let mut current = pubg_ocr_engine::reports::ScanTelemetry::default();
+    current.add_current(&report.stats, &report.work);
+    let p = serde_json::to_value(current).unwrap();
+    assert_eq!(p["ocr_requests"], 7);
+    assert!((p["ocr_predict_seconds_sum"].as_f64().unwrap() - 0.07).abs() < 1e-9);
+    assert_eq!(p["refine_calls"], report.stats.refine_calls);
+    assert_eq!(p["assist_calls"], report.stats.assist_calls);
+}
+
 fn run_case(case: &Case) {
     let mut backend = FixedBackend {
         case,
@@ -225,6 +259,35 @@ fn run_case(case: &Case) {
         &case.config,
     )
     .unwrap();
+    let mut current = pubg_ocr_engine::reports::ScanTelemetry::default();
+    current.add_current(&report.stats, &report.work);
+    let current = serde_json::to_value(current).unwrap();
+    for field in [
+        "ocr_requests",
+        "ocr_successes",
+        "ocr_skipped",
+        "ocr_cache_hits",
+        "refine_calls",
+        "assist_calls",
+    ] {
+        assert_eq!(
+            current[field], case.expected_stats[field],
+            "{}.current.{field}",
+            case.name
+        );
+    }
+    for (field, expected) in [
+        ("refine_ocr_seconds_sum", "refine_ocr_seconds"),
+        ("assist_ocr_seconds_sum", "assist_ocr_seconds"),
+    ] {
+        assert!(
+            (current[field].as_f64().unwrap() - case.expected_stats[expected].as_f64().unwrap())
+                .abs()
+                < 1e-9,
+            "{}.current.{field}",
+            case.name
+        );
+    }
     assert_value(
         &serde_json::to_value(report.detections).unwrap(),
         &case.expected_detections,

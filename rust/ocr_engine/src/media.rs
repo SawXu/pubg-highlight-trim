@@ -170,6 +170,52 @@ pub struct VideoInfo {
     pub duration: f64,
 }
 
+impl FfmpegTools {
+    /// Best-effort diagnostics only; never reclassify a source as unreadable.
+    pub fn version_token(&self) -> Option<String> {
+        let output = checked(
+            Command::new(&self.ffmpeg).arg("-version"),
+            Duration::from_secs(10),
+            false,
+        )
+        .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let token = text
+            .strip_prefix("ffmpeg version ")?
+            .split_whitespace()
+            .next()?;
+        safe_token(token)
+    }
+    pub fn source_codec(&self, path: &Path) -> Option<String> {
+        let output = checked(
+            Command::new(&self.ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=codec_name",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                ])
+                .arg(path),
+            Duration::from_secs(10),
+            false,
+        )
+        .ok()?;
+        safe_token(String::from_utf8_lossy(&output.stdout).trim())
+    }
+}
+fn safe_token(token: &str) -> Option<String> {
+    (!token.is_empty()
+        && token.len() <= 128
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b)))
+    .then(|| token.to_owned())
+}
+
 /// Search explicit path, release roots, environment directory, PATH, then Shutter Encoder.
 pub fn find_binary(name: &str, explicit: Option<&Path>) -> Result<PathBuf, MediaError> {
     if let Some(path) = explicit {
