@@ -1,6 +1,10 @@
 name: Rust checks
 
 on:
+  # 05:00 Asia/Shanghai (UTC+8). Scheduled runs use the default branch (main)
+  # and the same rust-quality job/cache as main pushes and pull requests.
+  schedule:
+    - cron: "0 21 * * *"
   pull_request:
     paths:
       - "rust/**"

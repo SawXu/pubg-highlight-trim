@@ -47,7 +47,11 @@ runs:
       if: inputs.cold-cache != 'true'
       with:
         workspaces: rust -> target
-        key: windows-x64-${{ inputs.cache-role }}-${{ hashFiles('.github/workflows/ocr-rust.yml', '.github/workflows/windows-assurance.yml', '.github/actions/rust-windows-setup/action.yml', 'scripts/build_rust_release.ps1', 'vendor/ppocr-rs/**/*.rs', 'vendor/ppocr-rs/**/Cargo.toml') }}
+        # Keep workflow/source edits out of the compatibility key. rust-cache
+        # keys rustc, compiler env (including RUSTFLAGS), and Cargo manifests/locks
+        # automatically, with fallback to compatible caches across lock changes.
+        # main push/schedule and PR runs share this role; Cargo rebuilds changed code.
+        key: windows-x64-${{ inputs.cache-role }}
         cache-all-crates: true
     - name: Report Cargo cache status
       shell: powershell
