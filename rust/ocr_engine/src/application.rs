@@ -50,6 +50,11 @@ mod production {
         detections: Vec<Detection>,
         provider: Option<Value>,
     }
+    struct PlannedTrim {
+        sequence: usize,
+        clip: planning::ClipPlan,
+        output: Option<PathBuf>,
+    }
     struct ScanJob {
         source: Source,
         config: scanner::OcrConfig,
@@ -573,6 +578,63 @@ mod production {
                 .map(|source| Box::new(source) as Box<dyn crate::dedupe::VerificationFrames>)
                 .map_err(|e| e.to_string())
         });
+        // Final grouping, sequence numbers and destinations are fixed for the
+        // whole run before any encoding. Keep source and per-source plan order.
+        let mut duplicate_skips = vec![Vec::new(); total];
+        let mut planned = Vec::new();
+        let mut sequence = 0;
+        for (source_index, source) in inputs.sources.iter().enumerate() {
+            crate::cancellation::check()?;
+            let mut retained = Vec::new();
+            for (position, mut d) in std::mem::take(&mut prepared[source_index].1)
+                .into_iter()
+                .enumerate()
+            {
+                if duplicates.contains(&(source_index, position)) {
+                    d.method = "skipped-cross-source-duplicate".into();
+                    duplicate_skips[source_index].push(d);
+                } else {
+                    retained.push(d);
+                }
+            }
+            let mut tasks = Vec::new();
+            for clip in planning::plan_prepared(retained, &configs[source_index]) {
+                sequence += 1;
+                let d = &clip.detection;
+                let output = if c.dry_run {
+                    None
+                } else {
+                    let suffix = if matches!(d.event_count.as_str(), "" | "0" | "1") {
+                        String::new()
+                    } else {
+                        format!("x{}", d.event_count)
+                    };
+                    let target = if d.target.is_empty() {
+                        "event"
+                    } else {
+                        &d.target
+                    };
+                    let name = source.path.file_name().unwrap().to_string_lossy();
+                    Some(
+                        crate::output_files::unique_path(
+                            &paths
+                                .directory
+                                .join("clips")
+                                .join(format!("{sequence:03}_{target}{suffix}_{name}")),
+                        )
+                        .map_err(|e| e.to_string())?,
+                    )
+                };
+                tasks.push(PlannedTrim {
+                    sequence,
+                    clip,
+                    output,
+                });
+            }
+            planned.push(tasks);
+        }
+        // Execute serially. Never recompute a destination after encoding starts:
+        // reservation/publication must reject a late collision, not renumber it.
         for (index, source) in inputs.sources.iter().enumerate() {
             crate::cancellation::check()?;
             let index = index + 1;
@@ -645,49 +707,25 @@ mod production {
                 skip(&c, index, total, source, &d, timing, true);
                 records.push(reports::skipped_record(index, &source.path, &d, timing));
             }
-            let mut retained = Vec::new();
-            for (position, mut d) in std::mem::take(&mut prepared[index - 1].1)
-                .into_iter()
-                .enumerate()
-            {
-                if duplicates.contains(&(index - 1, position)) {
-                    d.method = "skipped-cross-source-duplicate".into();
-                    let timing = Timing {
-                        probe: result.probe_seconds,
-                        trim: 0.0,
-                        total: scan_cost + source_started.elapsed().as_secs_f64(),
-                    };
-                    skip(&c, index, total, source, &d, timing, false);
-                    records.push(reports::skipped_record(index, &source.path, &d, timing));
-                } else {
-                    retained.push(d);
-                }
+            for d in std::mem::take(&mut duplicate_skips[index - 1]) {
+                let timing = Timing {
+                    probe: result.probe_seconds,
+                    trim: 0.0,
+                    total: scan_cost + source_started.elapsed().as_secs_f64(),
+                };
+                skip(&c, index, total, source, &d, timing, false);
+                records.push(reports::skipped_record(index, &source.path, &d, timing));
             }
             let mut produced = false;
-            for plan in planning::plan_prepared(retained, &configs[index - 1]) {
+            for task in std::mem::take(&mut planned[index - 1]) {
                 crate::cancellation::check()?;
+                let plan = task.clip;
                 let d = &plan.detection;
                 let mut encoder = String::new();
                 let mut output = String::new();
                 let mut trim_seconds = 0.0;
-                if !c.dry_run {
-                    let suffix = if matches!(d.event_count.as_str(), "" | "0" | "1") {
-                        String::new()
-                    } else {
-                        format!("x{}", d.event_count)
-                    };
-                    let target = if d.target.is_empty() {
-                        "event"
-                    } else {
-                        &d.target
-                    };
-                    let path = crate::output_files::unique_path(
-                        &paths
-                            .directory
-                            .join("clips")
-                            .join(format!("{:03}_{target}{suffix}_{name}", clips.len() + 1)),
-                    )
-                    .map_err(|e| e.to_string())?;
+                if let Some(path) = task.output {
+                    debug_assert_eq!(task.sequence, clips.len() + 1);
                     let staged =
                         crate::media_output::MediaOutput::reserve(&path, false, &input_files)
                             .map_err(|e| e.to_string())?;
