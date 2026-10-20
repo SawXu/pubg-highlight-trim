@@ -69,6 +69,8 @@ fn media() -> &'static PathBuf {
                 }
                 let out = a.last().unwrap();
                 if a.iter().any(|v|v=="concat") {
+                    let mut log = fs::OpenOptions::new().append(true).create(true).open(root.join("merge.log")).unwrap();
+                    writeln!(log, "{}", a.join("| ")).unwrap();
                     let i = a.iter().position(|v|v=="-i").unwrap();
                     assert!(fs::read_to_string(&a[i+1]).unwrap().lines().all(|line| {
                         let path = line.strip_prefix("file '").unwrap().strip_suffix("'").unwrap();
@@ -86,11 +88,76 @@ fn media() -> &'static PathBuf {
                         assert_eq!(published, completed);
                     }
                     let mut log = fs::OpenOptions::new().append(true).create(true).open(root.join("encode.log")).unwrap();
-                    writeln!(log, "{}", a.join("| ")).unwrap();
+                    log.write_all(format!("{}\n", a.join("| ")).as_bytes()).unwrap();
                     if let Some(path) = std::env::var_os("COLLIDE_ON_ENCODE") {
                         if !root.join("collided").exists() { fs::write(path, b"external-owner").unwrap(); fs::write(root.join("collided"), b"").unwrap(); }
                     }
                     if std::env::var_os("FAIL_ENCODE").is_some() { std::process::exit(7); }
+                }
+                if !a.iter().any(|v|v=="concat") && std::env::var_os("CONTROLLED_TRIM").is_some() {
+                    use std::time::{Duration, Instant};
+                    let i = a.iter().position(|v|v=="-ss").unwrap();
+                    let start = &a[i+1];
+                    let first = std::env::var("FIRST_START").unwrap_or("9.000".into());
+                    let second = std::env::var("SECOND_START").unwrap_or("29.000".into());
+                    let log = |event: &str| {
+                        let mut file = fs::OpenOptions::new().append(true).create(true).open(root.join("workers.log")).unwrap();
+                        // One append call per record: formatting directly into the
+                        // shared file can split a line across concurrent processes.
+                        file.write_all(format!("{event} {start}\n").as_bytes()).unwrap();
+                    };
+                    log("start");
+                    fs::write(root.join(format!("started-{start}")), b"").unwrap();
+                    if std::env::var_os("FAIL_WITH_BLOCKED_PEER").is_some() {
+                        let peer = if start == &first { &second } else { &first };
+                        let deadline = Instant::now() + Duration::from_secs(15);
+                        while !root.join(format!("started-{peer}")).exists() {
+                            assert!(Instant::now() < deadline, "peer worker never started");
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        fs::write(out, b"incomplete").unwrap();
+                        let failing = std::env::var("FAILING_START").unwrap_or(first.clone());
+                        if start == &failing { std::process::exit(7); }
+                        let deadline = Instant::now() + Duration::from_secs(120);
+                        while Instant::now() < deadline && !root.join("watchdog-release").exists() {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        return;
+                    }
+                    if start == &second {
+                        let deadline = Instant::now() + Duration::from_secs(15);
+                        while !root.join(format!("started-{first}")).exists() {
+                            assert!(Instant::now() < deadline, "first worker never started");
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                    if start == &first {
+                        let deadline = Instant::now() + Duration::from_secs(15);
+                        while !root.join(format!("finished-{second}")).exists() {
+                            assert!(Instant::now() < deadline, "second worker did not complete while first was held");
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        // The bounded window must not launch a third task while a
+                        // completed second result waits for its predecessor.
+                        std::thread::sleep(Duration::from_millis(150));
+                        assert!(!root.join("started-19.000").exists(), "unbounded pending results");
+                        // A later completed task must remain private until its predecessor publishes.
+                        assert!(fs::read_dir(root.join("out/clips")).unwrap().all(|e| {
+                            e.unwrap().file_name().to_string_lossy().starts_with('.')
+                        }), "out-of-order publication");
+                        if std::env::var_os("CANCEL_TRIM").is_some() {
+                            loop { std::thread::sleep(Duration::from_millis(10)); }
+                        }
+                        if std::env::var_os("FAIL_FIRST").is_some() {
+                            fs::write(out, b"incomplete").unwrap();
+                            log("finish");
+                            std::process::exit(7);
+                        }
+                    }
+                    fs::write(out, b"encoded").unwrap();
+                    log("finish");
+                    fs::write(root.join(format!("finished-{start}")), b"").unwrap();
+                    return;
                 }
                 fs::write(out, b"encoded").unwrap();
             }
@@ -232,6 +299,74 @@ impl Drop for Fixture {
 }
 fn detection(sec: f64, target: &str, key: &str) -> Value {
     json!({"duration_sec":60.,"event_sec":sec,"target":target,"event_key":key,"method":"ocr","detector":"ocr", "ocr_seconds":2.0,"ocr_requests":7,"detect_seconds":3.0})
+}
+
+#[test]
+fn parallel_trim_accepts_independent_worker_limit() {
+    let f = Fixture::new(&["--merge"]);
+    let out = f
+        .command()
+        .args(["--trim-jobs", "2"])
+        .env("CONTROLLED_TRIM", "1")
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let profile: Value =
+        serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+    assert_eq!(profile["runtime"]["trim_workers"], 2);
+    assert_eq!(profile["runtime"]["ocr_worker_capacity"], 1);
+    assert_controlled_workers(&f);
+    assert_eq!(
+        fs::read_to_string(f.root.join("capability.log")).unwrap(),
+        "probe\n"
+    );
+    let expected = [
+        "001_own-kill_a.mp4",
+        "002_self-death_a.mp4",
+        "003_own-kill_b.mp4",
+    ];
+    let records = rows(&f);
+    assert_eq!(records.len(), expected.len());
+    for (row, name) in records.iter().zip(expected) {
+        assert_eq!(PathBuf::from(&row["Output"]).file_name().unwrap(), name);
+    }
+    let summary = f.summary(&out);
+    let concat = fs::read_to_string(summary["concat_list"].as_str().unwrap()).unwrap();
+    assert_eq!(concat.lines().count(), expected.len());
+    for (line, name) in concat.lines().zip(expected) {
+        assert!(line.ends_with(&format!("{name}'")));
+    }
+}
+
+fn assert_controlled_workers(f: &Fixture) {
+    let log = fs::read_to_string(f.root.join("workers.log")).unwrap();
+    let mut active = 0;
+    let mut maximum = 0;
+    for line in log.lines() {
+        if line.starts_with("start ") {
+            active += 1;
+        } else {
+            active -= 1;
+        }
+        maximum = maximum.max(active);
+        assert!((0..=2).contains(&active), "unbounded trim workers: {log}");
+    }
+    assert_eq!(maximum, 2, "test must observe overlapping workers: {log}");
+    assert_eq!(active, 0);
+    let finishes = log
+        .lines()
+        .filter(|line| line.starts_with("finish "))
+        .collect::<Vec<_>>();
+    assert_eq!(finishes.len(), 3);
+    assert!(
+        finishes[0].ends_with("29.000"),
+        "completion must be out of order: {log}"
+    );
 }
 
 #[test]
@@ -573,6 +708,15 @@ fn serial_multievent_outputs_reports_and_merge_keep_planned_order() {
 
 #[test]
 fn split_targets_cross_source_duplicates_and_early_skips_preserve_records_and_merge_order() {
+    split_targets_contract(false);
+}
+
+#[test]
+fn parallel_split_targets_duplicates_and_early_skips_keep_planned_order() {
+    split_targets_contract(true);
+}
+
+fn split_targets_contract(parallel: bool) {
     let f = Fixture::with_detections(
         &["--merge", "--split-merge-by-target"],
         [
@@ -587,7 +731,15 @@ fn split_targets_cross_source_duplicates_and_early_skips_preserve_records_and_me
             ],
         ],
     );
-    let out = f.command().output().unwrap();
+    let mut command = f.command();
+    if parallel {
+        command
+            .args(["--trim-jobs", "2"])
+            .env("CONTROLLED_TRIM", "1")
+            .env("FIRST_START", "29.000")
+            .env("SECOND_START", "9.000");
+    }
+    let out = command.output().unwrap();
     assert_eq!(
         out.status.code(),
         Some(0),
@@ -674,6 +826,220 @@ fn dry_run_keeps_planned_windows_but_never_encodes_merges_or_archives() {
         .all(|r| r["Output"].is_empty() && r["Encoder"].is_empty()));
     assert!(f.root.join("a.mp4").exists());
     assert!(f.root.join("b.mp4").exists());
+}
+
+#[test]
+fn trim_worker_modes_are_independent_of_ocr_jobs_and_report_effective_capacity() {
+    for (trim, jobs) in [("auto", "2"), ("1", "2"), ("2", "1")] {
+        let mut f = Fixture::new(&[]);
+        let jobs_index = f.args.iter().position(|arg| arg == "--jobs").unwrap();
+        f.args[jobs_index + 1] = jobs.into();
+        let mut command = f.command();
+        command.args(["--trim-jobs", trim]);
+        if trim != "2" {
+            command.env("CHECK_SERIAL", "1");
+        }
+        let out = command.output().unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let p: Value =
+            serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+        assert_eq!(
+            p["runtime"]["trim_workers"],
+            if trim == "2" { 2 } else { 1 }
+        );
+        assert_eq!(
+            p["runtime"]["ocr_worker_capacity"],
+            jobs.parse::<usize>().unwrap()
+        );
+    }
+    for invalid in ["0", "3", "-1", "many"] {
+        let f = Fixture::new(&[]);
+        let out = f.command().args(["--trim-jobs", invalid]).output().unwrap();
+        assert_eq!(out.status.code(), Some(2));
+        assert!(!f.root.join("encode.log").exists());
+    }
+}
+
+#[test]
+fn trim_worker_profile_reports_effective_count_for_zero_or_one_planned_task() {
+    for count in [0, 1] {
+        let detections = if count == 0 {
+            vec![]
+        } else {
+            vec![detection(10., "own-kill", "only")]
+        };
+        let f = Fixture::with_detections(&[], [detections, vec![]]);
+        let out = f.command().args(["--trim-jobs", "2"]).output().unwrap();
+        assert_eq!(out.status.code(), Some(if count == 0 { 2 } else { 0 }));
+        let p: Value =
+            serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
+        assert_eq!(p["runtime"]["trim_workers"], count);
+        assert_eq!(p["trim_tasks"].as_array().unwrap().len(), count as usize);
+    }
+}
+
+fn assert_failed_parallel_inputs_are_safe(f: &Fixture) {
+    assert!(
+        !f.root.join("merge.log").exists(),
+        "Merge must never start after failed Trim"
+    );
+    assert_eq!(
+        fs::read_dir(f.root.join("out/clips")).unwrap().count(),
+        0,
+        "all unpublished staging and later completed outputs must be removed"
+    );
+    assert!(!f.root.join("out/originals").exists());
+    assert!(!f.root.join("out/profile.json").exists());
+    assert_eq!(fs::read(f.root.join("a.mp4")).unwrap(), b"original-a");
+    assert_eq!(fs::read(f.root.join("b.mp4")).unwrap(), b"original-b");
+}
+
+#[test]
+fn parallel_worker_failure_discards_completed_unpublished_outputs_and_never_archives() {
+    let f = Fixture::new(&["--merge", "--move-originals"]);
+    let out = f
+        .command()
+        .args(["--trim-jobs", "2"])
+        .env("CONTROLLED_TRIM", "1")
+        .env("FAIL_FIRST", "1")
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        f.root.join("finished-29.000").exists(),
+        "later task must finish before failure"
+    );
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("SUMMARY "));
+    assert_failed_parallel_inputs_are_safe(&f);
+}
+
+#[test]
+fn parallel_worker_failure_promptly_stops_a_blocked_peer_and_cleans_staging() {
+    use std::{
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+    for failing in ["9.000", "29.000"] {
+        let f = Fixture::new(&["--merge", "--move-originals"]);
+        // File-backed output lets the watchdog wait without a full pipe blocking the CLI.
+        let stdout = fs::File::create(f.root.join("stdout.log")).unwrap();
+        let stderr = fs::File::create(f.root.join("stderr.log")).unwrap();
+        let started = Instant::now();
+        let mut child = f
+            .command()
+            .args(["--trim-jobs", "2"])
+            .env("CONTROLLED_TRIM", "1")
+            .env("FAIL_WITH_BLOCKED_PEER", "1")
+            .env("FAILING_START", failing)
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .unwrap();
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if started.elapsed() >= Duration::from_secs(10) {
+                // A failing implementation must not leave the 120-second native
+                // simulator behind: release only after the acceptance deadline.
+                fs::write(f.root.join("watchdog-release"), b"").unwrap();
+                break child.wait().unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let elapsed = started.elapsed();
+        assert!(f.root.join("started-9.000").exists());
+        assert!(f.root.join("started-29.000").exists());
+        let encodes = fs::read_to_string(f.root.join("encode.log")).unwrap();
+        let first_attempts = encodes
+            .lines()
+            .filter(|line| line.contains(&format!("-ss| {failing}|")))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            first_attempts.len(),
+            2,
+            "both NVENC and software attempts must fail: {encodes}"
+        );
+        assert!(first_attempts
+            .iter()
+            .any(|line| line.contains("h264_nvenc")));
+        assert!(first_attempts.iter().any(|line| line.contains("libx264")));
+        assert_eq!(status.code(), Some(1));
+        assert!(!fs::read_to_string(f.root.join("stdout.log"))
+            .unwrap()
+            .contains("SUMMARY "));
+        assert_failed_parallel_inputs_are_safe(&f);
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "worker {failing} failure waited for blocked peer: {elapsed:?}"
+        );
+    }
+}
+
+#[test]
+fn parallel_cancellation_discards_completed_unpublished_outputs_and_never_archives() {
+    // Cancellation is process-global and intentionally cannot be reset. Use a fresh
+    // test process, but enter through the same production application boundary.
+    const CHILD: &str = "TRIM_CANCEL_CONTRACT_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let out = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "parallel_cancellation_discards_completed_unpublished_outputs_and_never_archives",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(!String::from_utf8_lossy(&out.stdout).contains("SUMMARY "));
+        return;
+    }
+    let f = Fixture::new(&["--merge", "--move-originals"]);
+    std::env::set_var("PUBG_OCR_MODEL_DIR", &f.models);
+    std::env::set_var("PUBG_OCR_THREADS", "1");
+    std::env::set_var("TRIM_FIXTURE", &f.root);
+    std::env::set_var("CONTROLLED_TRIM", "1");
+    std::env::set_var("CANCEL_TRIM", "1");
+    let config = Config::try_parse_from(
+        std::iter::once("app")
+            .chain(f.args.iter().map(String::as_str))
+            .chain(["--trim-jobs", "2"]),
+    )
+    .unwrap();
+    let root = f.root.clone();
+    let cancel = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !root.join("finished-29.000").exists() {
+            if std::time::Instant::now() >= deadline {
+                pubg_ocr_engine::cancellation::request();
+                panic!("later worker never completed before cancellation");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        // Let the executor collect the later result while its predecessor is held.
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        pubg_ocr_engine::cancellation::request();
+    });
+    let result = pubg_ocr_engine::application::run(config);
+    cancel.join().unwrap();
+    assert!(result.unwrap_err().to_lowercase().contains("cancel"));
+    assert_failed_parallel_inputs_are_safe(&f);
 }
 
 #[test]

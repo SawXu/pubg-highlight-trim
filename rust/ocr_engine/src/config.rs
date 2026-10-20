@@ -208,6 +208,9 @@ pub struct Config {
     pub dry_run: bool,
     #[arg(long,default_value="auto",value_parser=jobs)]
     pub jobs: String,
+    /// Trim concurrency, independent of OCR jobs. Auto conservatively uses one worker.
+    #[arg(long, default_value = "auto", value_parser = ["auto", "1", "2"])]
+    pub trim_jobs: String,
     #[arg(long,num_args=0..=1,conflicts_with="no_merge")]
     #[serde(serialize_with = "serialize_merge")]
     pub merge: Option<Option<PathBuf>>,

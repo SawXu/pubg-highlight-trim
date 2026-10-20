@@ -120,6 +120,20 @@ public sealed class CliCommandBuilderTests
     }
 
     [TestMethod]
+    public void Build_DefaultTrimJobsIsAutoIndependentOfOcrJobs()
+    {
+        var options = new CliRunOptions(
+            [@"C:\Videos\highlights"], null, "both", "auto", 5, 1, 2, 10, "auto", "4",
+            false, true, false, false, true, false);
+
+        var arguments = CliCommandBuilder.Build(options).ToList();
+
+        Assert.AreEqual("4", arguments[arguments.IndexOf("--jobs") + 1]);
+        CollectionAssert.Contains(arguments, "--trim-jobs");
+        Assert.AreEqual("auto", arguments[arguments.IndexOf("--trim-jobs") + 1]);
+    }
+
+    [TestMethod]
     public void Preview_QuotesPathsContainingSpaces()
     {
         var preview = CliCommandBuilder.Preview(@"C:\Program Files\PUBG Trim\pubg-highlight-trim.exe", [@"C:\Video Clips", "--merge"]);

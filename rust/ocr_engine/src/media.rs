@@ -38,10 +38,42 @@ impl From<io::Error> for MediaError {
     }
 }
 
+thread_local! {
+    static TASK_STOP: std::cell::RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> = const { std::cell::RefCell::new(None) };
+}
+fn task_stopped() -> bool {
+    TASK_STOP.with(|stop| {
+        stop.borrow()
+            .as_ref()
+            .is_some_and(|stop| stop.load(std::sync::atomic::Ordering::Acquire))
+    })
+}
+/// Bind a queue-local stop signal to media children on this dedicated worker.
+#[cfg(feature = "onnx")]
+pub(crate) fn with_task_stop<T>(
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    work: impl FnOnce() -> T,
+) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TASK_STOP.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
+    TASK_STOP.with(|slot| *slot.borrow_mut() = Some(stop));
+    let _reset = Reset;
+    work()
+}
+fn stopped_error() -> MediaError {
+    MediaError::CommandFailed("Trim queue stopped after a task failed".into())
+}
 /// Drain both pipes concurrently: raw BGR frames are larger than pipe capacity.
 fn run(command: &mut Command, timeout: Duration, verbose: bool) -> Result<Output, MediaError> {
     if crate::cancellation::is_cancelled() {
         return Err(MediaError::Cancelled);
+    }
+    if task_stopped() {
+        return Err(stopped_error());
     }
     let mut child = command
         .stdout(Stdio::piped())
@@ -63,6 +95,11 @@ fn run(command: &mut Command, timeout: Duration, verbose: bool) -> Result<Output
             let _ = child.kill();
             let _ = child.wait();
             break Err(MediaError::Cancelled);
+        }
+        if task_stopped() {
+            let _ = child.kill();
+            let _ = child.wait();
+            break Err(stopped_error());
         }
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
@@ -218,7 +255,7 @@ fn safe_token(token: &str) -> Option<String> {
 
 const NVENC_OPTIONS: &[&str] = &["-preset", "p4", "-rc", "vbr", "-cq", "22", "-b:v", "0"];
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct EncoderDiagnostics {
     pub capability: &'static str,
     pub probe_seconds: f64,
@@ -227,20 +264,28 @@ pub struct EncoderDiagnostics {
 }
 
 /// Owned by one application run. Never global: a later run re-evaluates the GPU.
-pub struct TrimEncoder<'a> {
-    tools: &'a FfmpegTools,
+#[derive(Clone)]
+pub struct TrimEncoder {
+    tools: FfmpegTools,
     diagnostics: EncoderDiagnostics,
 }
-impl<'a> TrimEncoder<'a> {
-    pub fn new(tools: &'a FfmpegTools) -> Self {
+impl TrimEncoder {
+    pub fn new(tools: &FfmpegTools) -> Self {
         Self {
-            tools,
+            tools: tools.clone(),
             diagnostics: EncoderDiagnostics {
                 capability: "not_probed",
                 probe_seconds: 0.0,
                 fallback_reason: None,
                 production_fallbacks: 0,
             },
+        }
+    }
+    #[cfg(feature = "onnx")]
+    pub(crate) fn record_parallel_codec(&mut self, codec: &str) {
+        if self.diagnostics.capability == "available" && codec == "libx264" {
+            self.diagnostics.production_fallbacks += 1;
+            self.diagnostics.fallback_reason = Some("production_nvenc_failed");
         }
     }
     pub fn diagnostics(&self) -> &EncoderDiagnostics {
@@ -513,6 +558,7 @@ impl FfmpegTools {
                 Err(MediaError::Cancelled) => return Err(MediaError::Cancelled),
                 // Python's encoder fallback also covered GPU/native startup failures.
                 // A shared runtime failure is still returned by the software attempt.
+                Err(error) if task_stopped() => return Err(error),
                 Err(_) if codec == "h264_nvenc" => continue,
                 Err(error) => return Err(error),
             }

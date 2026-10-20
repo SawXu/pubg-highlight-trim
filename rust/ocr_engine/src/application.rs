@@ -111,6 +111,95 @@ mod production {
         clip: planning::ClipPlan,
         output: Option<PathBuf>,
     }
+    struct EncodedTrim {
+        staged: crate::media_output::MediaOutput,
+        encoder: String,
+        encode_seconds: f64,
+        probe_seconds: f64,
+        started: Instant,
+    }
+    // Only this bounded window owns running processes or staged outputs. On
+    // error/cancellation join every worker before their staging guards are dropped.
+    struct TrimQueue<I: Iterator<Item = (PathBuf, PathBuf, f64, f64)>> {
+        jobs: I,
+        pending: std::collections::VecDeque<std::thread::JoinHandle<Result<EncodedTrim, String>>>,
+        encoder: crate::media::TrimEncoder,
+        tools: FfmpegTools,
+        inputs: std::sync::Arc<Vec<PathBuf>>,
+        stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        failure: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    }
+    impl<I: Iterator<Item = (PathBuf, PathBuf, f64, f64)>> TrimQueue<I> {
+        fn submit(&mut self) -> Result<(), String> {
+            crate::cancellation::check()?;
+            let Some((source, output, start, length)) = self.jobs.next() else {
+                return Ok(());
+            };
+            let mut encoder = self.encoder.clone();
+            let tools = self.tools.clone();
+            let inputs = self.inputs.clone();
+            let stop = self.stop.clone();
+            let failure = self.failure.clone();
+            self.pending.push_back(std::thread::spawn(move || {
+                let result: Result<EncodedTrim, String> =
+                    crate::media::with_task_stop(stop.clone(), || {
+                        crate::cancellation::check()?;
+                        let started = Instant::now();
+                        let staged =
+                            crate::media_output::MediaOutput::reserve(&output, false, &inputs)
+                                .map_err(|e| e.to_string())?;
+                        let encode_started = Instant::now();
+                        let encoder = encoder
+                            .trim_clip(&source, staged.temporary(), start, length)
+                            .map_err(|e| e.to_string())?
+                            .to_owned();
+                        let encode_seconds = encode_started.elapsed().as_secs_f64();
+                        let probe_started = Instant::now();
+                        tools
+                            .duration_sec(staged.temporary())
+                            .map_err(|e| e.to_string())?;
+                        Ok(EncodedTrim {
+                            staged,
+                            encoder,
+                            encode_seconds,
+                            probe_seconds: probe_started.elapsed().as_secs_f64(),
+                            started,
+                        })
+                    });
+                if let Err(error) = &result {
+                    let mut first = failure.lock().unwrap();
+                    if first.is_none() {
+                        *first = Some(error.clone());
+                    }
+                    stop.store(true, Ordering::Release);
+                }
+                result
+            }));
+            Ok(())
+        }
+        fn next(&mut self) -> Result<EncodedTrim, String> {
+            let result = self
+                .pending
+                .pop_front()
+                .ok_or("missing trim worker")?
+                .join()
+                .map_err(|_| "trim worker panicked".to_owned())?;
+            if let Some(error) = self.failure.lock().unwrap().as_ref() {
+                return Err(error.clone());
+            }
+            result
+        }
+    }
+    impl<I: Iterator<Item = (PathBuf, PathBuf, f64, f64)>> Drop for TrimQueue<I> {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Release);
+            for worker in self.pending.drain(..) {
+                // Result owns the staging guard, including successfully encoded
+                // clips that must never be published after another task failed.
+                let _ = worker.join();
+            }
+        }
+    }
     struct ScanJob {
         source: Source,
         config: scanner::OcrConfig,
@@ -776,7 +865,11 @@ mod production {
         phases.enter(Phase::Trim, started.elapsed().as_secs_f64());
         let trim_total_clips: usize = planned.iter().map(|tasks| tasks.len()).sum();
         let trim_workers = if trim_total_clips > 0 && !c.dry_run {
-            1
+            if c.trim_jobs == "2" {
+                2.min(trim_total_clips)
+            } else {
+                1
+            }
         } else {
             0
         };
@@ -787,11 +880,43 @@ mod production {
         }
         let mut trim_completed_clips: usize = 0;
         let mut trim_encoder = crate::media::TrimEncoder::new(&tools);
+        if trim_workers > 0 {
+            trim_encoder
+                .ensure_capability()
+                .map_err(|e| e.to_string())?;
+        }
+        let trim_jobs = planned
+            .iter()
+            .zip(&inputs.sources)
+            .flat_map(|(tasks, source)| {
+                tasks.iter().filter_map(move |task| {
+                    task.output.as_ref().map(|output| {
+                        (
+                            source.path.clone(),
+                            output.clone(),
+                            task.clip.start_sec,
+                            task.clip.end_sec - task.clip.start_sec,
+                        )
+                    })
+                })
+            });
+        let mut trim_queue = TrimQueue {
+            jobs: trim_jobs,
+            pending: Default::default(),
+            encoder: trim_encoder.clone(),
+            tools: tools.clone(),
+            inputs: std::sync::Arc::new(input_files.clone()),
+            stop: Default::default(),
+            failure: Default::default(),
+        };
+        for _ in 0..trim_workers {
+            trim_queue.submit()?;
+        }
         let mut trim_tasks = Vec::new();
         let (mut encode_sum, mut output_probe_sum, mut publication_sum, mut task_total_sum) =
             (0.0, 0.0, 0.0, 0.0);
-        // Execute serially. Never recompute a destination after encoding starts:
-        // reservation/publication must reject a late collision, not renumber it.
+        // Workers may finish out of order; publication and all downstream
+        // consumers follow the already fixed planning sequence.
         for (index, source) in inputs.sources.iter().enumerate() {
             crate::cancellation::check()?;
             let index = index + 1;
@@ -874,38 +999,23 @@ mod production {
                 records.push(reports::skipped_record(index, &source.path, &d, timing));
             }
             let mut produced = false;
-            for task in std::mem::take(&mut planned[index - 1]) {
+            for task in &planned[index - 1] {
                 crate::cancellation::check()?;
-                let plan = task.clip;
+                let plan = &task.clip;
                 let d = &plan.detection;
                 let mut encoder = String::new();
                 let mut output = String::new();
                 let mut trim_seconds = 0.0;
-                if let Some(path) = task.output {
+                if let Some(path) = &task.output {
                     debug_assert_eq!(task.sequence, clips.len() + 1);
-                    trim_encoder
-                        .ensure_capability()
-                        .map_err(|e| e.to_string())?;
-                    let task_started = Instant::now();
-                    let staged =
-                        crate::media_output::MediaOutput::reserve(&path, false, &input_files)
-                            .map_err(|e| e.to_string())?;
-                    let trim_started = Instant::now();
-                    encoder = trim_encoder
-                        .trim_clip(
-                            &source.path,
-                            staged.temporary(),
-                            plan.start_sec,
-                            plan.end_sec - plan.start_sec,
-                        )
-                        .map_err(|e| e.to_string())?
-                        .into();
-                    trim_seconds = trim_started.elapsed().as_secs_f64();
-                    let probe_started = Instant::now();
-                    tools
-                        .duration_sec(staged.temporary())
-                        .map_err(|e| e.to_string())?;
-                    let output_probe_seconds = probe_started.elapsed().as_secs_f64();
+                    let encoded = trim_queue.next()?;
+                    crate::cancellation::check()?;
+                    encoder = encoded.encoder;
+                    trim_encoder.record_parallel_codec(&encoder);
+                    trim_seconds = encoded.encode_seconds;
+                    let output_probe_seconds = encoded.probe_seconds;
+                    let task_started = encoded.started;
+                    let staged = encoded.staged;
                     let publication_started = Instant::now();
                     staged
                         .publish(&input_files, false)
@@ -939,6 +1049,7 @@ mod production {
                         trim_total_clips,
                         trim_workers,
                     );
+                    trim_queue.submit()?;
                 }
                 let t = Timing {
                     probe: result.probe_seconds,
@@ -1089,7 +1200,7 @@ mod production {
             "trim_tasks":trim_tasks,
             "dedupe_work":dedupe_work,
             "counts":{"sources":total,"candidates":records.iter().filter(|r|!r["EventSec"].is_empty()).count(),"outputs":clips.len()},
-            "runtime":{"ocr_worker_capacity":jobs.min(total),"ocr_workers_active":active_ocr_workers,"trim_workers":1,"trim_encoder":trim_encoder.diagnostics(),"trim_validation":"ffprobe_duration_strict","ocr_provider_mode":c.ocr_provider.code(),"ocr_threads_per_worker":settings.threads,"source_codec_counts":codec_counts,"ffmpeg_version":ffmpeg_version,"scan_mode":format!("{:?}",c.scan_mode).to_lowercase(),"full_scan":full_scan,"candidate_input_present":candidates_path.is_some(),"brightness_gate_mode":format!("{:?}",c.brightness_gate_mode.unwrap_or(crate::config::GateMode::Light)).to_lowercase(),"validation":"strict","dry_run":c.dry_run,"source_scan_configs":source_scan_configs},
+            "runtime":{"ocr_worker_capacity":jobs.min(total),"ocr_workers_active":active_ocr_workers,"trim_workers":trim_workers,"trim_jobs_requested":c.trim_jobs,"trim_encoder":trim_encoder.diagnostics(),"trim_validation":"ffprobe_duration_strict","ocr_provider_mode":c.ocr_provider.code(),"ocr_threads_per_worker":settings.threads,"source_codec_counts":codec_counts,"ffmpeg_version":ffmpeg_version,"scan_mode":format!("{:?}",c.scan_mode).to_lowercase(),"full_scan":full_scan,"candidate_input_present":candidates_path.is_some(),"brightness_gate_mode":format!("{:?}",c.brightness_gate_mode.unwrap_or(crate::config::GateMode::Light)).to_lowercase(),"validation":"strict","dry_run":c.dry_run,"source_scan_configs":source_scan_configs},
             "cache":{"enabled":cache_dir.is_some(),"directory":cache_dir.as_ref().map(|p|p.display().to_string()).unwrap_or_default(),"hits":cache_hits,"misses":cache_misses,"hit_rate":if cache_hits+cache_misses==0{0.0}else{reports::round3(cache_hits as f64/(cache_hits+cache_misses)as f64)}},
             "candidate_csv":candidate_output,"termination_reasons":termination,"ocr_providers":providers,
             "ocr_providers_current":providers.iter().filter(|p|p["cache_hit"] != true).collect::<Vec<_>>(),

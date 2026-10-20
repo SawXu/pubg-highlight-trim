@@ -17,7 +17,8 @@ public sealed record CliRunOptions(
     bool Overwrite,
     bool BrightnessGate,
     bool MoveOriginals,
-    bool SplitMergeByTarget = false)
+    bool SplitMergeByTarget = false,
+    string TrimJobs = "auto")
 {
     public string PrimaryInputPath => InputPaths.FirstOrDefault() ?? string.Empty;
 }
