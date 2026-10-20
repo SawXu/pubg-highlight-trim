@@ -47,11 +47,7 @@ fn dedupe_progress_callback_called_once_per_candidate() {
         calls_clone.lock().unwrap().push((current, total));
     };
 
-    let (_skipped, work) = dedupe::cross_source_duplicates_profiled(
-        &sources,
-        &mut |_path| Err("no frame decoder in unit test".into()),
-        Some(&progress),
-    );
+    let (_skipped, work) = dedupe::cross_source_duplicates_profiled(&sources, Some(&progress));
 
     let calls = calls.lock().unwrap();
     // 3 total candidates (2 from a.mp4, 1 from b.mp4)
@@ -81,11 +77,7 @@ fn dedupe_progress_with_no_candidates_is_stable() {
         *count_clone.lock().unwrap() += 1;
     };
 
-    let (skipped, work) = dedupe::cross_source_duplicates_profiled(
-        &sources,
-        &mut |_path| Err("no decoder".into()),
-        Some(&progress),
-    );
+    let (skipped, work) = dedupe::cross_source_duplicates_profiled(&sources, Some(&progress));
 
     assert_eq!(work.candidates, 0);
     assert!(skipped.is_empty());
@@ -105,11 +97,7 @@ fn dedupe_progress_callback_none_is_accepted() {
         vec![detection_with_key(5.0, "self-death:knock:enemy")],
     )];
 
-    let (skipped, work) = dedupe::cross_source_duplicates_profiled(
-        &sources,
-        &mut |_path| Err("no decoder".into()),
-        None,
-    );
+    let (skipped, work) = dedupe::cross_source_duplicates_profiled(&sources, None);
 
     assert_eq!(work.candidates, 1);
     assert!(skipped.is_empty());

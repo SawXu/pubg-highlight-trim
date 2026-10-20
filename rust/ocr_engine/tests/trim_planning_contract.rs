@@ -42,6 +42,12 @@ fn media() -> &'static PathBuf {
                     println!("ffmpeg version fixture-1 private/build/path"); return;
                 }
                 if a.iter().any(|v|v=="stream=codec_name") {
+                    if let Some(path) = std::env::var_os("BLOCK_FUTURE") {
+                        let p = PathBuf::from(path);
+                        fs::create_dir_all(p.parent().unwrap()).unwrap();
+                        fs::write(&p, b"block").unwrap();
+                        for n in 1..1000 { fs::write(p.with_file_name(format!("{}_{}.mp4",p.file_stem().unwrap().to_string_lossy(),n)), b"block").unwrap(); }
+                    }
                     if std::env::var_os("BAD_DIAGNOSTICS").is_some() { std::process::exit(1); }
                     println!("h264"); return;
                 }
@@ -52,12 +58,7 @@ fn media() -> &'static PathBuf {
                 }
                 if a.iter().any(|v|v=="stream=width,height") { println!("16,16"); return; }
                 if a.iter().any(|v|v=="rawvideo") {
-                    if let Some(path) = std::env::var_os("BLOCK_FUTURE") {
-                        let p = PathBuf::from(path);
-                        fs::create_dir_all(p.parent().unwrap()).unwrap();
-                        fs::write(&p, b"block").unwrap();
-                        for n in 1..1000 { fs::write(p.with_file_name(format!("{}_{}.mp4",p.file_stem().unwrap().to_string_lossy(),n)), b"block").unwrap(); }
-                    }
+                    assert!(std::env::var_os("FORBID_FRAME_DECODE").is_none(), "dedupe must not decode frames");
                     let i = a.iter().position(|v|v=="-ss").unwrap();
                     let t: f64 = a[i+1].parse().unwrap();
                     std::io::stdout().write_all(&vec![((t*100.).round() as u64 % 256) as u8;16*16*3]).unwrap(); return;
@@ -640,7 +641,7 @@ fn rows(f: &Fixture) -> Vec<std::collections::BTreeMap<String, String>> {
 }
 
 #[test]
-fn late_source_planning_failure_prevents_every_encode() {
+fn output_mutation_during_source_diagnostics_prevents_every_encode() {
     let f = Fixture::with_detections(
         &["--move-originals"],
         [
@@ -651,15 +652,15 @@ fn late_source_planning_failure_prevents_every_encode() {
             ],
         ],
     );
-    // During global verification the external filesystem becomes full of names
-    // for the later retained clip. Planning must fail before encoding source a.
+    // Exhaust later clip names during source codec diagnostics, after output
+    // directory selection but before planning. Dedupe no longer decodes frames.
     let out = f
         .command()
         .env("BLOCK_FUTURE", f.root.join("out/clips/002_own-kill_b.mp4"))
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("Could not create unique path"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Output paths changed after preflight"));
     assert!(!f.root.join("encode.log").exists());
     assert!(f.root.join("a.mp4").exists());
     assert!(f.root.join("b.mp4").exists());
@@ -732,6 +733,7 @@ fn split_targets_contract(parallel: bool) {
         ],
     );
     let mut command = f.command();
+    command.env("FORBID_FRAME_DECODE", "1");
     if parallel {
         command
             .args(["--trim-jobs", "2"])
@@ -753,7 +755,7 @@ fn split_targets_contract(parallel: bool) {
         serde_json::from_slice(&fs::read(f.root.join("out/profile.json")).unwrap()).unwrap();
     assert_eq!(profile["dedupe_work"]["candidates"], 4);
     assert_eq!(profile["dedupe_work"]["pair_comparisons"], 1);
-    assert_eq!(profile["dedupe_work"]["verification_windows"], 1);
+    assert_eq!(profile["dedupe_work"]["verification_windows"], 0);
     assert_eq!(profile["dedupe_work"]["verification_failures"], 0);
     assert_eq!(profile["dedupe_work"]["duplicates"], 1);
     let r = rows(&f);

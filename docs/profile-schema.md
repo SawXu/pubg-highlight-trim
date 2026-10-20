@@ -22,7 +22,7 @@ freeze boundary. The sum of the eight stages equals total before rounding
   grouping, stable numbering and destination planning **after** dedupe. These
   two disjoint intervals accumulate; neither contains dedupe time. Output
   directory preparation (still after successful scans) is included here.
-- `dedupe`: cross-source duplicate ranking and optional frame verification.
+- `dedupe`: cross-source OCR event identity matching and context ranking; no frame decoding.
 - `trim`: bounded parallel execution and ordered publication, including
   record/decision bookkeeping, reservation, encoding, strict output probe and
   atomic publication. Dry runs still process decisions but execute no media writes.
@@ -91,10 +91,13 @@ zero request totals for such sources **do not prove zero attempted OCR work**.
 Empty detection lists also provide no detection metrics. No historical telemetry
 is presented as current OCR work.
 
-`dedupe_work` reports identity-bearing candidates, cross-source pair comparisons,
-verification windows attempted, verification errors and proven duplicates.
-A short-window rejection can count a comparison with no verification window;
-conservative missing/mismatching-frame rejections are not decoder errors.
+`dedupe_work` reports identity-bearing candidates, cross-source pair comparisons
+and duplicates identified by matching OCR `target` + `event_key`. Same-source
+events and empty keys are not deduplicated. More complete requested context wins;
+ties retain source/event input order. No pixel verification is performed: different
+recordings with the same OCR identity are intentionally treated as duplicates.
+`verification_windows` and `verification_failures` remain present for compatibility
+and are always zero.
 
 ## Runtime metadata and compatibility
 

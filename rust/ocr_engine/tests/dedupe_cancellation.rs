@@ -18,7 +18,6 @@ fn request_during_progress_stops_remaining_candidates_and_application() {
     let calls = RefCell::new(Vec::new());
     let (_, work) = dedupe::cross_source_duplicates_profiled(
         &sources,
-        &mut |_| panic!("cancellation must stop before opening later verification sources"),
         Some(&|current, total| {
             calls.borrow_mut().push((current, total));
             cancellation::request();
