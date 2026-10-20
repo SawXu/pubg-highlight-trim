@@ -180,7 +180,7 @@ fn serialize_merge<S: Serializer>(v: &Option<Option<PathBuf>>, s: S) -> Result<S
 #[command(
     name = "pubg-highlight-trim",
     bin_name = "pubg-highlight-trim",
-    version = "0.3.6",
+    version = "0.3.7",
     args_override_self = true,
     about = "Trim PUBG NVIDIA Highlight clips around OCR-detected knock/elimination events."
 )]
