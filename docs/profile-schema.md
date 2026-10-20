@@ -44,7 +44,16 @@ is promised.
 ## Nested measurements and work
 
 `aggregates.*_seconds_sum` contains nested task measurements, not extra phases:
-cache reads, cache writes and trim encoding. The encoding sum preserves the
+cache reads, cache writes and Trim task work. `trim_tasks` records successful
+published tasks by stable `sequence`, with `encode_seconds` (all production
+attempts including fallback), `output_probe_seconds` (strict FFprobe duration
+validation), `publication_seconds` (sync/atomic publish and owned staging cleanup),
+and `total_seconds` (reservation through publication). The three operations do
+not overlap; total contains them plus reservation/bookkeeping, and must **not**
+be added to them. Corresponding aggregates are `trim_encode_seconds_sum`,
+`trim_output_probe_seconds_sum`, `trim_publication_seconds_sum`, and
+`trim_task_total_seconds_sum`, summed before rounding. They are nested work,
+not additional wall-clock phases. The encoding sum preserves the
 historical CSV `TrimSeconds` definition (FFmpeg call, excluding reservation,
 validation and publication); it is not a replacement for `stages.trim`.
 `summary.merge_duration_sec` remains media duration and retains its old meaning.
@@ -108,4 +117,28 @@ Consumers investigating performance should use `ocr_providers_current` versus
 cache hit describe the **historical** execution, not provider execution now.
 Legacy entries without provider data stay unknown rather than implying a new
 session ran. CSV columns, candidate schema, summary fields, cache payloads,
-ordering, output safety and scan/encoder/validation policies are unchanged.
+ordering, output safety and scan/decode/strict-validation policies are unchanged.
+
+## Trim encoder capability (#89)
+
+`runtime.trim_validation: "ffprobe_duration_strict"` explicitly names the existing
+validation policy; `runtime.validation: "strict"` remains compatible. FFprobe is
+not removed or made optional. `runtime.trim_encoder` records `capability`
+(`not_probed`, `available`, `unavailable`), `probe_seconds`, `fallback_reason`
+(null, `capability_probe_failed`, `production_nvenc_failed`) and
+`production_fallbacks`. Reasons never contain native stderr or private paths.
+
+Before the first real Trim task, one bounded (15-second) FFmpeg child encodes a
+generated 320×240 source into owned staged MP4 using the production h264_nvenc
+p4/vbr/cq22/b:v0 options and faststart. Staging is removed on success, failure,
+timeout and cancellation. No private source is needed. The result is cached in
+that run's encoder instance, not globally; dry-run/no-clips remain `not_probed`.
+Failed capability selects libx264 without retrying NVENC for every clip. A
+successful capability retains production NVENC-first and software fallback on
+real production failures. Cancellation is propagated, never interpreted as
+unavailable capability or an invitation to retry software.
+
+Capability time is included in wall-clock `stages.trim`, but excluded from every
+clip's encode/total and CSV `TrimSeconds`; it appears **only** in the separate
+`runtime.trim_encoder.probe_seconds` nested measurement. Task totals exclude
+capability discovery; stage Trim also includes orchestration/decision work.
