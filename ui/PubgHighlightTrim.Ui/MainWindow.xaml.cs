@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     private bool _updatingInputDisplay;
     private int _included;
     private int _skipped;
+    // Set when a structured phase (scan/dedupe/trim/merge/unknown) is active;
+    // prevents legacy INCLUDE/SKIP lines from overwriting the activity panel.
+    private string? _activeStructuredPhase;
 
     public MainWindow()
     {
@@ -151,10 +154,7 @@ public partial class MainWindow : Window
         var arguments = CliCommandBuilder.Build(options!);
         CommandPreviewText.Text = CliCommandBuilder.Preview(_cliPath, arguments);
         _runCancellation = new CancellationTokenSource();
-        _summary = null;
-        _included = 0;
-        _skipped = 0;
-        _logLines.Clear();
+        ResetRunState();
         _runStopwatch.Restart();
         _elapsedTimer.Start();
         SetRunningState(true);
@@ -186,36 +186,40 @@ public partial class MainWindow : Window
         _runCancellation = null;
     }
 
+    private void ResetRunState()
+    {
+        _summary = null;
+        _included = 0;
+        _skipped = 0;
+        _activeStructuredPhase = null;
+        _logLines.Clear();
+        IncludedMetricText.Text = "0";
+        SkippedMetricText.Text = "0";
+        DurationMetricText.Text = FormatDuration(0);
+        ProgressMetricText.Text = "0 / 0";
+        RunProgressBar.IsIndeterminate = false;
+        RunProgressBar.Maximum = 1;
+        RunProgressBar.Value = 0;
+        OpenOutputButton.IsEnabled = false;
+        RunTitleText.Text = "准备开始";
+        RunSubtitleText.Text = string.Empty;
+        FooterStatusText.Text = "准备开始";
+        SetActivity("准备开始", "等待阶段进度。", "0 / 0", "◌");
+    }
+
     private void HandleCliLine(string line, bool isError)
     {
         if (!IsNoisyDiagnostic(line))
         {
             AppendLog(isError ? $"ERR    {line}" : line);
         }
-        var output = _parser.Parse(line);
-        if (output.Current is { } current && output.Total is { } total)
+        // Stderr lines are not machine-readable PROGRESS/SUMMARY; do not parse.
+        if (isError)
         {
-            RunProgressBar.IsIndeterminate = output.Phase == "scan" && current == 0;
-            RunProgressBar.Maximum = Math.Max(1, total);
-            RunProgressBar.Value = current;
-            ProgressMetricText.Text = $"{current} / {total}";
-            if (output.Phase == "scan")
-            {
-                var workerText = output.Workers > 1 ? $"，{output.Workers} 个并行任务" : string.Empty;
-                RunSubtitleText.Text = $"OCR 扫描完成 {current} / {total}{workerText}";
-                FooterStatusText.Text = current == 0 ? "正在初始化 OCR 并开始扫描" : $"已完成 {current} / {total} 个视频的 OCR 扫描";
-                SetActivity(
-                    current == total ? "OCR 扫描完成" : "OCR 正在扫描",
-                    current == 0 ? "正在初始化 OCR 模型；首个视频可能需要更长时间。" : $"已完成 {current} / {total} 个视频的扫描。",
-                    $"{current} / {total}{workerText}",
-                    current == total ? "✓" : "◌");
-            }
-            else
-            {
-                FooterStatusText.Text = $"正在整理第 {current} 个，共 {total} 个";
-                SetActivity("正在整理输出", "正在生成裁剪片段和合并视频。", $"{current} / {total}", "◌");
-            }
+            return;
         }
+        var output = _parser.Parse(line);
+        HandleStructuredPhase(output);
 
         if (output.Included)
         {
@@ -231,7 +235,78 @@ public partial class MainWindow : Window
             IncludedMetricText.Text = _summary.IncludedCount.ToString(CultureInfo.InvariantCulture);
             SkippedMetricText.Text = _summary.SkippedCount.ToString(CultureInfo.InvariantCulture);
             DurationMetricText.Text = FormatDuration(_summary.TotalSeconds);
+        }
+    }
 
+    private void HandleStructuredPhase(CliOutputEvent output)
+    {
+        var phase = output.Phase;
+
+        // Legacy INCLUDE/SKIP lines (phase="process") must not overwrite activity
+        // once a structured phase has latched. Counters still update above.
+        if (phase == "process")
+        {
+            if (_activeStructuredPhase is null && output.Current is { } cur && output.Total is { } tot)
+            {
+                // No structured phase yet: restore full legacy progress update.
+                RunProgressBar.IsIndeterminate = false;
+                RunProgressBar.Maximum = Math.Max(1, tot);
+                RunProgressBar.Value = cur;
+                ProgressMetricText.Text = $"{cur} / {tot}";
+                FooterStatusText.Text = $"正在整理第 {cur} 个，共 {tot} 个";
+                SetActivity("正在整理输出", "正在生成裁剪片段和合并视频。", $"{cur} / {tot}", "◌");
+            }
+            return;
+        }
+
+        if (phase == "scan")
+        {
+            _activeStructuredPhase = "scan";
+            if (output.Current is { } current && output.Total is { } total)
+            {
+                RunProgressBar.IsIndeterminate = current == 0;
+                RunProgressBar.Maximum = Math.Max(1, total);
+                RunProgressBar.Value = current;
+                ProgressMetricText.Text = $"{current} / {total}";
+                var workerText = output.Workers is { } workers ? $"，{workers} 个 worker" : string.Empty;
+                RunSubtitleText.Text = $"OCR 扫描完成 {current} / {total}{workerText}";
+                FooterStatusText.Text = current == 0 ? "正在初始化 OCR 并开始扫描" : $"已完成 {current} / {total} 个视频的 OCR 扫描";
+                SetActivity(
+                    current == total ? "OCR 扫描完成" : "OCR 正在扫描",
+                    current == 0 ? "正在初始化 OCR 模型；首个视频可能需要更长时间。" : $"已完成 {current} / {total} 个视频的扫描。",
+                    $"{current} / {total}{workerText}",
+                    current == total ? "✓" : "◌");
+            }
+            return;
+        }
+
+        if (phase is "dedupe" or "trim" or "merge")
+        {
+            _activeStructuredPhase = phase;
+            var name = phase switch { "dedupe" => "去重", "trim" => "裁剪", _ => "合并" };
+            var current = output.Current ?? 0;
+            var total = output.Total ?? 0;
+            var skipped = output.PhaseEvent == "skipped";
+            var done = output.PhaseEvent == "done";
+            var workerText = output.Workers is { } workers ? $"，{workers} 个 worker" : string.Empty;
+            var status = skipped ? $"已跳过{name}" : done ? $"{name}完成" : $"正在{name}";
+            RunProgressBar.IsIndeterminate = false;
+            RunProgressBar.Maximum = Math.Max(1, total);
+            RunProgressBar.Value = current;
+            ProgressMetricText.Text = $"{current} / {total}";
+            RunSubtitleText.Text = $"{status} {current} / {total}{workerText}";
+            FooterStatusText.Text = status;
+            SetActivity(status,
+                skipped ? "此阶段没有执行工作。" : $"已完成 {current} / {total}，单位：{(phase == "dedupe" ? "候选" : phase == "trim" ? "片段" : "合并目标")}。",
+                $"{current} / {total}{workerText}", skipped ? "–" : done ? "✓" : "◌");
+            return;
+        }
+
+        // Unknown future phase: latch to prevent INCLUDE/SKIP overwrite, but do not
+        // update activity (future phases are safely ignored per protocol contract).
+        if (phase is not null)
+        {
+            _activeStructuredPhase = phase;
         }
     }
 
