@@ -104,17 +104,19 @@ fn summary(out: &Output) -> Value {
     serde_json::from_str(lines[0]).unwrap()
 }
 fn progress(out: &Output, total: u64, workers: u64) {
+    // Filter to scan-phase only: other phases (dedupe/trim/merge) also emit PROGRESS.
     let rows = String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(|l| {
             l.strip_prefix("PROGRESS ")
                 .map(|p| serde_json::from_str::<Value>(p).unwrap())
         })
+        .filter(|v| v["phase"] == "scan")
         .collect::<Vec<_>>();
-    assert_eq!(rows.len(), total as usize + 1);
+    assert_eq!(rows.len(), total as usize + 1, "scan PROGRESS count");
     for (i, r) in rows.iter().enumerate() {
         assert_eq!(r["phase"], "scan");
-        assert_eq!(r["current"], i);
+        assert_eq!(r["current"], i, "scan current at index {i}");
         assert_eq!(r["total"], total);
         assert_eq!(r["workers"], workers)
     }

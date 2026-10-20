@@ -40,10 +40,11 @@ fn dedupe_reports_actual_work_without_changing_conservative_failures() {
         (PathBuf::from("a"), vec![detection(3.)]),
         (PathBuf::from("b"), vec![detection(3.)]),
     ];
-    let (skipped, work) =
-        pubg_ocr_engine::dedupe::cross_source_duplicates_profiled(&sources, &mut |_| {
-            Err("unavailable".into())
-        });
+    let (skipped, work) = pubg_ocr_engine::dedupe::cross_source_duplicates_profiled(
+        &sources,
+        &mut |_| Err("unavailable".into()),
+        None,
+    );
     assert!(skipped.is_empty());
     assert_eq!(work.candidates, 2);
     assert_eq!(work.pair_comparisons, 1);
