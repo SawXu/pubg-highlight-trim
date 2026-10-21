@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([Parameter(Mandatory)][string]$Layout,[Parameter(Mandatory)][string]$OutputDirectory,[Parameter(Mandatory)][ValidateSet('System','Fixed')][string]$Variant,[string]$MakeNsis='makensis')
 $ErrorActionPreference='Stop'
 $Layout=(Resolve-Path -LiteralPath $Layout).Path
@@ -14,27 +14,50 @@ $out=[IO.Path]::GetFullPath($OutputDirectory);New-Item -ItemType Directory -Path
 $nsis=Join-Path $out ('.pht-'+[guid]::NewGuid().ToString('N')+'.nsi');$exe=Join-Path $out ('pubg-highlight-trim-'+$Variant.ToLowerInvariant()+'-setup.exe')
 $engine=Join-Path $PSScriptRoot 'install_transaction.ps1'
 $guard=Join-Path $PSScriptRoot 'DirectoryGuard.ps1'
+$desktopProbe=Join-Path $PSScriptRoot 'DesktopRuntimeProbe.ps1'
 # NSIS uses $ for escapes, not backslashes. Do not corrupt Windows paths.
 function Escape-NsisString([string]$s){$s.Replace('$','$$').Replace('"','$\"')}
 $template=@'
 Unicode true
+ManifestDPIAware true
+SetFont "Microsoft YaHei UI" 9
+!include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
 RequestExecutionLevel admin
-Name "PUBG Highlight Trim (__VARIANT__)"
+Name "PUBG Highlight Trim · __VARIANT_LABEL__"
 OutFile "__OUT__"
 InstallDir "$PROGRAMFILES64\PUBG Highlight Trim"
-ShowInstDetails show
-ShowUninstDetails show
-Page directory
-Page instfiles
-UninstPage uninstConfirm
-UninstPage instfiles
+BrandingText "PUBG Highlight Trim"
+ShowInstDetails nevershow
+ShowUninstDetails nevershow
+
+!define MUI_ABORTWARNING
+!define MUI_UNABORTWARNING
+!define MUI_WELCOMEFINISHPAGE_BITMAP "__WIZARD__"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "__WIZARD__"
+!define MUI_WELCOMEPAGE_TITLE "安装 PUBG Highlight Trim"
+!define MUI_WELCOMEPAGE_TEXT "从精彩瞬间，到高光合集。$\r$\n$\r$\n__VARIANT_DESCRIPTION__$\r$\n$\r$\n下一步选择安装位置。程序及界面数据跟随该目录，升级保留设置。$\r$\n$\r$\n未签名版本可能显示安全提示。请核对来源，不要关闭安全软件。"
+!insertmacro MUI_PAGE_WELCOME
+!define MUI_DIRECTORYPAGE_TEXT_TOP "选择本地磁盘上的专用应用目录，支持中文和空格。两个版本不能并装；升级请保持原位置。注册信息和临时文件仍可能使用系统盘。"
+!define MUI_DIRECTORYPAGE_TEXT_DESTINATION "安装位置（包含程序及 data 数据目录）"
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!define MUI_FINISHPAGE_TITLE "安装完成"
+!define MUI_FINISHPAGE_TEXT "PUBG Highlight Trim 已准备就绪。$\r$\n$\r$\n关闭安装器后，从开始菜单正常启动应用。请勿以管理员身份运行。$\r$\n$\r$\n界面设置、日志及浏览器数据位于安装目录下的 data 文件夹。视频输出和 OCR 缓存遵循处理引擎的目录设置。"
+!define MUI_FINISHPAGE_NOAUTOCLOSE
+!insertmacro MUI_PAGE_FINISH
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "将删除应用及随包依赖。所有界面数据及非程序文件均会保留，不删除系统 WebView2。$\r$\n$\r$\n卸载后请人工检查 data 目录，仅删除你确认不再需要的文件。"
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!define MUI_FINISHPAGE_TITLE "卸载完成"
+!define MUI_FINISHPAGE_TEXT "应用已卸载。$\r$\n$\r$\n界面数据和非程序文件已保留。请检查原安装目录，确认后再清理个人文件。"
+!insertmacro MUI_UNPAGE_FINISH
+!insertmacro MUI_LANGUAGE "SimpChinese"
 Function .onInit
   IfSilent 0 +3
-  MessageBox MB_OK|MB_ICONSTOP "Silent installation is not supported. Choose an installation directory interactively."
+  MessageBox MB_OK|MB_ICONSTOP "不支持静默安装。请在安装页面中选择安装目录。"
   Abort
-  MessageBox MB_OK "Choose a local installation directory. Both variants share one installation; upgrades keep that directory. Program, CLI and UI data follow it. Registry and temporary files may use the system disk. Unsigned builds may show Unknown Publisher/SmartScreen; do not disable security software. Launch the app normally from its shortcut, never as administrator."
   SetRegView 64
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\pubg-highlight-trim" "InstallLocation"
   StrCmp $0 "" +2
@@ -47,6 +70,7 @@ Section "Install"
   SetOutPath "$PLUGINSDIR"
   File "__ENGINE__"
   File "__GUARD__"
+  File "__DESKTOP_PROBE__"
   WriteUninstaller "$PLUGINSDIR\payload\Uninstall.exe"
   StrCpy $2 "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
   ${If} ${RunningX64}
@@ -55,7 +79,8 @@ Section "Install"
   nsExec::ExecToLog '"$2" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\install_transaction.ps1" -Operation Install -Layout "$PLUGINSDIR\payload" -Target "$INSTDIR"'
   Pop $1
   StrCmp $1 0 success
-  MessageBox MB_OK|MB_ICONSTOP "Installation failed or was cancelled. Inspect the details above. No application will be launched."
+  SetDetailsView show
+  MessageBox MB_OK|MB_ICONSTOP "安装失败或已取消。请展开详细信息查看原因；不会自动启动应用。"
   SetErrorLevel 1
   Abort
 success:
@@ -72,23 +97,21 @@ Section "Uninstall"
   ${If} ${RunningX64}
     StrCpy $2 "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
   ${EndIf}
-  StrCpy $3 ""
-  MessageBox MB_YESNO|MB_DEFBUTTON2 "Also delete UI settings.json/settings.tmp/run.log? Default No preserves all data. Browser/cache and unknown files are always retained for manual inspection." IDNO keep_data
-  StrCpy $3 "-DeleteData"
-keep_data:
-  nsExec::ExecToLog '"$2" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\install_transaction.ps1" -Operation Uninstall -Layout "$PLUGINSDIR" -Target "$INSTDIR" $3'
+  nsExec::ExecToLog '"$2" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\install_transaction.ps1" -Operation Uninstall -Layout "$PLUGINSDIR" -Target "$INSTDIR"'
   Pop $1
   StrCmp $1 0 un_success
-  MessageBox MB_OK|MB_ICONSTOP "Uninstall failed. Data is retained. Inspect details above."
+  SetDetailsView show
+  MessageBox MB_OK|MB_ICONSTOP "卸载失败，数据已保留。请查看详细信息。"
   SetErrorLevel 1
   Abort
 un_success:
   SetShellVarContext all
   Delete "$SMPROGRAMS\PUBG Highlight Trim\PUBG Highlight Trim.lnk"
   RMDir "$SMPROGRAMS\PUBG Highlight Trim"
-  MessageBox MB_OK "Uninstall completed. UI data and all unowned files were retained. Inspect the data directory manually before deleting any personal data."
 SectionEnd
 '@
-$template.Replace('__VARIANT__',$Variant).Replace('__OUT__',(Escape-NsisString $exe)).Replace('__LAYOUT__',(Escape-NsisString $Layout)).Replace('__ENGINE__',(Escape-NsisString $engine)).Replace('__GUARD__',(Escape-NsisString $guard))|Set-Content -LiteralPath $nsis -Encoding UTF8
+$variantLabel='系统 WebView2 版';$variantDescription='使用本机已有的 WebView2（120+）。不会下载或补装运行时；如果环境不确定，请选择内置版。'
+if($Variant -eq 'Fixed'){$variantLabel='内置 WebView2 版';$variantDescription='随包提供 WebView2，无需另装共享运行时。内置运行时缺失时不会回退系统版本。'}
+$template.Replace('__VARIANT_LABEL__',$variantLabel).Replace('__VARIANT_DESCRIPTION__',$variantDescription).Replace('__WIZARD__',(Escape-NsisString (Join-Path $PSScriptRoot 'wizard.bmp'))).Replace('__OUT__',(Escape-NsisString $exe)).Replace('__LAYOUT__',(Escape-NsisString $Layout)).Replace('__ENGINE__',(Escape-NsisString $engine)).Replace('__GUARD__',(Escape-NsisString $guard)).Replace('__DESKTOP_PROBE__',(Escape-NsisString $desktopProbe))|Set-Content -LiteralPath $nsis -Encoding UTF8
 try{& $MakeNsis $nsis;if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $exe)){throw 'NSIS build failed.'}}finally{Remove-Item -LiteralPath $nsis -Force -ErrorAction SilentlyContinue}
 Write-Host "Built $exe"

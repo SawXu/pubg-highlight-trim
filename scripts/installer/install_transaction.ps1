@@ -6,6 +6,10 @@ param(
  [switch]$DeleteData
 )
 $ErrorActionPreference='Stop'
+# A writable data tree has no trustworthy provenance, even for settings.json.
+# Names/content cannot distinguish UI output from a user's same-named business
+# file. Reject before any filesystem, ACL or registry mutation.
+if($DeleteData){throw 'Automatic UI data deletion is unavailable: data may contain personal or business files, including files with UI filenames. Nothing was deleted. Uninstall without -DeleteData, then inspect and remove data manually.'}
 $registry='HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\pubg-highlight-trim'
 function Assert-Local([string]$Path) {
  if($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path -match '[<>"|?*\x00-\x1f]' -or $Path.Substring(2).Contains(':')){throw 'An absolute local drive path is required.'}
@@ -64,7 +68,7 @@ function Ensure-ProtectedDirectory([string]$Path,[switch]$SkipValidation){
   Ensure-ProtectedDirectory $parent
  }
  if(Test-Path -LiteralPath $Path){
-  $guards.Add([PhtDirectoryGuard]::Pin($Path))
+  $guards.Add([PhtDirectoryGuard]::PinForFileUpdates($Path))
   # Data is intentionally user-writable; parent chains are only pinned. Code
   # and control directories must already be administrator-owned/protected.
   if(!$SkipValidation -and $Path -ine (Join-Path $Target 'data') -and !$Path.StartsWith((Join-Path $Target 'data')+'\',[StringComparison]::OrdinalIgnoreCase)){Assert-ProtectedCodeDirectory -path $Path}
@@ -73,7 +77,7 @@ function Ensure-ProtectedDirectory([string]$Path,[switch]$SkipValidation){
   if(!(Test-Path -LiteralPath $parent)){Ensure-ProtectedDirectory $parent -SkipValidation}
   [PhtDirectoryGuard]::CreateProtected($Path)
   $createdDirectories.Add($Path)
-  $guards.Add([PhtDirectoryGuard]::Pin($Path))
+  $guards.Add([PhtDirectoryGuard]::PinForFileUpdates($Path))
   Assert-ProtectedCodeDirectory -path $Path
  }
 }
@@ -110,6 +114,9 @@ $explorers=@(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'"|Where-O
 $users=@($explorers|ForEach-Object{(Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid}|Select-Object -Unique)
 if($users.Count -ne 1 -or [string]::IsNullOrWhiteSpace($users[0])){throw 'Cannot identify a unique desktop user for this session. Start the installer from the intended user desktop.'}
 $user=$users[0]
+# GetShellWindow is checked against this process and SID by the native probe;
+# background Explorer processes are not accepted as a substitute desktop.
+$desktopExplorer=@($explorers|Where-Object{(Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid -eq $user}|Select-Object -ExpandProperty ProcessId)
 if($registered -and $registered.InstallLocation -ine $Target){throw "This application is already installed at $($registered.InstallLocation). Select the existing directory."}
 if($registered -and (!$registered.TargetIdentity -or $registered.TargetIdentity -ne $targetIdentity)){throw 'Registered installation target identity mismatch.'}
 $meta=Join-Path $Target '.installer';$oldPath=Join-Path $meta 'installer-manifest.json';$old=$null
@@ -129,24 +136,53 @@ $new=$null;if($Operation -eq 'Install'){
  $new=Read-Manifest (Join-Path $Layout 'installer-manifest.json');$d=Get-Content (Join-Path $Layout 'distribution.json') -Raw|ConvertFrom-Json
  if($d.schema -ne 'pubg-highlight-trim/distribution/v1' -or $d.variant -ne $new.variant -or $d.minimum_webview2_major -ne 120 -or $d.version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or $new.version -ne $d.version){throw 'Distribution metadata mismatch.'}
  if($new.variant -eq 'fixed'){foreach($name in @('msedgewebview2.exe','msedge.dll','icudtl.dat','resources.pak')){if(!(Test-Path -LiteralPath (Join-Path $Layout "WebView2Runtime\$name") -PathType Leaf)){throw "Fixed runtime missing: $name"}}}
- # Alternate credentials change HKCU (runtime discovery and loader policies).
- # Until a target-user token probe exists, do not destroy a working Fixed copy
- # on the strength of the administrator's unrelated runtime environment.
- if($new.variant -eq 'system' -and $identity.User.Value -ne $user){
-  throw 'System installation requires same-account UAC elevation for runtime preflight. With alternate administrator credentials choose Fixed; the existing installation is preserved.'
- }
  # The payload UI has a no-window, no-data native loader probe. Run it before
  # moving any old owned file; registry presence alone is insufficient.
  $probe=Join-Path $Layout 'pubg-highlight-trim-ui.exe'
  if(!(Test-Path -LiteralPath $probe -PathType Leaf)){throw 'Runtime probe executable is missing.'}
- $probeProcess=Start-Process -FilePath $probe -ArgumentList @('--check-webview2-runtime',$new.variant) -WorkingDirectory $Layout -Wait -PassThru
- if($probeProcess.ExitCode -ne 0){throw "Compatible $($new.variant) WebView2 runtime is unavailable. Existing installation was not modified. For a missing system runtime, choose the Fixed installer."}
+  . (Join-Path $PSScriptRoot 'DesktopRuntimeProbe.ps1')
+  # Both variants must inspect the intended desktop user's policy/runtime.
+  # NSIS extracts into an administrator-private directory. Make only new
+  # root-level and Fixed runtime dependencies readable to the user; never loosen
+  # the extraction directory, an existing target file or parent permissions.
+  $probeRoot=Join-Path (Split-Path $Target -Parent) ('.pht-probe-'+[guid]::NewGuid().ToString('N'))
+  [PhtDirectoryGuard]::CreateProtected($probeRoot)
+  $probePin=$null;$probeWorkspaceTrusted=$false
+  try{
+   $probePin=[PhtDirectoryGuard]::Pin($probeRoot)
+   # A writable parent can replace the object between creation and pinning.
+   # Validate the pinned object before copying or granting any ACLs.
+   Assert-ProtectedCodeDirectory $probeRoot
+   if(@([IO.Directory]::EnumerateFileSystemEntries($probeRoot)).Count){throw 'Runtime probe workspace is not empty.'}
+   $probeWorkspaceTrusted=$true
+   foreach($p in (Paths $new)){
+    if($p -notmatch '[\\/]' -or ($new.variant -eq 'fixed' -and $p -match '^WebView2Runtime\\')){
+     $copy=Join-Path $probeRoot $p
+     [void][IO.Directory]::CreateDirectory((Split-Path $copy -Parent))
+     Copy-Item -LiteralPath (Join-Path $Layout $p) -Destination $copy
+     Acl $copy $user -Runtime:($p -match '^WebView2Runtime\\')
+    }
+   }
+   # All descendants were created inside the pinned, protected empty root;
+   # no existing or user-writable directory ACL is changed.
+   foreach($directory in @(Get-ChildItem -LiteralPath $probeRoot -Directory -Recurse -Force|Sort-Object {$_.FullName.Length} -Descending)){
+    Acl $directory.FullName $user -Runtime
+   }
+   Acl $probeRoot $user
+   # Explorer may use separate folder processes. GetShellWindow selects the
+   # actual shell, which must belong to the already validated session/SID.
+   $probeExit=[PhtDesktopRuntimeProbe]::Run((Join-Path $probeRoot 'pubg-highlight-trim-ui.exe'),$probeRoot,$user,[uint32[]]$desktopExplorer,$new.variant)
+  }finally{
+   # Delete only files in our protected fresh directory, never recursive data.
+   try{if($probeWorkspaceTrusted){
+    foreach($file in @(Get-ChildItem -LiteralPath $probeRoot -File -Recurse -Force)){[IO.File]::Delete($file.FullName)}
+    foreach($directory in @(Get-ChildItem -LiteralPath $probeRoot -Directory -Recurse -Force|Sort-Object {$_.FullName.Length} -Descending)){[IO.Directory]::Delete($directory.FullName,$false)}
+   }}finally{if($probePin){$probePin.Dispose()}}
+   if($probeWorkspaceTrusted){[IO.Directory]::Delete($probeRoot,$false)}
+  }
+ if($probeExit -ne 0){throw "Compatible $($new.variant) WebView2 runtime is unavailable for the desktop user. Existing installation was not modified. For a missing system runtime, choose the Fixed installer."}
  if($old -and $old.variant -ne $new.variant){Add-Type -AssemblyName System.Windows.Forms;if([Windows.Forms.MessageBox]::Show("Switch from $($old.variant) to $($new.variant)? Settings are preserved.",'Confirm variant switch','YesNo','Warning') -ne 'Yes'){throw 'User cancelled variant switch.'}}
 }
-# Deliberately do not delete browser/cache trees: they may contain unowned files.
-# Only exact UI-owned settings/log filenames are eligible for explicit deletion.
-$dataFiles=@('settings.json','settings.tmp','run.log')
-if($DeleteData -and $Operation -ne 'Uninstall'){throw 'Data deletion is only available during uninstall.'}
 $all=@();if($old){$all+=Paths $old};if($new){$all+=Paths $new};$all=@($all|Select-Object -Unique)
 $control=@('.installer\installer-manifest.json','.installer\install_transaction.ps1','Uninstall.exe')
 $all=@($all+$control|Select-Object -Unique)
@@ -165,7 +201,7 @@ if(Test-Path -LiteralPath $dataRoot){$guards.Add([PhtDirectoryGuard]::Pin($dataR
 $parent=Split-Path $Target -Parent
 $work=Join-Path $parent ('.pht-transaction-'+[guid]::NewGuid().ToString('N'));$stage=Join-Path $work 'stage';$backup=Join-Path $work 'backup'
 [PhtDirectoryGuard]::CreateProtected($work)
-$workPin=[PhtDirectoryGuard]::Pin($work)
+$workPin=[PhtDirectoryGuard]::PinForFileUpdates($work)
 $guards.Add($workPin)
 Assert-ProtectedCodeDirectory -path $work
 New-Item -ItemType Directory -Path $stage,$backup -Force|Out-Null
@@ -189,7 +225,9 @@ try{
   # an old destination file (which could be a hard link to an outside object).
   $stageCode=@($stage)
   foreach($p in $newFiles){$f=Join-Path $stage $p;$stageCode+=$f;$dir=Split-Path $f -Parent;while($dir -ine $stage){$stageCode+=$dir;$dir=Split-Path $dir -Parent}}
-  foreach($f in @($stageCode|Select-Object -Unique)){Acl $f $user -Runtime:($f -ieq (Join-Path $stage 'WebView2Runtime') -or $f.StartsWith((Join-Path $stage 'WebView2Runtime')+'\',[StringComparison]::OrdinalIgnoreCase))}
+  # Protect leaves before ancestors: disabling inheritance on a parent first
+  # removes access from descendants that still depend on inherited admin ACEs.
+  foreach($f in @($stageCode|Select-Object -Unique|Sort-Object Length -Descending)){Acl $f $user -Runtime:($f -ieq (Join-Path $stage 'WebView2Runtime') -or $f.StartsWith((Join-Path $stage 'WebView2Runtime')+'\',[StringComparison]::OrdinalIgnoreCase))}
  }
  # Finish preparing and protecting the new payload before moving any old file.
  foreach($p in $all){$f=Join-Path $Target $p;if(Test-Path -LiteralPath $f -PathType Leaf){$b=Join-Path $backup $p;New-Item -ItemType Directory -Path (Split-Path $b) -Force|Out-Null;Move-Item -LiteralPath $f -Destination $b;$moved.Add($p)}}
@@ -197,7 +235,7 @@ try{
   foreach($p in $newFiles){$f=Join-Path $stage $p;$dst=Join-Path $Target $p;New-Item -ItemType Directory -Path (Split-Path $dst) -Force|Out-Null;Move-Item -LiteralPath $f -Destination $dst;$placed.Add($p)}
   $code=@($Target)
   foreach($p in $newFiles){$f=Join-Path $Target $p;$code+=$f;$dir=Split-Path $f -Parent;while($dir -ine $Target){$code+=$dir;$dir=Split-Path $dir -Parent}}
-  foreach($f in @($code|Select-Object -Unique)){
+  foreach($f in @($code|Select-Object -Unique|Sort-Object Length -Descending)){
    if(Test-Path -LiteralPath $f -PathType Container){
     if(!$aclJournal.ContainsKey($f)){$aclJournal[$f]=Get-Acl -LiteralPath $f}
     # Final code/control directories receive only administrator/SYSTEM and
@@ -220,7 +258,6 @@ try{
   New-Item -Path $registry -Force|Out-Null
   foreach($entry in @{DisplayName='PUBG Highlight Trim';InstallLocation=$Target;DisplayVersion=$d.version;UninstallString=('"'+(Join-Path $Target 'Uninstall.exe')+'"');Variant=$new.variant;TargetIdentity=$targetIdentity;OwnershipSha256=(Get-FileHash -LiteralPath (Join-Path $meta 'installer-manifest.json') -Algorithm SHA256).Hash}.GetEnumerator()){New-ItemProperty -Path $registry -Name $entry.Key -Value $entry.Value -PropertyType String -Force|Out-Null}
  }else{
-  if($DeleteData){foreach($p in $dataFiles){$f=Join-Path (Join-Path $Target 'data') $p;if(Test-Path -LiteralPath $f -PathType Leaf){$b=Join-Path $backup ('data\'+$p);New-Item -ItemType Directory -Path (Split-Path $b) -Force|Out-Null;[IO.File]::Move($f,$b);$moved.Add('data\'+$p)}}}
   Remove-Item -LiteralPath $registry -ErrorAction SilentlyContinue
  }
  $committed=$true

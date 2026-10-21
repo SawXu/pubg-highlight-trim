@@ -2,12 +2,26 @@ name: release
 
 on:
   workflow_dispatch:
+    inputs:
+      fixed_runtime_run_id:
+        description: 'Same-repository trusted artifact workflow run ID (all three inputs required for installers)'
+        type: string
+        default: ''
+      fixed_runtime_artifact:
+        description: 'Artifact containing runtime.zip and runtime-lock.json'
+        type: string
+        default: ''
+      fixed_runtime_lock_sha256:
+        description: 'Independently reviewed runtime-lock.json SHA256; no default runtime is downloaded'
+        type: string
+        default: ''
   push:
     tags:
       - "v*"
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   assurance:
@@ -16,16 +30,40 @@ jobs:
   ui-checks:
     uses: ./.github/workflows/ui-checks.yml
 
-  # #104 adds scripts/build_installers_windows.ps1 (System/Fixed EXE only).
-  # Do not publish GUI installers by default: Fixed requires an explicitly
-  # trusted unpacked runtime and both variants require real lifecycle acceptance.
-  # Keep the existing CLI release gate/artifact unchanged until that gate passes.
+  # No default Fixed runtime. Explicit reviewed artifact input only.
+  # Installers are workflow artifacts only: CI static checks do not prove VM acceptance.
+  # Existing tag-triggered independent CLI publication is unchanged.
   windows:
     needs: [assurance, ui-checks]
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate explicit runtime input tuple
+        id: runtime
+        shell: powershell
+        env:
+          RUN_ID: ${{ inputs.fixed_runtime_run_id }}
+          ARTIFACT: ${{ inputs.fixed_runtime_artifact }}
+          LOCK_HASH: ${{ inputs.fixed_runtime_lock_sha256 }}
+        run: |
+          $values = @($env:RUN_ID, $env:ARTIFACT, $env:LOCK_HASH)
+          $count = @($values | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+          if ($count -notin @(0,3)) { throw 'Supply all three trusted runtime inputs or none.' }
+          if ($count -eq 3) {
+            if ($env:RUN_ID -notmatch '^[1-9][0-9]*$' -or $env:LOCK_HASH -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid runtime run ID or lock SHA256.' }
+            'enabled=true' | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Retrieve explicitly selected trusted Fixed runtime input
+        if: steps.runtime.outputs.enabled == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.fixed_runtime_run_id }}
+          name: ${{ inputs.fixed_runtime_artifact }}
+          path: ${{ runner.temp }}/fixed-runtime-input
 
       - name: Enforce clean no-Python release host
         shell: powershell
@@ -55,9 +93,44 @@ jobs:
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\tests\test_installer_inputs.ps1
 
-      - name: Build Windows bundle (Cargo + PowerShell; no Python)
+      - name: Set up Node for locked UI build
+        if: steps.runtime.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install NSIS compiler for product builds
+        if: steps.runtime.outputs.enabled == 'true'
+        shell: powershell
+        run: |
+          choco install nsis --version=3.11 -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS provisioning failed.' }
+          'C:\Program Files (x86)\NSIS' | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          'C:\Program Files\7-Zip' | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Release entry trust and static payload contract tests (fixtures, not VM acceptance)
+        shell: powershell
+        run: |
+          $env:PATH += ';C:\Program Files\7-Zip'
+          if ('${{ steps.runtime.outputs.enabled }}' -eq 'true') {
+            ./scripts/tests/test_release_entry.ps1 -MakeNsis makensis
+          } else {
+            ./scripts/tests/test_release_entry.ps1
+          }
+
+      - name: Build Windows CLI bundle (no runtime input; no GUI publication)
+        if: steps.runtime.outputs.enabled != 'true'
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -SkipInstall
+
+      - name: Build once and statically verify both installer products
+        if: steps.runtime.outputs.enabled == 'true'
+        shell: powershell
+        env:
+          LOCK_HASH: ${{ inputs.fixed_runtime_lock_sha256 }}
+        run: ./scripts/release_windows.ps1 -InputDirectory "$env:RUNNER_TEMP\fixed-runtime-input" -LockSha256 $env:LOCK_HASH
 
       - name: Verify release artifacts contain no Python runtime names
         shell: powershell
@@ -73,15 +146,38 @@ jobs:
             } finally { $zip.Dispose() }
           }
 
+      - name: Hash standalone CLI archive
+        shell: powershell
+        run: |
+          $hash = (Get-FileHash -LiteralPath 'dist\pubg-highlight-trim-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  pubg-highlight-trim-windows-x64.zip" | Set-Content -LiteralPath 'dist\CLI-SHA256SUMS.txt' -Encoding ASCII
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: pubg-highlight-trim-windows-x64
-          path: dist/pubg-highlight-trim-windows-x64.zip
+          path: |
+            dist/pubg-highlight-trim-windows-x64.zip
+            dist/CLI-SHA256SUMS.txt
 
-      - name: Publish GitHub release
+      - name: Upload dual installer products and evidence (NOT_ACCEPTED)
+        if: steps.runtime.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubg-highlight-trim-windows-x64-installers-NOT-ACCEPTED
+          path: dist/release/*
+          if-no-files-found: error
+
+      - name: Record installer acceptance limitations
+        shell: powershell
+        run: |
+          '## GUI installers NOT ACCEPTED - workflow artifacts only' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          'Static extraction/hash checks do not prove installation, runtime or Windows 10/11 VM lifecycle acceptance. See release-evidence.json and docs/tauri-release-verification.md. No trusted runtime input means CLI only.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Publish existing independent CLI release (no GUI installers)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/pubg-highlight-trim-windows-x64.zip
+            dist/CLI-SHA256SUMS.txt

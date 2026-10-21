@@ -2,6 +2,56 @@ use highlight_shell::distribution::{Distribution, RuntimeVariant};
 use std::fs;
 
 #[test]
+fn installer_probe_clears_all_loader_environment_overrides_before_runtime_discovery() {
+    // This integration-test executable has no other environment-mutating tests.
+    // Missing Fixed resources stop before the native loader: no runtime or
+    // registry mutation is needed to observe the public probe's environment.
+    let keys = [
+        "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
+        "WEBVIEW2_USER_DATA_FOLDER",
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "WEBVIEW2_CHANNEL_SEARCH_KIND",
+        "WEBVIEW2_RELEASE_CHANNELS",
+        "WEBVIEW2_WAIT_FOR_SCRIPT_DEBUGGER",
+        "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER",
+    ];
+    struct RestoreEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
+    impl Drop for RestoreEnvironment {
+        fn drop(&mut self) {
+            for (key, value) in &self.0 {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+    let _restore = RestoreEnvironment(
+        keys.iter()
+            .map(|key| (*key, std::env::var_os(key)))
+            .collect(),
+    );
+    for key in keys {
+        std::env::set_var(key, "untrusted-override");
+    }
+    let d = tempfile::tempdir().unwrap();
+    fs::write(
+        d.path().join("distribution.json"),
+        r#"{"variant":"fixed","minimum_webview2_major":120}"#,
+    )
+    .unwrap();
+    assert!(highlight_shell::distribution::check_runtime(d.path(), "fixed").is_err());
+    for key in keys {
+        let expected = match key {
+            "WEBVIEW2_CHANNEL_SEARCH_KIND" | "WEBVIEW2_RELEASE_CHANNELS" => Some("0"),
+            _ => None,
+        };
+        assert_eq!(std::env::var(key).ok().as_deref(), expected, "{key}");
+    }
+    assert!(!d.path().join("data").exists());
+}
+
+#[test]
 fn installed_system_variant_keeps_data_at_install_root_and_requires_compatible_runtime() {
     let d = tempfile::tempdir().unwrap();
     fs::write(

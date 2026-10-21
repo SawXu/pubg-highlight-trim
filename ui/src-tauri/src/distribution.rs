@@ -58,46 +58,7 @@ pub fn prepare(root: &Path) -> Result<Option<Distribution>, String> {
                 return Err("请勿以管理员身份运行应用。安装完成后关闭安装器，从开始菜单或桌面以普通权限启动。".into());
             }
         }
-        // Loader policy can override API parameters (including the data directory).
-        // Fail explicitly rather than moving data or executing a different browser.
-        for hive in [
-            winreg::enums::HKEY_LOCAL_MACHINE,
-            winreg::enums::HKEY_CURRENT_USER,
-        ] {
-            for view in [
-                winreg::enums::KEY_WOW64_32KEY,
-                winreg::enums::KEY_WOW64_64KEY,
-            ] {
-                for setting in [
-                    "BrowserExecutableFolder",
-                    "UserDataFolder",
-                    "AdditionalBrowserArguments",
-                    "ReleaseChannels",
-                    "ChannelSearchKind",
-                ] {
-                    let key = format!("Software\\Policies\\Microsoft\\Edge\\WebView2\\{setting}");
-                    match winreg::RegKey::predef(hive)
-                        .open_subkey_with_flags(&key, winreg::enums::KEY_READ | view)
-                    {
-                        Ok(key) => {
-                            for app_id in [
-                                "com.pubg-highlight-trim.desktop",
-                                "pubg-highlight-trim-ui.exe",
-                                "*",
-                            ] {
-                                match key.get_raw_value(app_id) {
-                                    Ok(_) => return Err(format!("WebView2 策略 {setting} 覆盖了本应用运行位置；请移除该应用的覆盖策略后重试。")),
-                                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
-                                    Err(e) => return Err(format!("无法检查 WebView2 策略: {e}")),
-                                }
-                            }
-                        }
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(format!("无法检查 WebView2 策略: {e}")),
-                    }
-                }
-            }
-        }
+        reject_loader_policy_overrides()?;
         for directory in [
             root.to_path_buf(),
             policy.data_directory(root),
@@ -117,17 +78,7 @@ pub fn prepare(root: &Path) -> Result<Option<Distribution>, String> {
         let folder = policy.browser_directory(root)?;
         // Environment values take precedence over loader registry overrides. Restrict shared
         // discovery to the stable runtime; never use an Edge Beta/Dev installation as fallback.
-        for key in [
-            "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
-            "WEBVIEW2_USER_DATA_FOLDER",
-            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-            "WEBVIEW2_CHANNEL_SEARCH_KIND",
-            "WEBVIEW2_RELEASE_CHANNELS",
-            "WEBVIEW2_WAIT_FOR_SCRIPT_DEBUGGER",
-            "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER",
-        ] {
-            std::env::remove_var(key);
-        }
+        clear_loader_environment_overrides();
         if let Some(folder) = &folder {
             std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", folder);
         }
@@ -140,6 +91,63 @@ pub fn prepare(root: &Path) -> Result<Option<Distribution>, String> {
         policy.check_version(&native_version(folder.as_deref())?)?;
     }
     Ok(policy)
+}
+
+// Shared read-only check. HKCU belongs to the calling desktop-user token.
+fn reject_loader_policy_overrides() -> Result<(), String> {
+    for hive in [
+        winreg::enums::HKEY_LOCAL_MACHINE,
+        winreg::enums::HKEY_CURRENT_USER,
+    ] {
+        for view in [
+            winreg::enums::KEY_WOW64_32KEY,
+            winreg::enums::KEY_WOW64_64KEY,
+        ] {
+            for setting in [
+                "BrowserExecutableFolder",
+                "UserDataFolder",
+                "AdditionalBrowserArguments",
+                "ReleaseChannels",
+                "ChannelSearchKind",
+            ] {
+                let key = format!("Software\\Policies\\Microsoft\\Edge\\WebView2\\{setting}");
+                match winreg::RegKey::predef(hive)
+                    .open_subkey_with_flags(&key, winreg::enums::KEY_READ | view)
+                {
+                    Ok(key) => {
+                        for app_id in [
+                            "com.pubg-highlight-trim.desktop",
+                            "pubg-highlight-trim-ui.exe",
+                            "*",
+                        ] {
+                            match key.get_raw_value(app_id) {
+                                Ok(_) => return Err(format!("WebView2 策略 {setting} 覆盖了本应用运行位置；请移除该应用的覆盖策略后重试。")),
+                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                                Err(e) => return Err(format!("无法检查 WebView2 策略: {e}")),
+                            }
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(format!("无法检查 WebView2 策略: {e}")),
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn clear_loader_environment_overrides() {
+    for key in [
+        "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
+        "WEBVIEW2_USER_DATA_FOLDER",
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "WEBVIEW2_CHANNEL_SEARCH_KIND",
+        "WEBVIEW2_RELEASE_CHANNELS",
+        "WEBVIEW2_WAIT_FOR_SCRIPT_DEBUGGER",
+        "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER",
+    ] {
+        std::env::remove_var(key);
+    }
 }
 
 fn native_version(folder: Option<&Path>) -> Result<String, String> {
@@ -177,14 +185,10 @@ pub fn check_runtime(root: &Path, variant: &str) -> Result<(), String> {
     if policy.variant != expected {
         return Err("安装变体不匹配".into());
     }
-    for key in [
-        "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
-        "WEBVIEW2_RELEASE_CHANNELS",
-        "WEBVIEW2_CHANNEL_SEARCH_KIND",
-    ] {
-        std::env::remove_var(key);
-    }
+    reject_loader_policy_overrides()?;
+    clear_loader_environment_overrides();
     std::env::set_var("WEBVIEW2_RELEASE_CHANNELS", "0");
+    std::env::set_var("WEBVIEW2_CHANNEL_SEARCH_KIND", "0");
     let folder = policy.browser_directory(root)?;
     policy.check_version(&native_version(folder.as_deref())?)
 }

@@ -14,6 +14,12 @@ This project is licensed as `GPL-3.0-or-later`. The current build scripts produc
 | Visual C++ runtime | `vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`, `msvcp140_1.dll` next to both Rust executables | Microsoft software license terms (redistributable) | Required by the Rust application and OCR diagnostic; copied from the build machine's installed Visual C++ 2015-2022 x64 redistributable. Hashes are recorded in `SUPPLY_CHAIN_MANIFEST.json`. |
 | PP-OCRv6 medium ONNX assets | Pinned revisions in `rust/ocr_engine/models/pp_ocrv6_medium.json` | Apache-2.0 | Detector, recognizer, and PaddleOCR character dictionary; hashes are verified before use. |
 
+## Tauri UI and installer distributions
+
+The new Vue/Tauri UI has its own npm and Rust dependency closures, separate from the CLI inventory. Both System and Fixed installers must collect the locked frontend production closure and Windows Tauri normal/build transitive notices before publishing. Original texts and hashes are shipped under `third_party/ui/`; `third_party/ui/UI_LICENSE_INVENTORY.json` records exact versions, source/lock hashes, notice hashes and shipped/build-only scope. A missing license declaration or notice fails the installer build; SPDX identifiers alone are not substituted for license texts. Some dependencies may be tree-shaken/optimized out; the conservative inventory does not imply separate crate/npm files are distributed. MPL-2.0 dependencies require source availability as well as notices; exact upstream source versions/revisions and project modifications must remain available with corresponding source distributions.
+
+System uses an already installed Microsoft Edge WebView2 Runtime and does not bundle it. Fixed redistributes a separately supplied Microsoft WebView2 runtime: MIT licenses on the Rust WebView2 bindings **do not** grant rights to that runtime. Fixed builds require a hash-trusted reviewed license manifest, original license/third-party notices with hashes, exact runtime file inventory, authoritative Microsoft source links and reviewed redistribution obligations. No generic Microsoft license or invented text is included as a substitute. Without trustworthy runtime-specific evidence the build fails closed. The manifest/schema and verification limits are documented in `scripts/collect_ui_licenses.md`. Neither passing the collector nor fixture tests is legal approval or a claim of real Fixed/VM acceptance.
+
 ## Source links
 
 - Project source: this repository.

@@ -31,6 +31,8 @@ try {
     try {
         $arguments = @('run', 'tauri', '--', 'build', '--no-bundle')
         if ($Configuration -eq 'Debug') { $arguments += '--debug' }
+        # Forward to Cargo (Tauri itself has no --locked flag).
+        $arguments += @('--', '--locked')
         & npm.cmd @arguments
         if ($LASTEXITCODE -ne 0) { throw 'Tauri build failed' }
     }

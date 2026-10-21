@@ -1,0 +1,5 @@
+# Preserve upstream bytes: SHA256 in SOURCES.json is checked at release time.
+* -text
+README.md text eol=lf
+SOURCES.json text eol=lf
+.gitattributes text eol=lf

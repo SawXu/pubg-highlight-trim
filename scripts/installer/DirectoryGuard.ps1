@@ -1,7 +1,9 @@
 # Windows-only directory pinning for elevated installer transactions.
 # Handles exclude FILE_SHARE_DELETE, preventing rename/replacement while the
 # engine inspects and operates on a directory. Reparse points are never followed.
-Add-Type -TypeDefinition @'
+# NSIS's native System.dll plugin can be the process working directory's
+# namesake. Pin the framework reference instead of letting csc resolve it there.
+Add-Type -ReferencedAssemblies ([System.ComponentModel.Win32Exception].Assembly.Location) -TypeDefinition @'
 using System;
 using System.IO;
 using System.ComponentModel;
@@ -29,8 +31,13 @@ public static class PhtDirectoryGuard {
     [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string sddl, uint revision, out IntPtr descriptor, out uint size);
     [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr value);
-    public static SafeFileHandle Pin(string path) {
-        var handle = CreateFile(path, 0x80000000, 1, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+    public static SafeFileHandle Pin(string path) { return PinDirectory(path, 1); }
+    // Only for administrator-protected directories whose children the transaction
+    // must rename. Windows rename opens the parent for write; still deny DELETE
+    // sharing so the pinned directory itself cannot be replaced or renamed.
+    public static SafeFileHandle PinForFileUpdates(string path) { return PinDirectory(path, 3); }
+    static SafeFileHandle PinDirectory(string path, uint share) {
+        var handle = CreateFile(path, 0x80000000, share, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
         if (handle.IsInvalid) { handle.Dispose(); throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot pin directory: " + path); }
         FILE_INFO info;
         if (!GetFileInformationByHandle(handle, out info)) { var error=Marshal.GetLastWin32Error(); handle.Dispose(); throw new Win32Exception(error); }
