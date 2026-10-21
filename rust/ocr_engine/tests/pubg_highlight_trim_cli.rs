@@ -45,7 +45,10 @@ fn help_and_version_work_without_inputs_or_ocr_runtime() {
                 assert!(text.contains(arg), "missing {arg}")
             }
         } else {
-            assert_eq!(text.trim(), "pubg-highlight-trim 0.3.7")
+            assert_eq!(
+                text.trim(),
+                concat!("pubg-highlight-trim ", env!("CARGO_PKG_VERSION"))
+            )
         }
     }
 }
