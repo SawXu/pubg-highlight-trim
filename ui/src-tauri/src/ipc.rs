@@ -132,18 +132,44 @@ async fn close_app(
 pub fn run() {
     let exe = std::env::current_exe().expect("无法定位应用");
     let root = exe.parent().expect("应用目录").to_path_buf();
-    // The development root is fixed at build time, never selected through renderer input.
-    let resource_root = if cfg!(debug_assertions) {
+    let policy = match crate::distribution::prepare(&root) {
+        Ok(policy) => policy,
+        Err(message) => {
+            rfd::MessageDialog::new()
+                .set_title("PUBG Highlight Trim — 无法启动")
+                .set_description(&message)
+                .set_level(rfd::MessageLevel::Error)
+                .show();
+            return;
+        }
+    };
+    // An installed debug build must use the installed payload too, never the developer checkout.
+    let resource_root = if policy.is_none() && cfg!(debug_assertions) {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../dist/pubg-highlight-trim-ui")
     } else {
         root.clone()
     };
-    let data = std::env::var_os("PUBG_HIGHLIGHT_TRIM_DATA_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| root.join("data"));
-    let storage = Storage::open(data)
-        .expect("专用数据目录不可写；请设置 PUBG_HIGHLIGHT_TRIM_DATA_DIR 为可写绝对目录");
+    let data = if let Some(policy) = &policy {
+        policy.data_directory(&root)
+    } else {
+        std::env::var_os("PUBG_HIGHLIGHT_TRIM_DATA_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| root.join("data"))
+    };
+    let storage = match Storage::open(data) {
+        Ok(storage) => storage,
+        Err(message) => {
+            rfd::MessageDialog::new()
+                .set_title("PUBG Highlight Trim — 数据目录不可写")
+                .set_description(format!(
+                    "{message}\n请修复所选安装目录的 data 子目录权限，不会回退 AppData。"
+                ))
+                .set_level(rfd::MessageLevel::Error)
+                .show();
+            return;
+        }
+    };
     let shell = Shell::new(storage.clone(), RuntimeLayout::from_root(&resource_root));
     tauri::Builder::default()
         .manage(shell)
@@ -173,6 +199,22 @@ pub fn run() {
             .data_directory(storage.root.join("webview"))
             .additional_browser_args("--disk-cache-size=67108864 --media-cache-size=33554432")
             .build()?;
+            let evidence_root = root.clone();
+            let evidence_storage = storage.clone();
+            let evidence_handle = app.handle().clone();
+            w.with_webview(move |view| {
+                if let Err(message) =
+                    crate::distribution::verify_webview(view, &evidence_root, &evidence_storage)
+                {
+                    let _ = evidence_storage.append(&format!("RUNTIME ERROR {message}"));
+                    rfd::MessageDialog::new()
+                        .set_title("PUBG Highlight Trim — 运行时验证失败")
+                        .set_description(&message)
+                        .set_level(rfd::MessageLevel::Error)
+                        .show();
+                    evidence_handle.exit(1);
+                }
+            })?;
             let h = app.handle().clone();
             w.on_window_event(move |e| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = e {
