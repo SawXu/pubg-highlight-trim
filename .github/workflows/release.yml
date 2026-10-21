@@ -16,9 +16,10 @@ jobs:
   ui-checks:
     uses: ./.github/workflows/ui-checks.yml
 
-  # #103 delivers a development-runnable GUI, not a runtime distribution.
-  # Keep the full CLI release gate; GUI ZIP/installer publication must wait for
-  # separate interactive desktop, real-video and clean-host acceptance.
+  # #104 adds scripts/build_installers_windows.ps1 (System/Fixed EXE only).
+  # Do not publish GUI installers by default: Fixed requires an explicitly
+  # trusted unpacked runtime and both variants require real lifecycle acceptance.
+  # Keep the existing CLI release gate/artifact unchanged until that gate passes.
   windows:
     needs: [assurance, ui-checks]
     runs-on: windows-latest
@@ -49,6 +50,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Reject unsafe installer inputs without building or downloading
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\tests\test_installer_inputs.ps1
 
       - name: Build Windows bundle (Cargo + PowerShell; no Python)
         shell: powershell

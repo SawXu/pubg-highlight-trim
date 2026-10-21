@@ -41,6 +41,12 @@ jobs:
       - name: Public UI behavior contracts
         shell: powershell
         run: ./scripts/test_ui_behavior.ps1 -SkipInstall
+      - name: Installer packaging contracts (not lifecycle acceptance)
+        shell: powershell
+        run: |
+          ./scripts/tests/test_installer_inputs.ps1
+          ./scripts/tests/test_installer_packaging.ps1
+          ./scripts/tests/test_installer_directories.ps1
       - name: Acceptance scope
         shell: powershell
         run: |

@@ -13,7 +13,10 @@ serde_json = "1"
 regex = "1"
 tauri = { version = "2", features = ["config-toml"] }
 rfd = "0.15"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_System_Diagnostics_ToolHelp"] }
+webview2-com = "0.39"
+winreg = "0.56"
+windows = { version = "0.62", features = ["Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_LibraryLoader"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = ["config-toml"] }

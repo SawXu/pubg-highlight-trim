@@ -3,7 +3,8 @@ param(
     [ValidateSet('Release', 'Debug')][string]$Configuration = 'Release'
 )
 
-# Development-runnable layout only. Installer/runtime distribution is a follow-up.
+# Development-runnable layout only. Use build_installers_windows.ps1 for the
+# System/Fixed installer entry point; this script never publishes a GUI ZIP.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location -LiteralPath $repoRoot
@@ -47,6 +48,12 @@ try {
     Remove-Item -LiteralPath $layout -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $layout -Force | Out-Null
     Copy-Item -LiteralPath $executable -Destination "$layout\pubg-highlight-trim-ui.exe"
+    # Native UI imports resolve beside the UI executable, not inside cli/.
+    foreach ($crtDll in @('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll')) {
+        $crtSource = Join-Path $cliBundle $crtDll
+        if (-not (Test-Path -LiteralPath $crtSource -PathType Leaf)) { throw "Required UI CRT DLL is missing: $crtDll" }
+        Copy-Item -LiteralPath $crtSource -Destination $layout
+    }
     Copy-Item -LiteralPath $cliBundle -Destination "$layout\cli" -Recurse
     Copy-Item -LiteralPath README.md, README_zh.md, LICENSE, THIRD_PARTY_NOTICES.md -Destination $layout
     @'
