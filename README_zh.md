@@ -4,7 +4,7 @@
 
 Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight（精彩时刻）片段进行裁剪。
 
-仓库同时提供原生 Windows 桌面 UI。UI 使用 WPF，不包含浏览器运行时；它把 Rust CLI 当作独立进程运行。
+仓库同时提供 Tauri 2 + Vue 3 Windows 桌面 UI，将现有 Rust CLI 作为独立进程运行，使用 Microsoft Edge WebView2 Runtime。#103 交付可开发构建运行的应用；正式安装、升级、卸载与运行时分发由后续票验收。
 
 默认行为同时检测“你击倒/淘汰敌人”和“敌人击倒/淘汰你”两类事件，保留事件前 5 秒与后 1 秒，跳过前 2 秒内的事件；对燃烧瓶 / 火瓶淘汰事件保留前 10 秒。
 
@@ -16,9 +16,7 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 2. 将 zip 解压到任意目录。
 3. 默认压缩包包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg.exe` / `ffprobe.exe`、Rust-only OCR 引擎及 PP-OCRv6 ONNX 模型；**不包含** PaddleOCR、PaddlePaddle 或 Paddle 模型。
 
-需要图形界面时，下载 `pubg-highlight-trim-ui-windows-x64.zip`。解压后运行 `pubg-highlight-trim-ui.exe`；同包的 `cli` 目录包含完整 CLI 和 OCR 运行时，必须与 UI exe 保持并列（即 `cli\\pubg-highlight-trim.exe`）。请勿将 UI exe 移出该目录，或在缺少 `cli` 的情况下单独复制它。
-
-GUI 发布包是 CLI 发布包之上的桌面外壳：WPF UI 通过参数、标准输出和最终的 `summary.json` 启动并监视 CLI，实际 OCR、FFmpeg 和视频处理仍由 `cli` 目录中的 CLI 完成。当前构建的 GUI 包自包含 .NET、Rust CLI、FFmpeg/FFprobe 和 OCR 模型，不携带 Python；用户无需另行安装运行时。
+新图形界面请按下文开发构建说明运行，保持完整 `cli` 目录与 `pubg-highlight-trim-ui.exe` 并列。本迁移分支不发布新的 GUI ZIP 或安装包，不声称包含 WebView2 或全部干净主机运行时依赖。旧 release GUI 包只代表其标签时的实现。
 
 在解压目录下直接运行：
 
@@ -30,7 +28,7 @@ GUI 发布包是 CLI 发布包之上的桌面外壳：WPF UI 通过参数、标�
 
 ### 图形界面
 
-解压 `pubg-highlight-trim-ui-windows-x64.zip` 后，双击 `pubg-highlight-trim-ui.exe` 启动。窗口顶部会先检查并显示 CLI 版本；若提示“未找到 CLI”，请确认 `cli` 文件夹与 UI exe 位于同一目录，且其中存在 `cli\\pubg-highlight-trim.exe`。
+完成开发构建后，双击 `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe` 启动。窗口顶部会先检查并显示 CLI 版本；若提示“未找到 CLI”，请确认 `cli` 文件夹与 UI exe 位于同一目录，且其中存在 `cli\\pubg-highlight-trim.exe`。
 
 主要操作如下：
 
@@ -45,7 +43,7 @@ GUI 发布包是 CLI 发布包之上的桌面外壳：WPF UI 通过参数、标�
 
 任务完成后，“打开输出”会在资源管理器中打开本次输出目录。没有匹配事件时仍会写入扫描记录和 `summary.json`，界面会显示“扫描完成，没有匹配事件”。
 
-UI 仅通过 CLI 参数、标准输出和最终 `summary.json` 与后端通信。可通过 `PUBG_HIGHLIGHT_TRIM_CLI` 环境变量覆盖 CLI 路径，便于开发或测试其他 CLI 版本。
+Rust 壳仅通过参数数组、标准输出和最终 `summary.json` 与独立 CLI 通信，使用受信任的并排 `cli\pubg-highlight-trim.exe`；前端不能指定任意可执行文件。
 
 ### 命令行
 
@@ -218,7 +216,7 @@ Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` �
 
 ## 常见故障排查
 
-- **GUI 提示缺少 CLI**：确认使用的是完整的 `pubg-highlight-trim-ui-windows-x64.zip`，并保持 `pubg-highlight-trim-ui.exe` 与 `cli` 文件夹并列；不要只复制 UI exe。开发或测试时也可设置 `PUBG_HIGHLIGHT_TRIM_CLI` 指向另一份 CLI 可执行文件。
+- **GUI 提示缺少 CLI**：确认开发布局中 `pubg-highlight-trim-ui.exe` 与完整 `cli` 文件夹并列；不要只复制 UI exe。必要时重新构建开发布局。
 - **CLI 启动失败或运行失败**：展开 GUI 的“运行记录”查看 `ERR` 行和退出码。命令行用户可加 `--verbose` 重试；确认输入路径存在、输出目录可写，并避免让合并文件覆盖输入视频。
 - **没有匹配事件**：确认输入是 NVIDIA Highlight 原始源文件而非“淘汰画面/击倒画面”回放文件；检查游戏语言和检测目标是否正确。可先用“仅扫描”或 CLI 的 `--scan-mode full` 生成 `candidate_events.csv`，必要时使用 `--no-brightness-gate` 或调整 `--roi`。
 - **OCR 模型或 FFmpeg 不可用**：优先使用官方 release 包（其中已捆绑模型和 `vendor/ffmpeg`）。源码运行时按“ffmpeg”章节配置 `--ffmpeg`/`--ffprobe` 或 `PUBG_HIGHLIGHT_TRIM_FFMPEG_DIR`，并在构建/准备阶段显式下载并校验模型；应用运行时不会联网下载模型。
@@ -226,75 +224,56 @@ Release 构建会在 app bundle 内的 `vendor/ffmpeg` 下打包 `ffmpeg.exe` �
 
 ## 开发
 
-### 运行测试
+### 环境
 
-在仓库根目录，安装 Rust stable（MSVC x64）、FFmpeg/FFprobe 和 .NET 10 SDK 后运行：
+需要 Windows 10/11 x64、Rust stable MSVC、Visual Studio C++ Build Tools / Windows SDK、Node.js 22 LTS（npm）、PowerShell，以及已安装的 Microsoft Edge WebView2 Runtime。联网用于还原依赖、显式准备 FFmpeg 和校验过的 OCR 模型。不使用 .NET SDK、Python 虚拟环境或 pip。
+
+### 测试与检查
+
+仓库根目录运行：
 
 ```powershell
 cargo test --locked --manifest-path rust/Cargo.toml --workspace --features highlight-cli
 cargo test --locked --manifest-path rust/Cargo.toml --features cli,directml
-# 显式真实模型门槛：需要校验过的模型目录，不需要私有原片
+npm --prefix ui ci
+npm --prefix ui run typecheck
+npm --prefix ui run build
+cargo check --locked --manifest-path ui/src-tauri/Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts/test_ui_behavior.ps1 -SkipInstall
+# 显式真实模型门槛，需要校验过的模型目录
 $env:PUBG_OCR_MODEL_DIR="<模型目录>"
 cargo test --locked --manifest-path rust/Cargo.toml --features cli --test end_to_end -- --ignored --nocapture
-dotnet test ui/PubgHighlightTrim.Ui.Tests/PubgHighlightTrim.Ui.Tests.csproj --configuration Release
 ```
 
-默认测试使用语言无关 golden、已公开 ROI 和临时合成媒体。真实模型 ignored 测试是单独的验收门槛，默认测试通过不代表可以跳过。`highlight_plan` 是 canonical 固定数据 JSON/JSONL planner 诊断，不能提供无模型视频/OCR 预览。
+公共行为测试入口运行前端和 Rust 壳契约，替代旧桌面框架专属自动化。它们不代表可见 UI → 壳 → 真实 CLI、固定真实视频 summary/CSV/媒体语义、交互关闭/取消或最终干净主机分发验收已通过；这些需要单独的 Windows 证据，不能用分层测试冒充桌面端到端测试。已完成检查和剩余缺口见 [Tauri UI 验证记录](docs/tauri-ui-verification.md)。既有 CLI 的模型、媒体、provider/回退、错误、取消、供应链和发布门槛保持不变。
 
-### 本地构建 Windows release
-
-#### 构建环境
-
-本地构建需要 Windows x64、可联网的 PowerShell，以及以下工具：
-
-- Rust stable x64 MSVC 工具链及 Visual Studio C++ 构建工具。
-- 构建 UI 需要 .NET 10 SDK（项目目标框架为 `net10.0-windows`）。
-- 构建脚本会用 `mt.exe` 检查最终 UI 可执行文件的 DPI manifest。请安装 Windows 10/11 SDK，并将包含 `mt.exe` 的目录加入 `PATH`；该目录通常类似 `C:\Program Files (x86)\Windows Kits\10\bin\<版本>\x64`。也可以从 Visual Studio Developer PowerShell（已配置 Windows SDK 的环境）运行构建。可先用 `Get-Command mt.exe` 验证。
-
-不创建 Python 虚拟环境、不运行 pip。模型下载/hash/字典、推理 smoke、基线比较、供应链清单、包审计与体积报告由 Rust `xtask` 提供；用 `cargo run --manifest-path rust/Cargo.toml --bin xtask -- --help` 查看。原开发工具的职责和有效检查如何保留，见退休审计。
-
-#### 构建 CLI bundle
-
-推荐先单独构建 CLI。Rust 构建将 PP-OCRv6 ONNX 资源（不是 PaddleOCR 运行时模型）和 FFmpeg 复制进发布 bundle，并生成 `pubg-highlight-trim-windows-x64.zip`；不再支持 Paddle 兼容构建。
+### 构建并运行 Windows 开发应用
 
 ```powershell
-# 可选：提前下载 FFmpeg；省略时 build_windows.ps1 会自动下载
-powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
-
-powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_ui_windows.ps1 -SkipCliBuild
+.\dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe
 ```
 
-CLI 构建会清理旧的 `build` / `dist` 目录，运行 Cargo 构建完整 Rust 应用及诊断引擎、校验模型、执行 manifest/audit/smoke，并生成：
+UI 脚本还原锁定的 npm 依赖，运行 Tauri `build --no-bundle`；`-Configuration Debug` 可构建调试版本。省略 `-SkipCliBuild` 会先构建 CLI。CLI 构建会清理 `build` / `dist`，因此须在 UI 布局构建之前执行。UI 脚本将完整 CLI bundle 复制到 `dist\pubg-highlight-trim-ui\cli`，请勿只移动 UI exe。
 
-- `dist\pubg-highlight-trim\pubg-highlight-trim.exe`：可直接运行的 CLI bundle。
-- `dist\pubg-highlight-trim-windows-x64.zip`：默认 Rust-only 包，包含 CLI、FFmpeg/FFprobe、PP-OCRv6 ONNX 模型和许可文件。该 zip 的用户无需安装 Python。
+此产物是开发运行布局，**不是**自包含运行时包、安装器或发布 ZIP；主机须已有 WebView2 及所需原生运行时。运行时来源、安装目录 ACL、普通权限、升级/卸载与干净主机验收归后续分发票。
 
-#### 构建 GUI EXE
-
-CLI bundle 存在后，运行下面的命令构建自包含 WPF GUI。`-SkipCliBuild` 表示复用已有的 `dist\pubg-highlight-trim`；如果该目录中没有 CLI exe，脚本会报错。省略此参数则会先重新构建 CLI。
+先运行 `build_ui_windows.ps1 -SkipCliBuild` 准备受信任的并排布局后，也可使用热重载：
 
 ```powershell
-# 复用刚刚生成的 CLI bundle（推荐）
-powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 -SkipCliBuild
-
-# 或者一条命令同时重新构建 CLI 和 GUI
-powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1
+cd ui
+npm ci
+npm run tauri -- dev
 ```
 
-GUI 构建会执行 `dotnet publish`、检查 `mt.exe` 生成的 DPI manifest，并把 CLI bundle 复制到 UI 包的 `cli` 子目录。产物为：
+模型下载/hash/字典、推理 smoke、manifest、包审计和体积报告仍由 Rust `xtask` 提供；用 `cargo run --manifest-path rust/Cargo.toml --bin xtask -- --help` 查看。应用运行时不会下载模型。
 
-- `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`：自包含 GUI EXE。
-- `dist\pubg-highlight-trim-ui-windows-x64.zip`：GUI、并排的 `cli` bundle、FFmpeg/FFprobe、默认 Rust OCR 资源和文档的完整发布包。用户无需安装 .NET、Python 或其他运行时。
+### UI 数据目录
 
-UI 测试单独运行：
+UI 默认使用运行中 exe 旁的 `data`（开发布局为 `dist\pubg-highlight-trim-ui\data`）。启动前可设置 `PUBG_HIGHLIGHT_TRIM_DATA_DIR` 为**绝对**可写路径，允许指定安装目录内的专用数据子目录。其下包含 `settings.json`、有容量上限的 `run.log`（1 MiB / 2,000 行）、浏览器用户数据 `webview` 和可清理 `cache`，不与视频输出混用。目录必须可写；失败应明确报错，不静默回退 AppData。不要将未配置的开发构建放在只读安装目录。清理浏览器/缓存文件前请退出应用，需要保留偏好时不要删除设置文件。视频输出和 OCR 扫描缓存继续遵循 CLI 靠近输入源/输出的原策略，不属于 UI 浏览器缓存。界面的清理缓存操作清理 `cache` 及全部 WebView 浏览数据（包括 cookies、localStorage）；不删除 `settings.json`、视频输出或 CLI 的 OCR 缓存。例如：`$env:PUBG_HIGHLIGHT_TRIM_DATA_DIR="D:\PUBG-Trim\data"`。
 
-```powershell
-dotnet test .\ui\PubgHighlightTrim.Ui.Tests\PubgHighlightTrim.Ui.Tests.csproj --configuration Release
-```
-
-UI release 是自包含的原生 WPF 单文件应用，发布包在 `cli` 子目录并排携带完整 CLI bundle；用户无需安装 .NET 或 Python。
-
-GitHub Actions 会在推送 `v0.1.0` 等标签或手动 `workflow_dispatch` 时构建 CLI 与 UI 两种 Windows release zip。
+GitHub Actions 在 Windows 检查前端和壳。标签/手动 release 仍执行完整 CLI assurance；迁移期间仅发布 CLI ZIP，不将新 GUI 声称为已完成最终包验收。
 
 ## 许可证
 
