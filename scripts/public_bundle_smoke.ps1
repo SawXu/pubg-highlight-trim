@@ -4,7 +4,7 @@ function New-PublicSmokeVideo([string]$Ffmpeg, [string]$Destination, [switch]$Gu
     $fixture = Join-Path $PSScriptRoot '..\tests\fixtures\missed_event_ocr\23.20.15.09_2.png'
     if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) { throw "Required public OCR fixture is missing" }
     if ($GuiLayout) {
-        # The WPF command uses the production default ROI. Embed the same public
+        # The GUI command uses the production default ROI. Embed the same public
         # crop there, matching the existing Rust end_to_end fixture placement.
         & $Ffmpeg -nostdin -hide_banner -loglevel error -f lavfi -i 'color=c=black:s=1920x1080:r=2:d=6' -loop 1 -framerate 2 -i $fixture -filter_complex "[0:v][1:v]overlay=x=576:y=712:enable='between(t,2,4)'" -t 6 -c:v libx264 -crf 0 -preset ultrafast -pix_fmt yuv444p -n $Destination 2>$null
     } else {

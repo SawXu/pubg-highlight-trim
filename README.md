@@ -4,7 +4,7 @@ English | [简体中文](README_zh.md)
 
 Windows-only CLI for trimming PUBG NVIDIA Highlight clips around key OCR events.
 
-The repository also ships a native Windows desktop UI. It uses WPF with no browser runtime and launches the Rust CLI as a separate process.
+The repository also provides a Tauri 2 + Vue 3 desktop UI for Windows. It launches the unchanged Rust CLI as a separate process and requires Microsoft Edge WebView2 Runtime. Issue #103 delivers a development-runnable application; installation, upgrade, uninstall and runtime distribution are follow-up work.
 
 Default behavior detects both your knocks/eliminations and enemies knocking/eliminating you, keeps 5 seconds before and 1 second after the detected event, skips events in the first 2 seconds, and keeps 10 seconds before molotov/fire-bomb eliminations.
 
@@ -16,7 +16,7 @@ No Python install required.
 2. Extract the zip to any folder.
 3. The default bundle includes `pubg-highlight-trim.exe`, bundled `ffmpeg.exe`/`ffprobe.exe`, the Rust-only OCR engine, and PP-OCRv6 ONNX models. It does **not** include PaddleOCR, PaddlePaddle, or Paddle models.
 
-For the graphical app, download `pubg-highlight-trim-ui-windows-x64.zip`, extract it, and run `pubg-highlight-trim-ui.exe`. The GUI archive is a WPF desktop front end; the CLI archive is the command-line executable and runtime by itself. In the GUI archive, keep the bundled `cli` directory beside the UI executable (`pubg-highlight-trim-ui.exe` and `cli\pubg-highlight-trim.exe` at the same level). The UI starts that CLI as a child process, so moving or renaming `cli` makes the UI unavailable. Neither archive requires a separate Python or .NET installation.
+For the new graphical app, use the development build instructions below. Keep the complete `cli` directory beside `pubg-highlight-trim-ui.exe`. This branch does not publish a new GUI release ZIP or installer and does not claim to bundle WebView2 or all clean-host runtime dependencies. Older release GUI archives describe the implementation at their tag, not this migration.
 
 Run it from the extracted folder:
 
@@ -44,11 +44,11 @@ The controls map to these CLI settings:
 
 Click **Start** to run. The right-hand panel reports scan/trim progress, retained and skipped counts, elapsed time, and the current phase. Expand **Show log** to inspect the raw CLI records; this is the first place to look when a run fails. Click **Stop** to cancel the current task; the GUI terminates the CLI and its child processes. After a successful run, **Open output** opens the output root in Explorer. When multiple merged outputs are produced, choose the desired video from that directory.
 
-The UI communicates only through CLI arguments, standard output, and the final `summary.json`. Set `PUBG_HIGHLIGHT_TRIM_CLI` to override the CLI executable during development or compatibility testing.
+The shell communicates with the independent CLI through argument arrays, standard output, and the final `summary.json`. The development layout uses the trusted side-by-side `cli\pubg-highlight-trim.exe`; frontend input cannot choose an arbitrary executable.
 
 ### GUI troubleshooting
 
-- **CLI not found / unavailable**: confirm that `cli\pubg-highlight-trim.exe` is present beside `pubg-highlight-trim-ui.exe` and that the archive was extracted completely. Do not copy only the UI executable out of the archive. For development or compatibility checks, set `PUBG_HIGHLIGHT_TRIM_CLI` to a valid CLI path.
+- **CLI not found / unavailable**: confirm that the complete `cli\pubg-highlight-trim.exe` bundle is present beside `pubg-highlight-trim-ui.exe`. Do not copy only the UI executable. Rebuild the development layout if necessary.
 - **The run fails immediately**: verify that the input path exists, multi-select contains only MP4 files, the output folder is writable, and expert numeric fields are non-negative (`jobs` must be `auto` or a positive integer). Expand the log and note the CLI exit code.
 - **No matching events**: check the selected detection target and game language, try **Auto** or **Full** scan, and confirm the files are original NVIDIA Highlight clips rather than unsupported replay-perspective files. Use **Scan only** to inspect `检测与裁剪记录.csv`/`candidate_events.csv` before creating videos.
 
@@ -209,54 +209,54 @@ During source development the resolver checks, in order:
 
 ## Development
 
-### Run tests
+### Prerequisites
 
-From the repository root, with Rust stable (MSVC x64), FFmpeg/FFprobe and .NET 10 SDK installed:
+Use Windows 10/11 x64 with Rust stable MSVC, Visual Studio C++ Build Tools / Windows SDK, Node.js 22 LTS (npm), PowerShell, and Microsoft Edge WebView2 Runtime already installed. Network access is needed to restore dependencies and explicitly provision FFmpeg and pinned OCR models. No .NET SDK, Python virtual environment or pip is used.
+
+### Tests and checks
+
+From the repository root:
 
 ```powershell
 cargo test --locked --manifest-path rust/Cargo.toml --workspace --features highlight-cli
 cargo test --locked --manifest-path rust/Cargo.toml --features cli,directml
-# Explicit real-model gate: requires a verified local model directory, never private recordings
+npm --prefix ui ci
+npm --prefix ui run typecheck
+npm --prefix ui run build
+cargo check --locked --manifest-path ui/src-tauri/Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts/test_ui_behavior.ps1 -SkipInstall
+# Explicit real-model gate; requires a verified model directory
 $env:PUBG_OCR_MODEL_DIR="<model-directory>"
 cargo test --locked --manifest-path rust/Cargo.toml --features cli --test end_to_end -- --ignored --nocapture
-dotnet test ui/PubgHighlightTrim.Ui.Tests/PubgHighlightTrim.Ui.Tests.csproj --configuration Release
 ```
 
-The default suite uses language-neutral golden data, public ROI images and generated temporary media. Real-model ignored tests are separate acceptance gates, not coverage silently waived by a green default suite. `highlight_plan` is a canonical fixed-data JSON/JSONL planner diagnostic; it cannot preview video/OCR without models.
+The public UI behavior test entrypoint runs frontend and Rust shell contracts, replacing the previous desktop-framework-specific automation. These checks do not certify the visible UI → shell → real CLI workflow, real-video summary/CSV/media parity, interactive close/cancellation, or a final clean-host distribution. Those require separate Windows acceptance evidence; passing isolated contracts is not equivalent to passing an end-to-end desktop test. See [the Tauri UI verification record](docs/tauri-ui-verification.md) for completed checks and remaining gaps. Existing CLI model, media, provider/fallback, fault, cancellation, supply-chain and release gates remain unchanged.
 
-### Build Windows release locally
-
-The release build needs a Windows x64 machine with:
-
-- Rust stable x64 MSVC toolchain and Visual Studio C++ build tools.
-- .NET 10 SDK, including the Windows Desktop targeting pack, for the WPF UI.
-- The Windows 10/11 SDK `mt.exe` tool on `PATH`. The build uses it to verify the UI executable's `PerMonitorV2` DPI manifest.
-- PowerShell and network access for downloading FFmpeg and, on a first build, OCR models.
-
-No Python virtual environment or pip installation is used. Model download/hash/dictionary, inference smoke, baseline comparison, manifest, archive audit and size tools are Rust `xtask` commands. Run `cargo run --manifest-path rust/Cargo.toml --bin xtask -- --help` for their interfaces. The retirement audit maps each former tool and its effective checks to the Rust replacement.
-
-Build the CLI bundle first, then publish the GUI and package both together:
+### Build and run the Windows development application
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\download_ffmpeg.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\build_ui_windows.ps1 `
-  -SkipCliBuild
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_ui_windows.ps1 -SkipCliBuild
+.\dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe
 ```
 
-The Rust build bundles PP-OCRv6 ONNX assets (not PaddleOCR runtime models) and creates `dist\pubg-highlight-trim-windows-x64.zip`. Paddle compatibility builds are no longer supported. `build_ui_windows.ps1 -SkipCliBuild` reuses that CLI bundle, publishes a self-contained WPF single-file executable, verifies its DPI manifest, and creates `dist\pubg-highlight-trim-ui-windows-x64.zip`. The UI executable is also available at `dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe`; its package keeps the CLI at `cli\pubg-highlight-trim.exe` beside it.
+The UI script restores locked npm dependencies and uses Tauri's `build --no-bundle`; `-Configuration Debug` selects a debug build. Without `-SkipCliBuild` it first builds the CLI. The CLI build cleans `build` / `dist`, so run it before the UI layout step. The UI build copies the complete CLI bundle to `dist\pubg-highlight-trim-ui\cli`. Do not move only the executable. This is a development layout, **not** a self-contained runtime package, installer or release ZIP. WebView2 and applicable native runtime prerequisites must already be available. Installation/upgrade/uninstall and runtime provenance/ACL/clean-host acceptance belong to the follow-up distribution issue.
 
-If the CLI bundle already exists, omit the first build command and run only the UI command. The release archives contain all runtime dependencies, so users need neither Python nor .NET installed.
-
-Run the UI tests separately:
+For hot-reload development, first run `build_ui_windows.ps1 -SkipCliBuild` to prepare the trusted side-by-side layout, then:
 
 ```powershell
-dotnet test .\ui\PubgHighlightTrim.Ui.Tests\PubgHighlightTrim.Ui.Tests.csproj --configuration Release
+cd ui
+npm ci
+npm run tauri -- dev
 ```
 
-The UI release is a self-contained native WPF single-file app. Its release archive carries the complete CLI bundle in a side-by-side `cli` directory, so users need neither .NET nor Python installed.
+Model download/hash/dictionary verification, inference smoke, manifest, archive audit and size tools remain Rust `xtask` commands; see `cargo run --manifest-path rust/Cargo.toml --bin xtask -- --help`. Runtime execution never downloads models.
 
-GitHub Actions builds both CLI and UI Windows release archives on tag pushes like `v0.1.0` or manual `workflow_dispatch`.
+### UI data directory
+
+By default the UI uses `data` beside the running executable (for the packaged development layout: `dist\pubg-highlight-trim-ui\data`). Set `PUBG_HIGHLIGHT_TRIM_DATA_DIR` to an **absolute** writable path before launch to override it, including a dedicated directory under the installation folder. It contains `settings.json`, bounded `run.log` (1 MiB / 2,000 lines), `webview` browser user data and disposable `cache`, separate from video output. This location must be writable; failure must be reported rather than silently falling back to AppData. Do not place an unconfigured development build under a read-only installation directory. Stop the app before removing browser/cache files; retain settings if you want to preserve preferences. Video output and OCR scan caches continue to follow the CLI's existing near-input/output strategy, not the UI browser cache. The UI's cache-clear action clears `cache` and all WebView browsing data, including cookies and localStorage; it does not clear `settings.json`, video outputs or the CLI's OCR cache. For example: `$env:PUBG_HIGHLIGHT_TRIM_DATA_DIR="D:\PUBG-Trim\data"`.
+
+GitHub Actions checks the frontend and shell on Windows. Tagged/manual release builds retain the complete CLI assurance and publish the CLI ZIP only during this migration; the new GUI is not advertised as final-package accepted.
 
 ## License
 

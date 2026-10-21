@@ -1,0 +1,28 @@
+[package]
+name = "pubg-highlight-trim-ui"
+version = "0.1.0"
+edition = "2021"
+default-run = "pubg-highlight-trim-ui"
+
+[lib]
+name = "highlight_shell"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+tauri = { version = "2", features = ["config-toml"] }
+rfd = "0.15"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_System_Diagnostics_ToolHelp"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = ["config-toml"] }
+
+[dev-dependencies]
+tempfile = "3"
+csv = "1"
+sha2 = "0.10"
+
+[[bin]]
+name = "controlled-cli"
+path = "tests/support/controlled_cli.rs"

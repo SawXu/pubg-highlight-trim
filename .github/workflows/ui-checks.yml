@@ -1,0 +1,47 @@
+name: Tauri UI checks
+
+on:
+  workflow_call:
+  pull_request:
+    paths: ["ui/**", "scripts/**", ".github/workflows/ui-checks.yml"]
+  push:
+    branches: [main]
+    paths: ["ui/**", "scripts/**", ".github/workflows/ui-checks.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui-quality:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Install locked frontend dependencies
+        shell: powershell
+        run: npm --prefix ui ci
+      - name: Frontend typecheck and production build
+        shell: powershell
+        run: |
+          npm --prefix ui run typecheck
+          if ($LASTEXITCODE -ne 0) { throw "Frontend typecheck failed" }
+          npm --prefix ui run build
+          if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
+      - name: Tauri Rust check
+        shell: powershell
+        run: cargo check --locked --manifest-path ui/src-tauri/Cargo.toml
+      - name: Public UI behavior contracts
+        shell: powershell
+        run: ./scripts/test_ui_behavior.ps1 -SkipInstall
+      - name: Acceptance scope
+        shell: powershell
+        run: |
+          "Tauri frontend and shell contract checks are not an interactive Windows GUI or final distribution acceptance. Real video UI-to-CLI parity, desktop cancellation/close behavior, clean-host runtime and installer verification require separate evidence." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

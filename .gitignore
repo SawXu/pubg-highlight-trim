@@ -12,8 +12,14 @@ rust/target/
 venv/
 build/
 dist/
-ui/**/bin/
-ui/**/obj/
+ui/node_modules/
+ui/dist/
+ui/src-tauri/target/
+ui/src-tauri/gen/
+# Writable development UI data (settings, logs, WebView2 and cache).
+ui/data/
+ui/src-tauri/data/
+*.tsbuildinfo
 *.spec
 *.log
 
