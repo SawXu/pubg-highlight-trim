@@ -1,6 +1,6 @@
 # Windows 安装生命周期验收（issue #104）
 
-本文件描述**真实安装包**在 Windows disposable VM 中的验收流程。它不是 mock 测试，也不能以构建成功或静态脚本测试代替。当前仓库没有宣称以下矩阵已通过；每个阶段必须由执行者填写证据目录和结果。
+本文件描述**真实安装包**在 Windows disposable VM 中的验收流程。#105 用户明确本次没有 VM，允许先交付双运行时构建支持；本矩阵仍保留为未执行，不作为本次已通过结果，详见 [发布验证状态](tauri-release-verification.md)。它不是 mock 测试，也不能以构建成功或静态脚本测试代替。当前仓库没有宣称以下矩阵已通过；每个阶段必须由执行者填写证据目录和结果。
 
 ## 安全边界
 
@@ -49,7 +49,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_installers_wind
 | 两变体各自 A → B 升级 | 待填 | 待填 | 待填 | NOT RUN |
 | System → Fixed / Fixed → System，取消与确认 | 待填 | 待填 | 待填 | NOT RUN |
 | 占用失败/释放后重试/事务失败恢复 | 待填 | 待填 | 待填 | NOT RUN |
-| 两变体默认保留/显式删设置卸载 | 独立恢复快照 | 待填 | 待填 | NOT RUN |
+| 两变体卸载保留数据/拒绝旧 DeleteData 参数 | 独立恢复快照 | 待填 | 待填 | NOT RUN |
 
 审计只读取文件；缺失文件不自动报失败，hash 为 null 表示无法读取。完整目录枚举和模块读取可能因权限/运行中锁定不全，应由现场操作者补证，不能从空数组推断“无残留”。
 
@@ -61,7 +61,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_installers_wind
 5. **升级同变体**：在已有安装和 data 中放置业务文件、未知文件及日志，运行同变体新包。确认旧 owned files 被替换、未知文件和业务文件保留，data 内容不丢失，注册键 ownership digest 更新且路径不变。占用任一 owned 文件时应安全拒绝并恢复。
 6. **System ↔ Fixed 切换**：在快照中执行两方向切换，确认出现明确确认提示；选择 Cancel 时安装目录、注册键、data 完全不变；选择 Yes 后记录变体、runtime 文件、ACL 和实际离线启动结果。不同安装目录必须拒绝，不得接管旧目录。
 7. **占用失败与恢复**：启动并保持真实 UI/CLI 或打开 owned 文件句柄，再运行升级/卸载。预期安装器拒绝，旧文件、ACL、注册键和 data 仍一致；释放句柄后重试。若自然进程未锁定可升级文件，可在 VM 中用真实只读句柄保持已拥有的 UI EXE：`$h=[IO.File]::Open('<InstallRoot>\pubg-highlight-trim-ui.exe','Open','Read','Read')`，结束后必须 `$h.Dispose()`。不要为测试赋予普通用户代码写权限。此项证明占用拒绝/旧版可重启，不自动证明事务中途回滚；如无可安全复现的中途失败，后者记 NOT RUN，勿用强杀/断电替代（当前实现不承诺该恢复）。若出现 recovery 目录，保留并记录路径，禁止删除后宣称恢复。
-8. **卸载与业务文件保留**：从注册卸载入口运行，默认选择保留 data。确认仅 ownership manifest 列出的程序文件和控制文件处理，业务文件、未知文件、浏览器/cache 树保留，注册键和快捷方式状态符合预期。恢复已安装快照后，再执行带“删除 settings/settings.tmp/run.log”的选项，验证只删除这三个精确文件；不能声称任意 UI 数据全部删除。
+8. **卸载与业务文件保留**：从注册卸载入口运行，默认选择保留 data。确认仅 ownership manifest 列出的程序文件和控制文件处理，业务文件、未知文件、浏览器/cache 树保留，注册键和快捷方式状态符合预期。恢复已安装快照后，验证卸载明确告知保留全部 data，旧 `-DeleteData` 参数在修改前拒绝。特别放置同名 settings/settings.tmp/run.log 及浏览器/cache 子目录业务文件并核对内容不变。完整 UI 数据可选清理因缺少可信文件归属而尚未实现；不得把只删固定文件名误写成安全完整清理。
 
 ## 证据与判定
 

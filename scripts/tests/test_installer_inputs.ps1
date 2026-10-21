@@ -12,12 +12,19 @@ function Assert-Rejected([scriptblock]$Action, [string]$Message) {
 }
 New-Item -ItemType Directory -Path $temp | Out-Null
 try {
-    Assert-Rejected { & $entry -Variant Fixed } 'requires -FixedRuntimePath'
-    Assert-Rejected { & $entry -Variant Fixed -FixedRuntimePath $temp } 'runtime is incomplete'
+    Assert-Rejected { & $entry -Variant Fixed } 'requires -FixedRuntimeLicenseManifest'
+    $license = Join-Path $temp 'license-evidence.json'
+    [IO.File]::WriteAllText($license, 'fixture trust input, not license terms')
+    $evidence = @{ FixedRuntimeLicenseManifest=$license; FixedRuntimeLicenseManifestSha256=(Get-FileHash $license -Algorithm SHA256).Hash }
+    Assert-Rejected { & $entry -Variant Fixed @evidence } 'requires -FixedRuntimePath'
+    Assert-Rejected { & $entry -Variant Fixed @evidence -FixedRuntimePath $temp } 'runtime is incomplete'
     foreach ($name in @('msedgewebview2.exe','msedge.dll','icudtl.dat','resources.pak')) {
         Set-Content -LiteralPath (Join-Path $temp $name) -Value 'not a runtime' -Encoding ASCII
     }
-    Assert-Rejected { & $entry -Variant Fixed -FixedRuntimePath $temp } 'requires -FixedRuntimeSha256'
-    Assert-Rejected { & $entry -Variant Fixed -FixedRuntimePath $temp -FixedRuntimeSha256 ('0' * 64) } 'runtime hash mismatch'
+    Assert-Rejected { & $entry -Variant Fixed @evidence -FixedRuntimePath $temp } 'requires -FixedRuntimeSha256'
+    Assert-Rejected { & $entry -Variant Fixed @evidence -FixedRuntimePath $temp -FixedRuntimeSha256 ('0' * 64) } 'runtime hash mismatch'
+    $actualHash = (Get-FileHash (Join-Path $temp 'msedgewebview2.exe') -Algorithm SHA256).Hash
+    $evidence.FixedRuntimeLicenseManifestSha256 = '1'*64
+    Assert-Rejected { & $entry -Variant Fixed @evidence -FixedRuntimePath $temp -FixedRuntimeSha256 $actualHash -SkipCliBuild -SkipUiBuild } 'license manifest SHA256 mismatch'
     Write-Host 'Installer public input rejection tests passed.'
 } finally { Remove-Item -LiteralPath $temp -Recurse -Force }

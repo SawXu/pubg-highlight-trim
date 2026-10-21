@@ -4,7 +4,7 @@
 
 Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight（精彩时刻）片段进行裁剪。
 
-仓库同时提供 Tauri 2 + Vue 3 Windows 桌面 UI，将现有 Rust CLI 作为独立进程运行，使用 Microsoft Edge WebView2 Runtime。#103 交付可开发构建运行的应用；正式安装、升级、卸载与运行时分发由后续票验收。
+仓库同时提供 Tauri 2 + Vue 3 Windows 10/11 x64 桌面 UI，将现有 Rust CLI 作为独立进程运行。安装包提供系统 WebView2 和内置 Fixed Version WebView2 两种变体，不维护旧 WPF UI。参见[安装说明](docs/windows-installers.md)及[发布验证状态](docs/tauri-release-verification.md)。
 
 默认行为同时检测“你击倒/淘汰敌人”和“敌人击倒/淘汰你”两类事件，保留事件前 5 秒与后 1 秒，跳过前 2 秒内的事件；对燃烧瓶 / 火瓶淘汰事件保留前 10 秒。
 
@@ -16,7 +16,7 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 2. 将 zip 解压到任意目录。
 3. 默认压缩包包含 `pubg-highlight-trim.exe`、打包的 `ffmpeg.exe` / `ffprobe.exe`、Rust-only OCR 引擎及 PP-OCRv6 ONNX 模型；**不包含** PaddleOCR、PaddlePaddle 或 Paddle 模型。
 
-新图形界面请按下文开发构建说明运行，保持完整 `cli` 目录与 `pubg-highlight-trim-ui.exe` 并列。本迁移分支不发布新的 GUI ZIP 或安装包，不声称包含 WebView2 或全部干净主机运行时依赖。旧 release GUI 包只代表其标签时的实现。
+图形界面提供时，请选择明确命名的 `pubg-highlight-trim-<版本>-windows-x64-system-setup.exe`（系统版）或 `pubg-highlight-trim-<版本>-windows-x64-fixed-setup.exe`（内置版），并与随附校验文件核对 SHA-256。**环境不确定或需要离线安装时推荐内置版。** 系统版要求已安装兼容共享 WebView2（120+），缺失时明确拒绝，不下载补装；内置版只使用随包运行时，资源缺失不回退系统版。两版共享安装位置和设置，不支持并装。安装器申请管理员权限并让你选择目录；完成后从开始菜单以普通权限运行。未签名包可能出现未知发布者/SmartScreen 提示，不要关闭安全软件。GUI 成品在收集完整证据前仍属草稿/未验收，旧 release 不能作为新 UI 的验收证据。独立 CLI ZIP 继续保留。
 
 在解压目录下直接运行：
 
@@ -257,7 +257,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_ui_windows.ps1 -SkipCliBu
 
 UI 脚本还原锁定的 npm 依赖，运行 Tauri `build --no-bundle`；`-Configuration Debug` 可构建调试版本。省略 `-SkipCliBuild` 会先构建 CLI。CLI 构建会清理 `build` / `dist`，因此须在 UI 布局构建之前执行。UI 脚本将完整 CLI bundle 复制到 `dist\pubg-highlight-trim-ui\cli`，请勿只移动 UI exe。
 
-此产物是开发运行布局，**不是**自包含运行时包、安装器或发布 ZIP；主机须已有 WebView2 及所需原生运行时。运行时来源、安装目录 ACL、普通权限、升级/卸载与干净主机验收归后续分发票。
+此产物是开发运行布局，**不是**自包含运行时包、安装器或发布 ZIP；主机须已有 WebView2 及所需原生运行时。安装包请使用[独立构建入口](docs/windows-installers.md)。运行时来源、ACL、普通权限、升级/卸载和干净主机结果必须另行留证，不能由开发构建成功推断。
 
 先运行 `build_ui_windows.ps1 -SkipCliBuild` 准备受信任的并排布局后，也可使用热重载：
 
@@ -273,7 +273,7 @@ npm run tauri -- dev
 
 UI 默认使用运行中 exe 旁的 `data`（开发布局为 `dist\pubg-highlight-trim-ui\data`）。启动前可设置 `PUBG_HIGHLIGHT_TRIM_DATA_DIR` 为**绝对**可写路径，允许指定安装目录内的专用数据子目录。其下包含 `settings.json`、有容量上限的 `run.log`（1 MiB / 2,000 行）、浏览器用户数据 `webview` 和可清理 `cache`，不与视频输出混用。目录必须可写；失败应明确报错，不静默回退 AppData。不要将未配置的开发构建放在只读安装目录。清理浏览器/缓存文件前请退出应用，需要保留偏好时不要删除设置文件。视频输出和 OCR 扫描缓存继续遵循 CLI 靠近输入源/输出的原策略，不属于 UI 浏览器缓存。界面的清理缓存操作清理 `cache` 及全部 WebView 浏览数据（包括 cookies、localStorage）；不删除 `settings.json`、视频输出或 CLI 的 OCR 缓存。例如：`$env:PUBG_HIGHLIGHT_TRIM_DATA_DIR="D:\PUBG-Trim\data"`。
 
-GitHub Actions 在 Windows 检查前端和壳。标签/手动 release 仍执行完整 CLI assurance；迁移期间仅发布 CLI ZIP，不将新 GUI 声称为已完成最终包验收。
+GitHub Actions 在 Windows 检查前端和壳，独立 CLI 发布继续执行完整 assurance。双 GUI 安装包构建要求显式锁定的可信 Fixed runtime 输入，生成可审查的草稿成品及校验和，不代表已通过干净主机验收，详见[发布验证状态](docs/tauri-release-verification.md)。安装版 UI 数据固定在 `<安装目录>/data`，不接受开发用 `PUBG_HIGHLIGHT_TRIM_DATA_DIR` 重定位；升级/切换、卸载及故障排查见[安装说明](docs/windows-installers.md)。
 
 ## 许可证
 

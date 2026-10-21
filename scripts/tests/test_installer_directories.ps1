@@ -70,6 +70,18 @@ try {
     [IO.File]::Delete($child)
     $pin.Dispose(); $pin = $null
 
+    # Renaming a child opens its parent for write on Windows. Protected code
+    # roots need update pins, while writable ancestors retain strict pins.
+    $pin = [PhtDirectoryGuard]::PinForFileUpdates($directory)
+    $source = Join-Path $target 'distribution.json'
+    $placed = Join-Path $directory 'distribution.json'
+    [IO.File]::WriteAllText($source, 'new payload')
+    [IO.File]::Move($source, $placed)
+    Assert-True ([IO.File]::ReadAllText($placed) -eq 'new payload') 'Cannot place a file in an update-pinned directory.'
+    [IO.File]::Move($placed, $source)
+    Assert-Rejected { [IO.Directory]::Move($directory, ($directory + '-renamed')) } 'Update-pinned directory was renamed.'
+    $pin.Dispose(); $pin = $null
+
     # Identity assertions below deliberately require the public native Identity API.
     $pin = [PhtDirectoryGuard]::Pin($directory)
     $identity = [PhtDirectoryGuard]::Identity($pin)

@@ -3,10 +3,10 @@ name: Tauri UI checks
 on:
   workflow_call:
   pull_request:
-    paths: ["ui/**", "scripts/**", ".github/workflows/ui-checks.yml"]
+    paths: ["ui/**", "scripts/**", ".github/workflows/ui-checks.yml", ".github/workflows/release.yml"]
   push:
     branches: [main]
-    paths: ["ui/**", "scripts/**", ".github/workflows/ui-checks.yml"]
+    paths: ["ui/**", "scripts/**", ".github/workflows/ui-checks.yml", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
@@ -47,6 +47,15 @@ jobs:
           ./scripts/tests/test_installer_inputs.ps1
           ./scripts/tests/test_installer_packaging.ps1
           ./scripts/tests/test_installer_directories.ps1
+          ./scripts/tests/test_installer_compilation.ps1
+      - name: UI license and release entry fail-closed contracts (fixtures)
+        shell: powershell
+        run: |
+          $env:PATH += ';C:\Program Files\7-Zip'
+          node --test scripts/tests/collect_ui_licenses.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'UI license contracts failed.' }
+          ./scripts/tests/test_ui_license_release.ps1
+          ./scripts/tests/test_release_entry.ps1
       - name: Acceptance scope
         shell: powershell
         run: |

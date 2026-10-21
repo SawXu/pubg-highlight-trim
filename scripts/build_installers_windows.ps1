@@ -3,6 +3,8 @@ param(
     [ValidateSet('System','Fixed')][string]$Variant = 'System',
     [string]$FixedRuntimePath,
     [string]$FixedRuntimeSha256,
+    [string]$FixedRuntimeLicenseManifest,
+    [string]$FixedRuntimeLicenseManifestSha256,
     [string]$OutputDirectory,
     [switch]$SkipCliBuild,
     [switch]$SkipUiBuild,
@@ -19,6 +21,11 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location -LiteralPath $repoRoot
 try {
     if ($Variant -eq 'Fixed') {
+        if ([string]::IsNullOrWhiteSpace($FixedRuntimeLicenseManifest) -or $FixedRuntimeLicenseManifestSha256 -notmatch '^[a-fA-F0-9]{64}$') {
+            throw 'Fixed variant requires -FixedRuntimeLicenseManifest and -FixedRuntimeLicenseManifestSha256 (reviewed Microsoft terms, original notices, and distribution obligations).'
+        }
+        $FixedRuntimeLicenseManifest = (Resolve-Path -LiteralPath $FixedRuntimeLicenseManifest).Path
+        if ((Get-FileHash -LiteralPath $FixedRuntimeLicenseManifest -Algorithm SHA256).Hash -ine $FixedRuntimeLicenseManifestSha256) { throw 'Fixed license manifest SHA256 mismatch' }
         if ([string]::IsNullOrWhiteSpace($FixedRuntimePath)) { throw 'Fixed variant requires -FixedRuntimePath (a trusted, already-unpacked WebView2 Fixed runtime).' }
         $FixedRuntimePath = (Resolve-Path -LiteralPath $FixedRuntimePath).Path
         foreach ($cleanRoot in @((Join-Path $repoRoot 'build'), (Join-Path $repoRoot 'dist'))) {
@@ -77,6 +84,15 @@ try {
     if ($Variant -eq 'Fixed') {
         Copy-Item -LiteralPath $FixedRuntimePath -Destination (Join-Path $layout 'WebView2Runtime') -Recurse -Force
     }
+    # Licenses are payload, not optional build-host metadata. Collect even when
+    # reusing compiled binaries; fail before handing any layout to the engine.
+    $licenseArgs = @((Join-Path $PSScriptRoot 'collect_ui_licenses.mjs'), '--ui', (Join-Path $repoRoot 'ui'), '--bundle', $layout, '--variant', $Variant)
+    if ($Variant -eq 'Fixed') {
+        $licenseArgs += @('--runtime', (Join-Path $layout 'WebView2Runtime'), '--fixed-license-manifest', $FixedRuntimeLicenseManifest, '--fixed-license-sha256', $FixedRuntimeLicenseManifestSha256)
+    }
+    & node @licenseArgs
+    if ($LASTEXITCODE -ne 0) { throw 'UI/runtime license collection failed; installer was not published.' }
+
     $distribution = [ordered]@{ schema='pubg-highlight-trim/distribution/v1'; variant=$Variant.ToLowerInvariant(); version=$Version; minimum_webview2_major=120 }
     [IO.File]::WriteAllText((Join-Path $layout 'distribution.json'), ($distribution | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
 

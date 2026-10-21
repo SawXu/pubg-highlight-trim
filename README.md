@@ -4,7 +4,7 @@ English | [简体中文](README_zh.md)
 
 Windows-only CLI for trimming PUBG NVIDIA Highlight clips around key OCR events.
 
-The repository also provides a Tauri 2 + Vue 3 desktop UI for Windows. It launches the unchanged Rust CLI as a separate process and requires Microsoft Edge WebView2 Runtime. Issue #103 delivers a development-runnable application; installation, upgrade, uninstall and runtime distribution are follow-up work.
+The repository also provides a Tauri 2 + Vue 3 desktop UI for Windows 10/11 x64. It launches the unchanged Rust CLI as a separate process. Two installer variants support either the system WebView2 runtime or a bundled Fixed Version runtime; no WPF UI is maintained. See [installer instructions](docs/windows-installers.md) and [release verification status](docs/tauri-release-verification.md).
 
 Default behavior detects both your knocks/eliminations and enemies knocking/eliminating you, keeps 5 seconds before and 1 second after the detected event, skips events in the first 2 seconds, and keeps 10 seconds before molotov/fire-bomb eliminations.
 
@@ -16,7 +16,7 @@ No Python install required.
 2. Extract the zip to any folder.
 3. The default bundle includes `pubg-highlight-trim.exe`, bundled `ffmpeg.exe`/`ffprobe.exe`, the Rust-only OCR engine, and PP-OCRv6 ONNX models. It does **not** include PaddleOCR, PaddlePaddle, or Paddle models.
 
-For the new graphical app, use the development build instructions below. Keep the complete `cli` directory beside `pubg-highlight-trim-ui.exe`. This branch does not publish a new GUI release ZIP or installer and does not claim to bundle WebView2 or all clean-host runtime dependencies. Older release GUI archives describe the implementation at their tag, not this migration.
+For the graphical app, use the explicitly named `pubg-highlight-trim-<version>-windows-x64-system-setup.exe` or `pubg-highlight-trim-<version>-windows-x64-fixed-setup.exe` installer when available, and verify its SHA-256 against the accompanying checksum file. **Choose Fixed if the machine's runtime availability is uncertain or offline installation is required.** System requires an existing compatible shared WebView2 (120+); it does not download or install one. Fixed uses only its bundled runtime and refuses to fall back to System if files are missing. Both variants share one installation and settings; they cannot be installed side by side. Choose the location in the elevated installer, then launch normally from the Start menu, not as administrator. Unsigned builds can show Unknown Publisher/SmartScreen warnings; do not disable security software. GUI builds remain draft/unverified until the evidence described in the release verification status is collected; an old release archive is not evidence for the new UI. Independent CLI ZIP distribution is unchanged.
 
 Run it from the extracted folder:
 
@@ -240,7 +240,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_ui_windows.ps1 -SkipCliBu
 .\dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe
 ```
 
-The UI script restores locked npm dependencies and uses Tauri's `build --no-bundle`; `-Configuration Debug` selects a debug build. Without `-SkipCliBuild` it first builds the CLI. The CLI build cleans `build` / `dist`, so run it before the UI layout step. The UI build copies the complete CLI bundle to `dist\pubg-highlight-trim-ui\cli`. Do not move only the executable. This is a development layout, **not** a self-contained runtime package, installer or release ZIP. WebView2 and applicable native runtime prerequisites must already be available. Installation/upgrade/uninstall and runtime provenance/ACL/clean-host acceptance belong to the follow-up distribution issue.
+The UI script restores locked npm dependencies and uses Tauri's `build --no-bundle`; `-Configuration Debug` selects a debug build. Without `-SkipCliBuild` it first builds the CLI. The CLI build cleans `build` / `dist`, so run it before the UI layout step. The UI build copies the complete CLI bundle to `dist\pubg-highlight-trim-ui\cli`. Do not move only the executable. This is a development layout, **not** a self-contained runtime package, installer or release ZIP. WebView2 and applicable native runtime prerequisites must already be available. Use the separate [installer build entry point](docs/windows-installers.md) for installation/upgrade/uninstall. Clean-host runtime and lifecycle acceptance must be recorded separately from this development build.
 
 For hot-reload development, first run `build_ui_windows.ps1 -SkipCliBuild` to prepare the trusted side-by-side layout, then:
 
@@ -256,7 +256,7 @@ Model download/hash/dictionary verification, inference smoke, manifest, archive 
 
 By default the UI uses `data` beside the running executable (for the packaged development layout: `dist\pubg-highlight-trim-ui\data`). Set `PUBG_HIGHLIGHT_TRIM_DATA_DIR` to an **absolute** writable path before launch to override it, including a dedicated directory under the installation folder. It contains `settings.json`, bounded `run.log` (1 MiB / 2,000 lines), `webview` browser user data and disposable `cache`, separate from video output. This location must be writable; failure must be reported rather than silently falling back to AppData. Do not place an unconfigured development build under a read-only installation directory. Stop the app before removing browser/cache files; retain settings if you want to preserve preferences. Video output and OCR scan caches continue to follow the CLI's existing near-input/output strategy, not the UI browser cache. The UI's cache-clear action clears `cache` and all WebView browsing data, including cookies and localStorage; it does not clear `settings.json`, video outputs or the CLI's OCR cache. For example: `$env:PUBG_HIGHLIGHT_TRIM_DATA_DIR="D:\PUBG-Trim\data"`.
 
-GitHub Actions checks the frontend and shell on Windows. Tagged/manual release builds retain the complete CLI assurance and publish the CLI ZIP only during this migration; the new GUI is not advertised as final-package accepted.
+GitHub Actions checks the frontend and shell on Windows. The independent CLI release retains its complete assurance suite. Dual GUI installer builds require explicitly pinned, trusted Fixed runtime inputs and produce reviewable draft artifacts with checksums, not a claim of completed clean-host acceptance. See [release verification status](docs/tauri-release-verification.md). Installed UI data stays in `<installation>/data`; the development-only `PUBG_HIGHLIGHT_TRIM_DATA_DIR` override does not relocate installed data. See [installation, switching, uninstall and troubleshooting](docs/windows-installers.md).
 
 ## License
 
