@@ -35,6 +35,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Release CLI build/assurance failed.' }
     & powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\build_ui_windows.ps1" -SkipCliBuild
     if ($LASTEXITCODE -ne 0) { throw 'Release UI build failed.' }
+    # License collection runs cargo metadata --locked --offline; warm the
+    # registry cache first so a cold cache cannot fail the release build.
+    & cargo fetch --locked --manifest-path 'ui\src-tauri\Cargo.toml'
+    if ($LASTEXITCODE -ne 0) { throw 'UI cargo fetch failed; offline license collection cannot proceed.' }
     $output = Join-Path $repoRoot 'dist\release'
     New-Item -ItemType Directory -Path $output -Force | Out-Null
     $variants = if ($SystemOnly) { @('System') } else { @('System','Fixed') }
