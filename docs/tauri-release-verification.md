@@ -4,7 +4,7 @@
 
 用户已确认发布入口→成品、真实安装器→Windows、UI/Rust 壳→CLI 三个测试边界；并明确没有 Windows 10/11 disposable VM、可信 Fixed runtime 或固定视频样本，本次不要求完成原票的完整 VM 验收矩阵，只要求支持系统与随包 WebView2。不能因此声称干净主机、离线渲染或完整安装生命周期已经通过。
 
-独立 Rust CLI 的算法、参数和发布保障保留，不恢复 WPF UI，也不新增 GUI ZIP。GUI 双安装器必须使用相同的一次 UI/CLI 构建，并显式提供锁定的可信 Fixed runtime。没有可信输入时只构建既有 CLI，不自动下载最新 runtime 或拿宿主共享 runtime 冒充 Fixed。
+独立 Rust CLI 的算法、参数和发布保障保留，不恢复 WPF UI，也不新增 GUI ZIP。GUI 双安装器必须使用相同的一次 UI/CLI 构建，并显式提供锁定的可信 Fixed runtime。没有可信输入时只发布既有 CLI 和共享 WebView2 的 System 安装器（`release_windows.ps1 -SystemOnly`），不自动下载最新 runtime 或拿宿主共享 runtime 冒充 Fixed。
 
 ## 维护者构建入口
 
@@ -29,7 +29,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release_windows.ps1 
 
 `files` 必须完整列出所有 ZIP 文件及其 SHA-256，上例仅示意单条。维护者从 Microsoft 官方 Fixed Version 分发取得完整 x64 runtime，审核适用再分发条款、第三方声明及安全维护版本后准备输入；记录来源和版本，不从其他机器随意复制。构建入口验证锁文件摘要、压缩包摘要、文件集合和每文件摘要。许可证收集还要求安装包附带运行时相关条款；缺失即拒绝构建。上例中的完整文件列表必须同时覆盖 runtime 文件、`fixed-runtime-license.json` 和所有条款文件；编排从已验证树计算许可证清单摘要传给构建器，不需要另设未受锁保护的输入。许可证清单的完整格式和 CLI 参数见 [collect_ui_licenses.md](../scripts/collect_ui_licenses.md)。
 
-CI 的手动 release 支持可信输入下载及锁摘要，具体参数见 `.github/workflows/release.yml` 的 `workflow_dispatch.inputs`。GUI 产物仍为未验收候选，仅上传 workflow artifacts，不由成功构建自动晋升正式发行；既有标签触发的独立 CLI release 不变。
+CI 的手动 release 支持可信输入下载及锁摘要，具体参数见 `.github/workflows/release.yml` 的 `workflow_dispatch.inputs`。Fixed 安装器产物仍为未验收候选，仅上传 workflow artifacts，不由成功构建自动晋升正式发行。标签触发的 release 发布独立 CLI 与 System 安装器（共享 WebView2，证据仍标 NOT_ACCEPTED，静态校验不等于安装验收）。
 
 产物包括带版本与 `windows-x64-system` / `windows-x64-fixed` 的 EXE、CLI ZIP、SHA-256 校验文件和机器可读证据（GUI 候选 NOT_ACCEPTED）。安装器内部文件需从真实 EXE 提取后与 staging 的 hash 对照；这是**成品完整性校验，不是安装运行验收**。UI/前端/Tauri 许可证和完整 payload manifest 必须随包。
 
