@@ -21,6 +21,11 @@ const logs = ref<string[]>([]);
 const showLogs = ref(false);
 const appVersion = __APP_VERSION__;
 const busy = ref(false);
+const starting = ref(false);
+const awaitingRunId = ref<number>();
+const startControl = ref<HTMLButtonElement>();
+const stopPending = ref(false);
+const stopRequest = ref(false);
 const settings = ref(false);
 const inputText = ref("");
 const now = ref(Date.now());
@@ -38,7 +43,20 @@ const elapsed = computed(() => {
     .toString()
     .padStart(2, "0")}`;
 });
-const locked = computed(() => busy.value || !!state.value?.running);
+const locked = computed(() => busy.value || awaitingRunId.value !== undefined || stopPending.value || !!state.value?.running);
+const startReason = computed(() => {
+  if (starting.value || awaitingRunId.value !== undefined) return confirmation.value ? "等待启动确认…" : "正在校验并准备启动…";
+  if (stopPending.value || state.value?.cancelling) return "正在停止并清理任务，等待后端确认…";
+  if (state.value?.outcome === "cleanup-failed") return "进程清理失败；请重试停止，清理完成前不能开始新任务。";
+  if (state.value?.running) return "任务运行中，配置已锁定。";
+  if (!bootstrap.value?.cliReady) return "CLI 未就绪，无法开始处理。";
+  if (!state.value) return "正在读取任务状态…";
+  if (validationError.value) return validationError.value;
+  if (!preview.value) return "正在校验输入与处理选项…";
+  return "配置校验通过，可以开始处理。";
+});
+const canStart = computed(() => !locked.value && !!state.value && !!bootstrap.value?.cliReady && !!preview.value);
+const canStop = computed(() => !!state.value?.running && !stopRequest.value && !stopPending.value && !state.value?.cancelling);
 // Presentation of the existing four target combinations; Rust still owns CLI mapping.
 const targetMode = computed({
   get: () => {
@@ -69,14 +87,14 @@ const phases: Record<string, string> = {
   merge: "合并输出",
 };
 const title = computed(() =>
-  state.value?.outcome === "cleanup-failed"
-    ? "进程清理失败，请重试停止任务"
-    : state.value?.error
-      ? "任务异常，请查看错误信息"
-      : state.value?.cancelling
-        ? "正在停止并清理任务…"
+  starting.value || awaitingRunId.value !== undefined
+    ? "正在准备启动"
+    : stopPending.value || state.value?.cancelling
+      ? "正在停止并清理任务…"
+      : state.value?.outcome === "cleanup-failed"
+        ? "进程清理失败，请重试停止任务"
         : state.value?.running
-          ? "正在处理精彩时刻"
+          ? (phases[state.value.activePhase ?? ""] ?? state.value.activePhase ?? "正在准备处理")
           : (outcomes[state.value?.outcome ?? ""] ?? "准备处理"),
 );
 const active = computed(() =>
@@ -134,6 +152,10 @@ async function refresh() {
       }
       now.value = Date.now();
       state.value = next;
+      if (awaitingRunId.value !== undefined && next.runId >= awaitingRunId.value)
+        awaitingRunId.value = undefined;
+      // Only authoritative terminal status (or cleanup failure) releases the request latch.
+      if (!next.running || next.outcome === "cleanup-failed") stopPending.value = false;
       logs.value = lines;
     }
   } finally {
@@ -163,15 +185,40 @@ function editInput() {
       .filter(Boolean);
 }
 async function start() {
-  if (!options.value || locked.value) return;
+  if (!options.value || !canStart.value) return;
   busy.value = true;
+  starting.value = true;
+  let declined = false;
   await action(async () => {
-    await api.start(options.value!, async (message) =>
+    const runId = await api.start(options.value!, async (message) =>
       confirmAction(`${message}\n\n确认开始处理？`),
     );
+    declined = runId === null;
+    if (runId !== null) awaitingRunId.value = runId;
     await refresh();
   });
+  starting.value = false;
   busy.value = false;
+  if (declined) {
+    // Native dialog restoration cannot focus a still-disabled start button.
+    await nextTick();
+    startControl.value?.focus();
+  }
+}
+async function stop() {
+  if (!canStop.value) return;
+  stopRequest.value = true;
+  stopPending.value = true;
+  await action(async () => {
+    try {
+      await api.cancel();
+    } finally {
+      // Even a rejected cleanup must refresh status so retry is available only
+      // after the backend confirms cleanup-failed. A lost status keeps us locked.
+      await refresh();
+    }
+  });
+  stopRequest.value = false;
 }
 async function reset() {
   if (
@@ -276,6 +323,25 @@ onUnmounted(() => {
     <button @click="error = ''">关闭提示</button>
   </div>
   <main v-if="options && bootstrap" class="workspace">
+    <section class="task-controls" aria-label="任务控制">
+      <div class="task-status">
+        <h2 role="status" aria-atomic="true">{{ title }}</h2>
+        <p id="start-reason">{{ startReason }}</p>
+        <p v-if="state?.running && !state.cancelling && !stopPending" class="task-progress">
+          {{ active && active.total > 0 ? `${active.current} / ${active.total}` : "进度未知" }}
+        </p>
+      </div>
+      <div class="run-actions">
+        <!-- Keep the confirmation return target focusable while locked. start()
+             guards aria-disabled activation, including repeated keyboard input. -->
+        <button ref="startControl" class="primary" :aria-disabled="!canStart" aria-describedby="start-reason" @click="start">开始处理</button>
+        <!-- Keep focus on stop while backend cleanup is pending; stop() guards activation. -->
+        <button :aria-disabled="!canStop" @click="stop">{{ state?.outcome === "cleanup-failed" && !stopPending ? "重试停止" : "停止任务" }}</button>
+      </div>
+      <progress v-if="state?.running && !state.cancelling && !stopPending && active && active.total > 0" :value="active.current" :max="active.total" :aria-label="title"></progress>
+      <progress v-else-if="starting || awaitingRunId !== undefined || stopPending || state?.running" :aria-label="title"></progress>
+    </section>
+    <div class="workspace-content">
     <aside>
       <fieldset :disabled="locked">
         <h2>输入与输出</h2>
@@ -430,30 +496,11 @@ onUnmounted(() => {
       <p v-if="validationError" class="validation" role="status">
         {{ validationError }}
       </p>
-      <div class="run-actions">
-        <button
-          class="primary"
-          :disabled="locked || !bootstrap.cliReady || !preview"
-          @click="start"
-        >
-          {{ busy ? "请稍候…" : "开始处理" }}</button
-        ><button
-          :disabled="!state?.running || state.cancelling"
-          @click="
-            action(async () => {
-              await api.cancel();
-              await refresh();
-            })
-          "
-        >
-          停止任务
-        </button>
-      </div>
     </aside>
     <section class="results">
       <div class="result-heading">
         <div>
-          <h2>{{ title }}</h2>
+          <h2>任务结果</h2>
           <p>
             {{
               state?.running
@@ -473,7 +520,7 @@ onUnmounted(() => {
         <div>
           <span>当前进度</span
           ><strong>{{
-            active ? `${active.current} / ${active.total}` : "—"
+            active && active.total > 0 ? `${active.current} / ${active.total}` : "—"
           }}</strong>
         </div>
         <div>
@@ -559,6 +606,7 @@ onUnmounted(() => {
         </p>
       </div>
     </section>
+    </div>
   </main>
   <section v-else class="loading">
     <h2>正在连接 Rust 工作台…</h2>

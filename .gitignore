@@ -13,6 +13,8 @@ venv/
 build/
 dist/
 ui/node_modules/
+ui/test-results/
+ui/playwright-report/
 ui/dist/
 ui/src-tauri/target/
 ui/src-tauri/gen/
