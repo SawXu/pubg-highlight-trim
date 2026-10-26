@@ -20,6 +20,32 @@ The new Vue/Tauri UI has its own npm and Rust dependency closures, separate from
 
 System uses an already installed Microsoft Edge WebView2 Runtime and does not bundle it. Fixed redistributes a separately supplied Microsoft WebView2 runtime: MIT licenses on the Rust WebView2 bindings **do not** grant rights to that runtime. Fixed builds require a hash-trusted reviewed license manifest, original license/third-party notices with hashes, exact runtime file inventory, authoritative Microsoft source links and reviewed redistribution obligations. No generic Microsoft license or invented text is included as a substitute. Without trustworthy runtime-specific evidence the build fails closed. The manifest/schema and verification limits are documented in `scripts/collect_ui_licenses.md`. Neither passing the collector nor fixture tests is legal approval or a claim of real Fixed/VM acceptance.
 
+## Application icon artwork (Lucide)
+
+The application icon (`ui/public/icon.svg` and its PNG/ICO exports) adapts Lucide's `clapperboard` and `sparkle` icons, with a geometric play symbol. Changes: combined composition, scaling, stroke weights, colors, and rounded gradient background. No PUBG/KRAFTON artwork is included; no official endorsement is implied.
+
+Source: https://github.com/lucide-icons/lucide/tree/1802f33f6c270395fcd981067f22719140e2ffbc/icons
+
+Upstream license: https://github.com/lucide-icons/lucide/blob/1802f33f6c270395fcd981067f22719140e2ffbc/LICENSE
+
+`clapperboard` and `sparkle` are covered by ISC. These notices cover the artwork embedded in the application, favicon, installer, and uninstaller. This file is included in both UI development layouts and installer payloads.
+
+### ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 ## Source links
 
 - Project source: this repository.

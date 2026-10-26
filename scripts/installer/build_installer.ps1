@@ -32,6 +32,8 @@ BrandingText "PUBG Highlight Trim"
 ShowInstDetails nevershow
 ShowUninstDetails nevershow
 
+!define MUI_ICON "__ICON__"
+!define MUI_UNICON "__ICON__"
 !define MUI_ABORTWARNING
 !define MUI_UNABORTWARNING
 !define MUI_WELCOMEFINISHPAGE_BITMAP "__WIZARD__"
@@ -112,6 +114,6 @@ SectionEnd
 '@
 $variantLabel='系统 WebView2 版';$variantDescription='使用本机已有的 WebView2（120+）。不会下载或补装运行时；如果环境不确定，请选择内置版。'
 if($Variant -eq 'Fixed'){$variantLabel='内置 WebView2 版';$variantDescription='随包提供 WebView2，无需另装共享运行时。内置运行时缺失时不会回退系统版本。'}
-$template.Replace('__VARIANT_LABEL__',$variantLabel).Replace('__VARIANT_DESCRIPTION__',$variantDescription).Replace('__WIZARD__',(Escape-NsisString (Join-Path $PSScriptRoot 'wizard.bmp'))).Replace('__OUT__',(Escape-NsisString $exe)).Replace('__LAYOUT__',(Escape-NsisString $Layout)).Replace('__ENGINE__',(Escape-NsisString $engine)).Replace('__GUARD__',(Escape-NsisString $guard)).Replace('__DESKTOP_PROBE__',(Escape-NsisString $desktopProbe))|Set-Content -LiteralPath $nsis -Encoding UTF8
+$template.Replace('__VARIANT_LABEL__',$variantLabel).Replace('__VARIANT_DESCRIPTION__',$variantDescription).Replace('__ICON__',(Escape-NsisString (Join-Path $PSScriptRoot '../../ui/src-tauri/icons/icon.ico'))).Replace('__WIZARD__',(Escape-NsisString (Join-Path $PSScriptRoot 'wizard.bmp'))).Replace('__OUT__',(Escape-NsisString $exe)).Replace('__LAYOUT__',(Escape-NsisString $Layout)).Replace('__ENGINE__',(Escape-NsisString $engine)).Replace('__GUARD__',(Escape-NsisString $guard)).Replace('__DESKTOP_PROBE__',(Escape-NsisString $desktopProbe))|Set-Content -LiteralPath $nsis -Encoding UTF8
 try{& $MakeNsis $nsis;if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $exe)){throw 'NSIS build failed.'}}finally{Remove-Item -LiteralPath $nsis -Force -ErrorAction SilentlyContinue}
 Write-Host "Built $exe"

@@ -16,3 +16,4 @@ csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; 
 
 [bundle]
 active = false
+icon = ["icons/icon.png", "icons/icon.ico"]
