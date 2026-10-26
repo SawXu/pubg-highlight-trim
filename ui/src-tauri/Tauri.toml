@@ -1,5 +1,5 @@
 productName = "PUBG Highlight Trim"
-version = "0.1.0"
+version = "0.4.0"
 identifier = "com.pubg-highlight-trim.desktop"
 
 [build]

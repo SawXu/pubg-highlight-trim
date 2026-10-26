@@ -19,6 +19,7 @@ const warnings = ref<string[]>([]);
 const validationError = ref("");
 const logs = ref<string[]>([]);
 const showLogs = ref(false);
+const appVersion = __APP_VERSION__;
 const busy = ref(false);
 const settings = ref(false);
 const inputText = ref("");
@@ -608,6 +609,7 @@ onUnmounted(() => {
     </div>
   </dialog>
   <footer>
-    Vue 3 · Tauri 2 <span>CLI black-box mode · OCR provider auto</span>
+    v{{ appVersion }} · Vue 3 · Tauri 2
+    <span>CLI black-box mode · OCR provider auto</span>
   </footer>
 </template>
