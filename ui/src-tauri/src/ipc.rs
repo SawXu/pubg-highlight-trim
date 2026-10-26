@@ -196,6 +196,7 @@ pub fn run() {
             )
             .title("PUBG Highlight Trim")
             .inner_size(1180., 840.)
+            .zoom_hotkeys_enabled(true)
             .data_directory(storage.root.join("webview"))
             .additional_browser_args("--disk-cache-size=67108864 --media-cache-size=33554432")
             .build()?;

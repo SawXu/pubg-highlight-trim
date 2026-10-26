@@ -35,6 +35,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Frontend typecheck failed" }
           npm --prefix ui run build
           if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
+      - name: Task control browser interactions and responsive layout
+        shell: powershell
+        run: |
+          npm --prefix ui exec -- playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw "Chromium installation failed" }
+          npm --prefix ui run test:e2e
+          if ($LASTEXITCODE -ne 0) { throw "Task control browser checks failed" }
       - name: Tauri Rust check
         shell: powershell
         run: cargo check --locked --manifest-path ui/src-tauri/Cargo.toml
