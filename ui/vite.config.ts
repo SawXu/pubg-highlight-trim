@@ -1,8 +1,13 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
+import pkg from "./package.json" with { type: "json" };
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    // ui/package.json is the single version source (installers read it too).
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   clearScreen: false,
   server: {
     port: 1420,
