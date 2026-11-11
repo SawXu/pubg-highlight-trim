@@ -1,6 +1,5 @@
 param(
     [switch]$SkipInstall,
-    [switch]$WithRustOcr,
     [string]$ModelDirectory,
     [string]$ReleaseDirectory
 )
@@ -10,7 +9,6 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location -LiteralPath $repoRoot
 
 if ($SkipInstall) { Write-Warning "-SkipInstall is retained for compatibility; this build has no package-install step." }
-if ($WithRustOcr) { Write-Warning "-WithRustOcr is deprecated: the Rust application is always built." }
 
 function Require-Command([string]$Name) {
     if ($null -eq (Get-Command $Name -ErrorAction SilentlyContinue)) {
