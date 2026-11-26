@@ -253,6 +253,12 @@ fn safe_token(token: &str) -> Option<String> {
     .then(|| token.to_owned())
 }
 
+#[derive(Default)]
+struct SourceVideoFormat {
+    hdr_or_10_bit: bool,
+    color_options: Vec<String>,
+}
+
 const NVENC_OPTIONS: &[&str] = &["-preset", "p4", "-rc", "vbr", "-cq", "22", "-b:v", "0"];
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -283,7 +289,7 @@ impl TrimEncoder {
     }
     #[cfg(feature = "onnx")]
     pub(crate) fn record_parallel_codec(&mut self, codec: &str) {
-        if self.diagnostics.capability == "available" && codec == "libx264" {
+        if self.diagnostics.capability == "available" && matches!(codec, "libx264" | "libx265") {
             self.diagnostics.production_fallbacks += 1;
             self.diagnostics.fallback_reason = Some("production_nvenc_failed");
         }
@@ -321,7 +327,14 @@ impl TrimEncoder {
                     "h264_nvenc",
                 ])
                 .args(NVENC_OPTIONS)
-                .args(["-movflags", "+faststart"])
+                .args([
+                    "-profile:v",
+                    "high",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-movflags",
+                    "+faststart",
+                ])
                 .arg(staging.temporary()),
             Duration::from_secs(15),
             self.tools.verbose,
@@ -350,7 +363,7 @@ impl TrimEncoder {
         let codec = self
             .tools
             .trim_clip_with_encoder(src, out, start, length, nvenc)?;
-        if nvenc && codec == "libx264" {
+        if nvenc && matches!(codec, "libx264" | "libx265") {
             self.diagnostics.production_fallbacks += 1;
             self.diagnostics.fallback_reason = Some("production_nvenc_failed");
         }
@@ -495,6 +508,45 @@ impl FfmpegTools {
             duration: self.duration_with_timeout(path, timeout)?,
         })
     }
+    /// Probe the selected video stream before choosing a compatible output format.
+    fn source_video_format(&self, path: &Path) -> Result<SourceVideoFormat, MediaError> {
+        let output = probe_output(
+            Command::new(&self.ffprobe)
+                .args([
+                    "-v", "error", "-select_streams", "v:0", "-show_entries",
+                    "stream=pix_fmt,bits_per_raw_sample,color_primaries,color_transfer,color_space,color_range",
+                    "-of", "default=noprint_wrappers=1",
+                ])
+                .arg(path),
+            Duration::from_secs(60),
+            self.verbose,
+        )?;
+        let mut format = SourceVideoFormat::default();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            format.hdr_or_10_bit |= match key {
+                "pix_fmt" => value.contains("10"),
+                "bits_per_raw_sample" => value.parse::<u32>().ok() == Some(10),
+                "color_transfer" => matches!(value, "smpte2084" | "arib-std-b67"),
+                _ => false,
+            };
+            let flag = match key {
+                "color_primaries" => "-color_primaries",
+                "color_transfer" => "-color_trc",
+                "color_space" => "-colorspace",
+                "color_range" => "-color_range",
+                _ => continue,
+            };
+            if !matches!(value, "unknown" | "unspecified" | "N/A") {
+                if let Some(value) = safe_token(value) {
+                    format.color_options.extend([flag.to_owned(), value]);
+                }
+            }
+        }
+        Ok(format)
+    }
     /// Only the caller's event window is encoded, never a full-length copy.
     pub fn trim_clip(
         &self,
@@ -518,12 +570,32 @@ impl FfmpegTools {
         }
         ensure_distinct(src, out)?;
         create_parent(out)?;
-        for (codec, options) in [
-            ("h264_nvenc", NVENC_OPTIONS.to_vec()),
-            ("libx264", vec!["-preset", "veryfast", "-crf", "20"]),
-        ] {
-            if codec == "h264_nvenc" && !nvenc {
+        let format = self.source_video_format(src)?;
+        let codecs = if format.hdr_or_10_bit {
+            ["hevc_nvenc", "libx265"]
+        } else {
+            ["h264_nvenc", "libx264"]
+        };
+        for (hardware, codec) in [(true, codecs[0]), (false, codecs[1])] {
+            if hardware && !nvenc {
                 continue;
+            }
+            let mut options = if hardware {
+                NVENC_OPTIONS.to_vec()
+            } else {
+                vec!["-preset", "veryfast", "-crf", "20"]
+            };
+            if format.hdr_or_10_bit {
+                options.extend([
+                    "-profile:v",
+                    "main10",
+                    "-pix_fmt",
+                    if hardware { "p010le" } else { "yuv420p10le" },
+                    "-tag:v",
+                    "hvc1",
+                ]);
+            } else {
+                options.extend(["-profile:v", "high", "-pix_fmt", "yuv420p"]);
             }
             let result = checked(
                 Command::new(&self.ffmpeg)
@@ -548,6 +620,7 @@ impl FfmpegTools {
                         codec,
                     ])
                     .args(options)
+                    .args(&format.color_options)
                     .args(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"])
                     .arg(out),
                 Duration::from_secs(3600),
@@ -559,7 +632,7 @@ impl FfmpegTools {
                 // Python's encoder fallback also covered GPU/native startup failures.
                 // A shared runtime failure is still returned by the software attempt.
                 Err(error) if task_stopped() => return Err(error),
-                Err(_) if codec == "h264_nvenc" => continue,
+                Err(_) if hardware => continue,
                 Err(error) => return Err(error),
             }
         }
@@ -608,6 +681,7 @@ impl FfmpegTools {
                     "-i",
                 ])
                 .arg(&list_path)
+                // Stream copy preserves HEVC's hvc1 tag and color metadata, as well as SDR.
                 .args(["-c", "copy", "-movflags", "+faststart"])
                 .arg(final_path),
             Duration::from_secs(3600),
