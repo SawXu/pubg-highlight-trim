@@ -344,6 +344,10 @@ impl UiSession {
     pub fn logs(&self) -> Result<Vec<String>, String> {
         self.shell.logs()
     }
+
+    pub fn clear_logs(&self) -> Result<(), String> {
+        self.shell.clear_logs()
+    }
 }
 
 #[cfg(test)]

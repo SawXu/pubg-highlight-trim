@@ -2,20 +2,19 @@
 
 #[cfg(windows)]
 mod windows_app {
-    use highlight_core::RunOptions;
+    use highlight_core::{ui_session::UiSession, RunOptions};
     use native_ui::{
-        close_action, close_decision, open_session, validate, CloseAction, CloseDecision,
-        NativeController,
+        close_action, close_decision, open_session, CloseAction, CloseDecision, NativeController,
+        SessionView, StartPrompt, TargetMode,
     };
-    use nsh_base::button;
-    use nsh_core::{element::desktop as window, prelude::*, Color};
+    use nsh_base::{button, checkbox};
+    use nsh_core::{
+        element::{desktop as window, input},
+        prelude::*,
+        Color,
+    };
     use nsh_platform_windows::{run_app, AppOptions, AppSource, Root};
-    use std::{
-        cell::RefCell,
-        rc::Rc,
-        sync::{Arc, Mutex, OnceLock},
-        time::Duration,
-    };
+    use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::OnceLock, time::Duration};
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum ThemeMode {
@@ -71,14 +70,12 @@ mod windows_app {
                 Self::Dark => Self::Light,
             }
         }
-
         fn toggle_label(self) -> &'static str {
             match self {
                 Self::Light => "深色主题",
                 Self::Dark => "浅色主题",
             }
         }
-
         fn palette(self) -> ThemePalette {
             match self {
                 Self::Light => ThemePalette {
@@ -163,840 +160,1025 @@ mod windows_app {
         }
     }
 
-    static SESSION: OnceLock<highlight_core::ui_session::UiSession> = OnceLock::new();
-    fn session() -> &'static highlight_core::ui_session::UiSession {
+    static SESSION: OnceLock<UiSession> = OnceLock::new();
+    fn session() -> &'static UiSession {
         SESSION.get().expect("native session is initialized")
     }
 
-    fn close_label(status: &highlight_core::ui_session::CloseStatus) -> &'static str {
-        match status {
-            highlight_core::ui_session::CloseStatus::NotRequested => "待命",
-            highlight_core::ui_session::CloseStatus::Waiting { .. } => "等待确认",
-            highlight_core::ui_session::CloseStatus::Completed => "已完成",
-            highlight_core::ui_session::CloseStatus::Failed(_) => "清理失败",
+    /// Reactive presentation only. Running/cancellation always come from UiSession.
+    #[derive(Clone)]
+    struct Presentation {
+        controller: Rc<RefCell<NativeController>>,
+        options: Signal<RunOptions>,
+        seconds: Signal<Vec<String>>,
+        view: Signal<SessionView>,
+        preview: Signal<String>,
+        validation: Signal<String>,
+        pending_confirmation: Signal<Vec<String>>,
+        message: Signal<String>,
+    }
+
+    fn seconds_text(o: &RunOptions) -> Vec<String> {
+        [
+            o.seconds_before,
+            o.seconds_after,
+            o.minimum_event_seconds,
+            o.molotov_seconds_before,
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+    }
+
+    impl Presentation {
+        fn sync_view(&self) {
+            let next = self.controller.borrow().snapshot(session());
+            // Do not invalidate selectable log text when a poll changes nothing.
+            if self.view.get_untracked() != next {
+                self.view.set(next);
+            }
         }
+        fn sync_options(&self) {
+            let c = self.controller.borrow();
+            self.options.set(c.options.clone());
+            match c.command_preview() {
+                Ok(preview) => {
+                    self.preview.set(preview);
+                    self.validation.set(String::new());
+                }
+                Err(error) => {
+                    self.preview.set(format!("参数错误：{error}"));
+                    self.validation.set(error);
+                }
+            }
+            self.pending_confirmation.set(if c.confirmation {
+                c.warnings()
+            } else {
+                Vec::new()
+            });
+        }
+        fn edit(&self, update: impl FnOnce(&mut RunOptions)) {
+            if self.controller.borrow().snapshot(session()).running {
+                return;
+            }
+            {
+                let mut c = self.controller.borrow_mut();
+                update(&mut c.options);
+                c.cancel_confirmation();
+            }
+            self.sync_options();
+        }
+        fn result(&self, result: Result<(), String>, success: &str) {
+            self.message
+                .set(result.map(|_| success.to_string()).unwrap_or_else(|e| e));
+            self.sync_view();
+        }
+        fn start(&self, confirmed: bool) {
+            let result = {
+                let mut c = self.controller.borrow_mut();
+                if c.snapshot(session()).running {
+                    return;
+                }
+                if confirmed {
+                    c.start(session(), true).map(|_| ())
+                } else {
+                    match c.prepare_start(session()) {
+                        Ok(StartPrompt::Ready) => c.start(session(), false).map(|_| ()),
+                        Ok(StartPrompt::ConfirmationRequired(_)) => Ok(()),
+                        Err(e) => Err(e),
+                    }
+                }
+            };
+            self.sync_options();
+            self.result(result, "");
+        }
+    }
+
+    fn secondary(t: ThemePalette, label: &str) -> nsh_base::ButtonElement {
+        button()
+            .px_3()
+            .py_2()
+            .rounded_md()
+            .bg(t.btn_sec_bg)
+            .border_1()
+            .border_color(t.border_input)
+            .text_size(px(12.0))
+            .text_color(t.text_secondary)
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .hover(move |s| s.bg(t.btn_sec_hover).border_color(t.btn_sec_border_hover))
+            .disabled_style(|s| s.opacity(0.45))
+            .child(text(label.to_string()))
+    }
+
+    fn heading(t: ThemePalette, label: &str) -> impl IntoElement {
+        text(label.to_string())
+            .text_size(px(15.0))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(t.text_primary)
+    }
+
+    fn field(
+        p: Presentation,
+        t: ThemePalette,
+        placeholder: &str,
+        multiline: bool,
+        read: impl Fn(&RunOptions) -> String + 'static,
+        write: impl Fn(&mut RunOptions, &str) + 'static,
+    ) -> impl IntoElement {
+        let options = p.options.clone();
+        let state = p.view.clone();
+        input()
+            .value(move || read(&options.get()))
+            .placeholder(placeholder.to_string())
+            .multiline(multiline)
+            .h(px(if multiline { 84.0 } else { 36.0 }))
+            .readonly(move || state.get().running)
+            .bg(t.surface_subtle)
+            .border_1()
+            .border_color(t.border_input)
+            .rounded_md()
+            .px_3()
+            .py_2()
+            .text_size(px(13.0))
+            .text_color(t.text_primary)
+            .on_change(move |value: &str| p.edit(|o| write(o, value)))
+    }
+
+    fn seconds_field(
+        p: Presentation,
+        t: ThemePalette,
+        index: usize,
+        label: &str,
+    ) -> impl IntoElement {
+        let values = p.seconds.clone();
+        let state = p.view.clone();
+        view()
+            .flex_1()
+            .flex_col()
+            .gap_2()
+            .child(
+                text(label.to_string())
+                    .text_size(px(12.0))
+                    .text_color(t.text_muted),
+            )
+            .child(
+                input()
+                    .value(move || values.get()[index].clone())
+                    .readonly(move || state.get().running)
+                    .h(px(36.0))
+                    .px_3()
+                    .py_2()
+                    .bg(t.surface_subtle)
+                    .border_1()
+                    .border_color(t.border_input)
+                    .rounded_md()
+                    .text_size(px(13.0))
+                    .text_color(t.text_primary)
+                    .on_change(move |value: &str| {
+                        if p.view.get_untracked().running {
+                            return;
+                        }
+                        let mut values = p.seconds.get_untracked();
+                        values[index] = value.into();
+                        p.seconds.set(values);
+                        // Keep invalid text editable, but never silently run an old valid value.
+                        let number = value.trim().parse().unwrap_or(f64::NAN);
+                        p.edit(|o| match index {
+                            0 => o.seconds_before = number,
+                            1 => o.seconds_after = number,
+                            2 => o.minimum_event_seconds = number,
+                            _ => o.molotov_seconds_before = number,
+                        });
+                    }),
+            )
+    }
+
+    fn segments(
+        p: Presentation,
+        t: ThemePalette,
+        label: &str,
+        choices: &'static [highlight_core::options::Choice],
+        read: fn(&RunOptions) -> &str,
+        write: fn(&mut RunOptions, String),
+    ) -> impl IntoElement {
+        let mut row = view().flex_row().gap_1();
+        for choice in choices {
+            let selected = p.options.clone();
+            let state = p.view.clone();
+            let edit = p.clone();
+            row = row.child(
+                secondary(t, choice.label)
+                    .flex_1()
+                    .disabled(move || state.get().running)
+                    .bg(move || {
+                        if read(&selected.get()) == choice.value {
+                            t.status_pill_bg
+                        } else {
+                            t.btn_sec_bg
+                        }
+                    })
+                    .border_color({
+                        let options = p.options.clone();
+                        move || {
+                            if read(&options.get()) == choice.value {
+                                t.accent_text
+                            } else {
+                                t.border_input
+                            }
+                        }
+                    })
+                    .on_press(move || edit.edit(|o| write(o, choice.value.into()))),
+            );
+        }
+        view()
+            .flex_col()
+            .gap_2()
+            .child(
+                text(label.to_string())
+                    .text_size(px(12.0))
+                    .text_color(t.text_muted),
+            )
+            .child(row)
+    }
+
+    fn check(
+        p: Presentation,
+        t: ThemePalette,
+        label: &str,
+        danger: bool,
+        read: fn(&RunOptions) -> bool,
+        write: fn(&mut RunOptions, bool),
+    ) -> impl IntoElement {
+        let options = p.options.clone();
+        let mark = p.options.clone();
+        let state = p.view.clone();
+        checkbox()
+            .checked(move || read(&options.get()))
+            .disabled(move || state.get().running)
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .py_1()
+            .cursor_pointer()
+            .indicator(
+                view()
+                    .w(px(18.0))
+                    .h(px(18.0))
+                    .rounded_md()
+                    .border_1()
+                    .border_color(t.accent_text)
+                    .bg(t.status_pill_bg)
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        text(move || if read(&mark.get()) { "✓" } else { "" })
+                            .text_color(t.accent_text),
+                    ),
+            )
+            .child(
+                text(label.to_string())
+                    .text_size(px(13.0))
+                    .text_color(if danger {
+                        t.danger_text
+                    } else {
+                        t.text_secondary
+                    }),
+            )
+            .on_change(move |value: &bool| p.edit(|o| write(o, *value)))
+    }
+
+    fn sidebar(p: Presentation, t: ThemePalette, expert: Signal<bool>) -> impl IntoElement {
+        let inputs = field(
+            p.clone(),
+            t,
+            "每行一个 MP4 文件或文件夹",
+            true,
+            |o| o.input_paths.join("\n"),
+            |o, s| {
+                o.input_paths = s
+                    .lines()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            },
+        );
+        let output = field(
+            p.clone(),
+            t,
+            "留空由 CLI 自动创建",
+            false,
+            |o| o.output_directory.clone().unwrap_or_default(),
+            |o, s| {
+                o.output_directory = if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(s.into())
+                }
+            },
+        );
+        let mut pickers = view().flex_row().gap_2();
+        for (files, label) in [(false, "选择文件夹"), (true, "选择 MP4（可多选）")] {
+            let p = p.clone();
+            let state = p.view.clone();
+            pickers = pickers.child(
+                secondary(t, label)
+                    .disabled(move || state.get().running)
+                    .on_press(move || match native_ui::pick_inputs(files) {
+                        Ok(paths) if !paths.is_empty() => p.edit(|o| o.input_paths = paths),
+                        Ok(_) => {}
+                        Err(e) => p.message.set(e),
+                    }),
+            );
+        }
+        let browse = {
+            let p = p.clone();
+            move || match native_ui::pick_output() {
+                Ok(Some(path)) => p.edit(|o| o.output_directory = Some(path)),
+                Ok(None) => {}
+                Err(e) => p.message.set(e),
+            }
+        };
+        let clear = {
+            let p = p.clone();
+            move || p.edit(|o| o.output_directory = None)
+        };
+        let locked = p.view.clone();
+        let locked_clear = p.view.clone();
+        let mut targets = view().flex_col().gap_2();
+        for pair in [
+            [
+                (TargetMode::Combined, "全部合在一起", "两类事件 → 一个视频"),
+                (
+                    TargetMode::Separate,
+                    "按目标分别合并",
+                    "两类事件 → 各一个视频",
+                ),
+            ],
+            [
+                (TargetMode::SelfDeath, "仅自己倒地", ""),
+                (TargetMode::OwnKill, "仅我的击杀", ""),
+            ],
+        ] {
+            let mut row = view().flex_row().gap_2();
+            for (mode, label, subtext) in pair {
+                let bg = p.options.clone();
+                let border = p.options.clone();
+                let state = p.view.clone();
+                let p = p.clone();
+                row = row.child(
+                    secondary(t, label)
+                        .flex_1()
+                        .flex_col()
+                        .gap_1()
+                        .bg(move || {
+                            if TargetMode::from_options(&bg.get()) == mode {
+                                t.status_pill_bg
+                            } else {
+                                t.surface_subtle
+                            }
+                        })
+                        .border_color(move || {
+                            if TargetMode::from_options(&border.get()) == mode {
+                                t.accent_text
+                            } else {
+                                t.border_input
+                            }
+                        })
+                        .disabled(move || state.get().running)
+                        .child(text(subtext).text_size(px(10.0)).text_color(t.text_muted))
+                        .on_press(move || p.edit(|o| mode.apply(o))),
+                );
+            }
+            targets = targets.child(row);
+        }
+        let merge = p.options.clone();
+        let archive = p.options.clone();
+        let expert_toggle = expert.clone();
+        let expert_label = expert.clone();
+        let expert_p = p.clone();
+        let expert_locked = p.view.clone();
+        let save = {
+            let p = p.clone();
+            move || {
+                let result = p.controller.borrow().save_settings(session());
+                p.result(result, "设置已保存");
+            }
+        };
+        let reset = {
+            let p = p.clone();
+            move || {
+                if p.view.get_untracked().running {
+                    return;
+                }
+                p.controller.borrow_mut().reset_defaults();
+                p.seconds.set(seconds_text(&p.controller.borrow().options));
+                p.sync_options();
+                p.message.set("已恢复默认设置".into());
+            }
+        };
+        let validate = {
+            let p = p.clone();
+            move || {
+                let result = session().validate(&p.controller.borrow().options);
+                p.result(result, "参数有效");
+            }
+        };
+        let validation = p.validation.clone();
+        let save_locked = p.view.clone();
+        let reset_locked = p.view.clone();
+        let validate_locked = p.view.clone();
+        view().w(px(390.0)).bg(t.surface_main).border_r_1().border_color(t.border_main)
+            .flex_col().overflow_hidden().child(scroll().flex_1().child(
+                view().p_5().flex_col().gap_4()
+                    .child(heading(t, "输入与输出"))
+                    .child(inputs).child(pickers)
+                    .child(text("输出目录").text_size(px(12.0)).text_color(t.text_muted))
+                    .child(output)
+                    .child(view().flex_row().gap_2()
+                        .child(secondary(t, "浏览").disabled(move || locked.get().running).on_press(browse))
+                        .child(secondary(t, "清除").disabled(move || locked_clear.get().running).on_press(clear)))
+                    .child(heading(t, "检测目标与输出方式"))
+                    .child(targets)
+                    .child(text(move || if merge.get().merge {
+                        "仅包含检测到的片段；某类没有匹配事件时，不生成该类视频。"
+                    } else { "已关闭合并输出：只生成独立片段，不生成合并视频。" })
+                        .text_size(px(11.0)).text_color(t.text_muted))
+                    .child(heading(t, "检测与剪辑"))
+                    .child(segments(p.clone(), t, "游戏语言", highlight_core::options::GAME_LANGUAGES,
+                        |o| &o.game_language, |o, s| o.game_language = s))
+                    .child(segments(p.clone(), t, "扫描模式", highlight_core::options::SCAN_MODES,
+                        |o| &o.scan_mode, |o, s| o.scan_mode = s))
+                    .child(view().flex_row().gap_2()
+                        .child(seconds_field(p.clone(), t, 0, "事件前（秒）"))
+                        .child(seconds_field(p.clone(), t, 1, "事件后（秒）")))
+                    .child(view().flex_col().gap_1()
+                        .child(check(p.clone(), t, "合并输出", false, |o| o.merge, |o, b| o.merge = b))
+                        .child(check(p.clone(), t, "递归扫描子文件夹", false, |o| o.recursive, |o, b| o.recursive = b))
+                        .child(check(p.clone(), t, "仅扫描", false, |o| o.scan_only, |o, b| o.scan_only = b))
+                        .child(check(p.clone(), t, "覆盖输出 · 会替换已有输出", true, |o| o.overwrite, |o, b| o.overwrite = b))
+                        .child(check(p.clone(), t, "归档原片 · 会移走源文件", true, |o| o.move_originals, |o, b| o.move_originals = b)))
+                    .child(dynamic(move || if archive.get().move_originals {
+                        view().p_3().rounded_md().bg(t.danger_bg).border_1().border_color(t.danger_border)
+                            .child(text("产出过片段的源 MP4 将从原目录移到输出目录 originals 子目录，并写入 moved_sources.csv。请确认后再开始。")
+                                .text_size(px(12.0)).text_color(t.danger_text)).into_element()
+                    } else { view().into_element() }))
+                    .child(secondary(t, "").disabled(move || expert_locked.get().running)
+                        .child(text(move || if expert_label.get() { "▾ 专家设置" } else { "▸ 专家设置" }))
+                        .on_press(move || expert_toggle.set(!expert_toggle.get())))
+                    .child(dynamic(move || if expert.get() {
+                        view().flex_col().gap_3()
+                            .child(seconds_field(expert_p.clone(), t, 2, "忽略开场事件（秒）"))
+                            .child(seconds_field(expert_p.clone(), t, 3, "燃烧瓶前置（秒）"))
+                            .child(text("OCR 并行度").text_size(px(12.0)).text_color(t.text_muted))
+                            .child(field(expert_p.clone(), t, "auto 或正整数", false,
+                                |o| o.jobs.clone(), |o, s| o.jobs = s.into()))
+                            .child(segments(expert_p.clone(), t, "Trim 并行度", highlight_core::options::TRIM_JOBS,
+                                |o| &o.trim_jobs, |o, s| o.trim_jobs = s))
+                            .child(check(expert_p.clone(), t, "启用亮色描边文字预筛选", false,
+                                |o| o.brightness_gate, |o, b| o.brightness_gate = b)).into_element()
+                    } else { view().into_element() }))
+                    .child(view().flex_row().gap_1()
+                        .child(secondary(t, "保存设置").disabled(move || save_locked.get().running).on_press(save))
+                        .child(secondary(t, "恢复默认").disabled(move || reset_locked.get().running).on_press(reset))
+                        .child(secondary(t, "检查参数").disabled(move || validate_locked.get().running).on_press(validate)))
+                    .child(text(move || validation.get()).text_size(px(12.0)).text_color(t.danger_text))
+            ))
+    }
+
+    fn metric(
+        t: ThemePalette,
+        label: &str,
+        value: impl Fn() -> String + 'static,
+    ) -> impl IntoElement {
+        view()
+            .flex_1()
+            .flex_col()
+            .gap_1()
+            .bg(t.surface_main)
+            .border_1()
+            .border_color(t.border_main)
+            .rounded_lg()
+            .px_4()
+            .py_3()
+            .shadow_sm()
+            .child(
+                text(label.to_string())
+                    .text_size(px(12.0))
+                    .text_color(t.text_muted),
+            )
+            .child(
+                text(value)
+                    .text_size(px(20.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(t.accent_text),
+            )
+    }
+
+    fn workspace(p: Presentation, t: ThemePalette) -> impl IntoElement {
+        let summary = p.view.clone();
+        let message = p.message.clone();
+        let start_p = p.clone();
+        let start_locked = p.view.clone();
+        let invalid = p.validation.clone();
+        let pending = p.pending_confirmation.clone();
+        let cancel_p = p.clone();
+        let cancel_state = p.view.clone();
+        let open_p = p.clone();
+        let open_state = p.view.clone();
+        let open_options = p.options.clone();
+        let confirmation = p.pending_confirmation.clone();
+        let confirm_p = p.clone();
+        let reject_p = p.clone();
+        let phase = p.view.clone();
+        let included = p.view.clone();
+        let skipped = p.view.clone();
+        let run_id = p.view.clone();
+        let logs = p.view.clone();
+        let clear_p = p.clone();
+        let preview = p.preview.clone();
+        view()
+            .flex_1()
+            .flex_col()
+            .overflow_hidden()
+            .bg(t.canvas_bg)
+            .child(
+                view()
+                    .bg(t.surface_main)
+                    .border_b_1()
+                    .border_color(t.border_main)
+                    .px_6()
+                    .py_4()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .gap_3()
+                    .child(
+                        view()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .mr_4()
+                            .flex_col()
+                            .gap_1()
+                            .overflow_hidden()
+                            .child(heading(t, "任务控制"))
+                            .child(
+                                text(move || {
+                                    let s = summary.get();
+                                    let note = message.get();
+                                    format!(
+                                        "{}{}{}",
+                                        s.message,
+                                        if note.is_empty() { "" } else { " · " },
+                                        note
+                                    )
+                                })
+                                .text_size(px(12.0))
+                                .text_color(t.text_muted),
+                            ),
+                    )
+                    .child(
+                        view()
+                            .flex_row()
+                            .gap_2()
+                            .child(
+                                button()
+                                    .px_5()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(t.primary_bg)
+                                    .text_color(t.primary_text)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .hover(move |s| s.bg(t.primary_hover))
+                                    .disabled_style(|s| s.opacity(0.45))
+                                    .disabled(move || {
+                                        start_locked.get().running
+                                            || !invalid.get().is_empty()
+                                            || !pending.get().is_empty()
+                                    })
+                                    .child(text("开始处理"))
+                                    .on_press(move || start_p.start(false)),
+                            )
+                            .child(
+                                secondary(t, "停止任务")
+                                    .disabled(move || {
+                                        let s = cancel_state.get();
+                                        !s.running || s.cancelling
+                                    })
+                                    .on_press(move || {
+                                        let result = cancel_p.controller.borrow().cancel(session());
+                                        cancel_p.result(result, "已请求停止，等待任务清理");
+                                    }),
+                            )
+                            .child(
+                                secondary(t, "打开输出")
+                                    .disabled(move || {
+                                        let s = open_state.get();
+                                        s.running
+                                            || s.output_dir
+                                                .or(open_options.get().output_directory)
+                                                .is_none_or(|s| s.trim().is_empty())
+                                    })
+                                    .on_press(move || {
+                                        let path = open_p
+                                            .view
+                                            .get_untracked()
+                                            .output_dir
+                                            .or(open_p.options.get_untracked().output_directory);
+                                        if let Some(path) = path {
+                                            open_p.result(
+                                                native_ui::open_output_dir(&path),
+                                                "已打开输出目录",
+                                            );
+                                        }
+                                    }),
+                            ),
+                    ),
+            )
+            .child(dynamic(move || {
+                let warnings = confirmation.get();
+                if warnings.is_empty() {
+                    return view().into_element();
+                }
+                let accept = confirm_p.clone();
+                let reject = reject_p.clone();
+                view()
+                    .m_4()
+                    .p_4()
+                    .bg(t.danger_bg)
+                    .border_1()
+                    .border_color(t.danger_border)
+                    .rounded_lg()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        text(format!("危险操作确认\n{}", warnings.join("\n")))
+                            .text_color(t.danger_text)
+                            .text_size(px(13.0)),
+                    )
+                    .child(
+                        view()
+                            .flex_row()
+                            .gap_2()
+                            .child(
+                                secondary(t, "确认开始处理").on_press(move || accept.start(true)),
+                            )
+                            .child(secondary(t, "取消").on_press(move || {
+                                reject.controller.borrow_mut().cancel_confirmation();
+                                reject.sync_options();
+                            })),
+                    )
+                    .into_element()
+            }))
+            .child(
+                view()
+                    .flex_1()
+                    .flex_col()
+                    .p_6()
+                    .gap_4()
+                    .overflow_hidden()
+                    .child(
+                        view()
+                            .flex_row()
+                            .gap_3()
+                            .child(metric(t, "当前阶段", move || {
+                                phase.get().phase.unwrap_or_else(|| "待命".into())
+                            }))
+                            .child(metric(t, "已保留", move || {
+                                included.get().included.to_string()
+                            }))
+                            .child(metric(t, "已跳过", move || {
+                                skipped.get().skipped.to_string()
+                            }))
+                            .child(metric(t, "运行 ID", move || {
+                                let id = run_id.get().run_id;
+                                if id == 0 {
+                                    "—".into()
+                                } else {
+                                    id.to_string()
+                                }
+                            })),
+                    )
+                    .child(
+                        view()
+                            .flex_1()
+                            .flex_col()
+                            .bg(t.log_bg)
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(t.log_border)
+                            .shadow_sm()
+                            .overflow_hidden()
+                            .child(
+                                view()
+                                    .bg(t.log_header_bg)
+                                    .border_b_1()
+                                    .border_color(t.log_border)
+                                    .px_4()
+                                    .py_2()
+                                    .flex_row()
+                                    .justify_between()
+                                    .items_center()
+                                    .child(
+                                        view()
+                                            .flex_row()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(text("●").text_size(px(10.0)).text_color(t.log_dot))
+                                            .child(
+                                                text("运行日志")
+                                                    .text_size(px(12.0))
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(t.text_primary),
+                                            ),
+                                    )
+                                    .child(secondary(t, "清空日志").on_press(move || {
+                                        let result =
+                                            clear_p.controller.borrow().clear_logs(session());
+                                        clear_p.result(result, "日志已清空");
+                                    })),
+                            )
+                            .child(
+                                scroll().flex_1().p_4().child(
+                                    text(move || {
+                                        let lines = logs.get().logs;
+                                        if lines.is_empty() {
+                                            "> 等待任务启动…\n> 请在左侧选择输入视频或文件夹，然后点击右上角「开始处理」。"
+                                                .into()
+                                        } else {
+                                            lines.join("\n")
+                                        }
+                                    })
+                                    .font_family("ui-monospace")
+                                    .text_size(px(12.5))
+                                    .text_color(t.log_text)
+                                    .selectable(true),
+                                ),
+                            ),
+                    )
+                    .child(
+                        view()
+                            .flex_col()
+                            .h(px(140.0))
+                            .bg(t.log_bg)
+                            .border_1()
+                            .border_color(t.log_border)
+                            .rounded_lg()
+                            .shadow_sm()
+                            .overflow_hidden()
+                            .child(
+                                view()
+                                    .px_4()
+                                    .py_2()
+                                    .bg(t.log_header_bg)
+                                    .border_b_1()
+                                    .border_color(t.log_border)
+                                    .child(
+                                        text("命令预览 · 实时 CLI 参数")
+                                            .text_size(px(12.0))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(t.log_muted),
+                                    ),
+                            )
+                            .child(
+                                scroll().flex_1().p_4().child(
+                                    text(move || preview.get())
+                                        .font_family("ui-monospace")
+                                        .text_size(px(12.0))
+                                        .text_color(t.log_text)
+                                        .selectable(true),
+                                ),
+                            ),
+                    ),
+            )
     }
 
     #[component]
     fn NativeWindow() -> impl IntoElement {
-        let session = session();
-        let mut loaded = NativeController::new(RunOptions::default());
-        let load_message = loaded
-            .load_settings(session)
-            .map(|_| "已加载设置".to_string())
+        let mut controller = NativeController::new(RunOptions::default());
+        let message = controller
+            .load_settings(session())
+            .map(|_| "已加载设置".into())
             .unwrap_or_else(|e| format!("设置加载失败：{e}"));
-        let controller = Arc::new(Mutex::new(loaded));
-        let status = signal(load_message);
-        let inputs = signal(String::new());
-        let output = signal(String::new());
-        let phase = signal(String::new());
-        let run_id = signal(String::new());
-        let close_state = signal(String::new());
-        let logs_text = signal(String::new());
-        let language = signal(String::new());
-        let scan_mode = signal(String::new());
-        let trim_jobs = signal(String::new());
-        let trim_seconds = signal(String::new());
-        let recursive = signal(String::new());
-        let merge = signal(String::new());
-        let scan_only = signal(String::new());
-        let overwrite = signal(String::new());
-        let summary = signal(String::new());
-        let theme_mode = signal(ThemeMode::Light);
-
-        let sync_view = {
-            let controller = Arc::clone(&controller);
-            let inputs = inputs.clone();
-            let output = output.clone();
-            let phase = phase.clone();
-            let run_id = run_id.clone();
-            let close_state = close_state.clone();
-            let logs_text = logs_text.clone();
-            let language = language.clone();
-            let scan_mode = scan_mode.clone();
-            let trim_jobs = trim_jobs.clone();
-            let trim_seconds = trim_seconds.clone();
-            let recursive = recursive.clone();
-            let merge = merge.clone();
-            let scan_only = scan_only.clone();
-            let overwrite = overwrite.clone();
-            let summary = summary.clone();
-            let status = status.clone();
-            move || {
-                let c = controller.lock().unwrap();
-                let view = c.snapshot(session);
-                status.set(view.message.clone());
-                inputs.set(if c.options.input_paths.is_empty() {
-                    "尚未选择输入文件".into()
-                } else {
-                    c.options.input_paths.join("；")
-                });
-                output.set(
-                    c.options
-                        .output_directory
-                        .as_deref()
-                        .unwrap_or("使用默认目录")
-                        .into(),
-                );
-                phase.set(view.phase.clone().unwrap_or_else(|| "待命".into()));
-                run_id.set(if view.run_id == 0 {
-                    "—".into()
-                } else {
-                    view.run_id.to_string()
-                });
-                close_state.set(close_label(&c.close_status(session)).into());
-                logs_text.set(if view.logs.is_empty() {
-                    "> 等待任务启动...\n> 请在左侧选择输入 MP4 文件，然后点击右上角「开始处理」。"
-                        .into()
-                } else {
-                    view.logs.join("\n")
-                });
-                language.set(c.options.game_language.clone());
-                scan_mode.set(c.options.scan_mode.clone());
-                trim_jobs.set(c.options.trim_jobs.clone());
-                trim_seconds.set(format!(
-                    "{} / {} 秒",
-                    c.options.seconds_before, c.options.seconds_after
-                ));
-                recursive.set(
-                    if c.options.recursive {
-                        "开启"
-                    } else {
-                        "关闭"
-                    }
-                    .into(),
-                );
-                merge.set(if c.options.merge { "开启" } else { "关闭" }.into());
-                scan_only.set(
-                    if c.options.scan_only {
-                        "开启"
-                    } else {
-                        "关闭"
-                    }
-                    .into(),
-                );
-                overwrite.set(
-                    if c.options.overwrite {
-                        "开启"
-                    } else {
-                        "关闭"
-                    }
-                    .into(),
-                );
-                summary.set(format!(
-                    "{} · {}",
-                    view.message,
-                    view.phase.as_deref().unwrap_or("待命")
-                ));
-            }
+        let p = Presentation {
+            options: signal(controller.options.clone()),
+            seconds: signal(seconds_text(&controller.options)),
+            view: signal(controller.snapshot(session())),
+            preview: signal(String::new()),
+            validation: signal(String::new()),
+            pending_confirmation: signal(Vec::new()),
+            message: signal(message),
+            controller: Rc::new(RefCell::new(controller)),
         };
-        sync_view();
+        p.sync_options();
+        let theme = signal(ThemeMode::Light);
+        let expert = signal(false);
         let close = window::current_window();
         let mut attrs = nsh_core::desktop::WindowAttributes::default();
         attrs.close_on_press = Some(false);
         close.set(attrs);
-        let close_poll: Rc<RefCell<Option<Spawned<()>>>> = Rc::new(RefCell::new(None));
-
-        let pick_files = {
-            let c = Arc::clone(&controller);
-            let sync = sync_view.clone();
-            let status = status.clone();
-            move || match native_ui::pick_inputs(true) {
-                Ok(paths) if !paths.is_empty() => {
-                    c.lock().unwrap().set_inputs(paths);
-                    sync();
-                }
-                Ok(_) => status.set("未选择输入文件".into()),
-                Err(e) => status.set(format!("选择输入失败：{e}")),
-            }
-        };
-        let pick_folder = {
-            let c = Arc::clone(&controller);
-            let sync = sync_view.clone();
-            let status = status.clone();
-            move || match native_ui::pick_output() {
-                Ok(path) => {
-                    c.lock().unwrap().set_output(path);
-                    sync();
-                }
-                Err(e) => status.set(format!("选择输出失败：{e}")),
-            }
-        };
-        let refresh = {
-            let sync = sync_view.clone();
-            move || sync()
-        };
-        let save = {
-            let c = Arc::clone(&controller);
-            let sync = sync_view.clone();
-            let status = status.clone();
-            move || {
-                let result = c
-                    .lock()
-                    .unwrap()
-                    .save_settings(session)
-                    .map(|_| "设置已保存".into())
-                    .unwrap_or_else(|e| format!("设置保存失败：{e}"));
-                sync();
-                status.set(result);
-            }
-        };
-        let edit_options = {
-            let c = Arc::clone(&controller);
-            let sync = sync_view.clone();
-            move || {
-                c.lock().unwrap().toggle_core_options();
-                sync();
-            }
-        };
-        let validate_current = {
-            let c = Arc::clone(&controller);
-            let sync = sync_view.clone();
-            let status = status.clone();
-            move || {
-                let result = validate(session, &c.lock().unwrap().options);
-                sync();
-                status.set(result);
-            }
-        };
-        let start = {
-            let c = Arc::clone(&controller);
-            let sync = sync_view.clone();
-            let status = status.clone();
-            move || {
-                let mut c = c.lock().unwrap();
-                let result = if c.confirmation {
-                    c.start(session, true).map(|_| "已启动".into())
-                } else {
-                    match c.prepare_start(session) {
-                        Ok(native_ui::StartPrompt::ConfirmationRequired(w)) => {
-                            Ok(format!("危险选项需确认：{}", w.join("；")))
-                        }
-                        Ok(native_ui::StartPrompt::Ready) => {
-                            c.start(session, false).map(|_| "已启动".into())
-                        }
-                        Err(e) => Err(e),
-                    }
-                };
-                drop(c);
-                sync();
-                if let Ok(message) = result {
-                    status.set(message);
-                } else if let Err(e) = result {
-                    status.set(format!("启动失败：{e}"));
-                }
-            }
-        };
-        let cancel = {
-            let c = Arc::clone(&controller);
-            let sync = sync_view.clone();
-            let status = status.clone();
-            move || {
-                let result = c.lock().unwrap().cancel(session);
-                sync();
-                status.set(
-                    result
-                        .map(|_| "已请求取消".into())
-                        .unwrap_or_else(|e| format!("取消失败：{e}")),
-                );
-            }
-        };
-        let confirm_close = {
-            let status = status.clone();
-            let c = Arc::clone(&controller);
-            let close = close.clone();
-            let poll = Rc::clone(&close_poll);
-            move || {
-                if let Err(e) = c.lock().unwrap().confirm_close(session) {
-                    status.set(format!("关闭失败：{e}"));
-                    return;
-                }
-                status.set("正在清理任务".into());
-                let s = status.clone();
-                let p = Rc::clone(&poll);
-                let w = close.clone();
-                let task = set_interval(Duration::from_millis(50), move || {
-                    match close_action(&session.close_status()) {
-                        CloseAction::Close => {
-                            s.set("清理完成，正在关闭".into());
-                            w.clone().close();
-                            if let Some(t) = p.borrow_mut().take() {
-                                t.cancel();
-                            }
-                        }
-                        CloseAction::ShowError(e) => {
-                            s.set(format!("关闭失败：{e}"));
-                            if let Some(t) = p.borrow_mut().take() {
-                                t.cancel();
-                            }
-                        }
-                        CloseAction::Wait => {}
-                        CloseAction::None => {
-                            s.set("未请求关闭".into());
-                            if let Some(t) = p.borrow_mut().take() {
-                                t.cancel();
-                            }
-                        }
-                    }
-                });
-                *poll.borrow_mut() = Some(task);
-            }
-        };
-        let request_close = {
-            let status = status.clone();
-            let close = close.clone();
-            move || match close_decision(session.request_close()) {
-                CloseDecision::CloseNow => close.close(),
-                CloseDecision::RequireConfirmation => {
-                    status.set("任务仍在运行，请确认停止并关闭".into())
-                }
-            }
-        };
-        close.on_close_press({
-            let status = status.clone();
-            let close = close.clone();
-            move |_| match close_decision(session.request_close()) {
-                CloseDecision::CloseNow => close.close(),
-                CloseDecision::RequireConfirmation => {
-                    status.set("任务仍在运行，请确认停止并关闭".into())
-                }
+        let close_message = p.message.clone();
+        let close_window = close.clone();
+        close.on_close_press(move |_| match close_decision(session().request_close()) {
+            CloseDecision::CloseNow => close_window.close(),
+            CloseDecision::RequireConfirmation => {
+                close_message.set("任务仍在运行，请确认停止并关闭".into())
             }
         });
-
-        let toggle_theme = {
-            let theme_mode = theme_mode.clone();
-            move || theme_mode.set(theme_mode.get().toggle())
-        };
-
-        nsh_core::element::view().flex_1().flex_col().child(
-            nsh_core::element::dynamic(move || {
-                let mode = theme_mode.get();
-                let t = mode.palette();
-                let secondary = move |label: &'static str| {
-                    button()
-                        .px_3()
-                        .py_2()
-                        .rounded_md()
-                        .bg(t.btn_sec_bg)
-                        .border_1()
-                        .border_color(t.border_input)
-                        .text_size(px(13.0))
-                        .text_color(t.text_secondary)
+        let poll_p = p.clone();
+        let poll_window = close.clone();
+        set_interval(Duration::from_millis(500), move || {
+            poll_p.sync_view();
+            match close_action(&session().close_status()) {
+                CloseAction::Close => poll_window.clone().close(),
+                CloseAction::ShowError(e) => poll_p.message.set(format!("关闭失败：{e}")),
+                CloseAction::None | CloseAction::Wait => {}
+            }
+        });
+        view().flex_1().flex_col().child(dynamic(move || {
+            let mode = theme.get();
+            let t = mode.palette();
+            let toggle = theme.clone();
+            let status = p.view.clone();
+            let status_message = p.message.clone();
+            let close_message = p.message.clone();
+            let request_window = close.clone();
+            let confirm_window = close.clone();
+            let confirm_p = p.clone();
+            view()
+                .flex_1()
+                .flex_col()
+                .bg(t.canvas_bg)
+                .child(
+                    view()
+                        .px_6()
+                        .py_4()
+                        .flex_row()
                         .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(t.btn_sec_hover).border_color(t.btn_sec_border_hover))
-                        .child(text(label))
-                };
-                let value_card = move |label: &'static str, value: Signal<String>| {
-                    nsh_core::element::view()
-                        .flex_1()
-                        .flex_col()
-                        .gap_1()
-                        .bg(t.surface_subtle)
-                        .border_1()
-                        .border_color(t.border_main)
-                        .rounded_md()
-                        .px_3()
-                        .py_2()
-                        .child(text(label).text_size(px(11.0)).text_color(t.text_muted))
+                        .justify_between()
+                        .bg(t.topbar_bg)
+                        .border_b_1()
+                        .border_color(t.topbar_border)
                         .child(
-                            text(move || value.get())
-                                .text_size(px(13.0))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(t.text_primary),
-                        )
-                };
-                let metric = move |label: &'static str, value: Signal<String>, color: Color| {
-                    nsh_core::element::view()
-                        .flex_1()
-                        .flex_col()
-                        .gap_1()
-                        .bg(t.surface_main)
-                        .border_1()
-                        .border_color(t.border_main)
-                        .rounded_lg()
-                        .px_4()
-                        .py_3()
-                        .shadow_sm()
-                        .child(text(label).text_size(px(12.0)).text_color(t.text_muted))
-                        .child(
-                            text(move || value.get())
-                                .text_size(px(20.0))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(color),
-                        )
-                };
-
-                let status = status.clone();
-                let inputs = inputs.clone();
-                let output = output.clone();
-                let phase = phase.clone();
-                let run_id = run_id.clone();
-                let close_state = close_state.clone();
-                let logs_text = logs_text.clone();
-                let language = language.clone();
-                let scan_mode = scan_mode.clone();
-                let trim_jobs = trim_jobs.clone();
-                let trim_seconds = trim_seconds.clone();
-                let recursive = recursive.clone();
-                let merge = merge.clone();
-                let scan_only = scan_only.clone();
-                let overwrite = overwrite.clone();
-                let summary = summary.clone();
-
-                let pick_files = pick_files.clone();
-                let pick_folder = pick_folder.clone();
-                let refresh = refresh.clone();
-                let save = save.clone();
-                let edit_options = edit_options.clone();
-                let validate_current = validate_current.clone();
-                let start = start.clone();
-                let cancel = cancel.clone();
-                let request_close = request_close.clone();
-                let confirm_close = confirm_close.clone();
-                let toggle_theme = toggle_theme.clone();
-
-                nsh_core::element::view()
-                    .flex_1()
-                    .flex_col()
-                    .bg(t.canvas_bg)
-                    .child(
-                        nsh_core::element::view()
-                            .px_6()
-                            .py_4()
-                            .flex_row()
-                            .items_center()
-                            .justify_between()
-                            .bg(t.topbar_bg)
-                            .border_b_1()
-                            .border_color(t.topbar_border)
-                            .child(
-                                nsh_core::element::view()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_3()
-                                    .child(
-                                        nsh_core::element::view()
-                                            .w(px(36.0))
-                                            .h(px(36.0))
-                                            .rounded_lg()
-                                            .bg(t.brand_gold)
-                                            .items_center()
-                                            .justify_center()
-                                            .child(
-                                                text("P")
-                                                    .text_size(px(18.0))
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .text_color(t.brand_gold_text),
-                                            ),
-                                    )
-                                    .child(
-                                        nsh_core::element::view()
-                                            .flex_col()
-                                            .gap_1()
-                                            .child(
-                                                text("PUBG Highlight Trim")
-                                                    .text_size(px(18.0))
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .text_color(t.topbar_text),
-                                            )
-                                            .child(
-                                                text("OCR 视频剪辑工作台")
-                                                    .text_size(px(12.0))
-                                                    .text_color(t.topbar_subtext),
-                                            ),
-                                    ),
-                            )
-                            .child(
-                                nsh_core::element::view()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_3()
-                                    .child(
-                                        nsh_core::element::view()
-                                            .px_3()
-                                            .py_1()
-                                            .rounded_full()
-                                            .bg(t.status_pill_bg)
-                                            .border_1()
-                                            .border_color(t.status_pill_border)
-                                            .flex_row()
-                                            .items_center()
-                                            .gap_2()
-                                            .child(
-                                                text("●")
-                                                    .text_size(px(10.0))
-                                                    .text_color(t.status_dot),
-                                            )
-                                            .child(
-                                                text(move || status.get())
-                                                    .text_size(px(12.0))
-                                                    .text_color(t.status_pill_text),
-                                            ),
-                                    )
-                                    .child(secondary(mode.toggle_label()).on_press(toggle_theme)),
-                            ),
-                    )
-                    .child(
-                        nsh_core::element::view()
-                            .flex_1()
-                            .flex_row()
-                            .overflow_hidden()
-                            .child(
-                                nsh_core::element::view()
-                                    .w(px(390.0))
-                                    .bg(t.surface_main)
-                                    .border_r_1()
-                                    .border_color(t.border_main)
-                                    .flex_col()
-                                    .overflow_hidden()
-                                    .child(
-                                        nsh_core::element::scroll().flex_1().child(
-                                            nsh_core::element::view()
-                                                .p_5()
-                                                .flex_col()
-                                                .gap_5()
-                                                .child(
-                                                    nsh_core::element::view()
-                                                        .flex_col()
-                                                        .gap_2()
-                                                        .child(
-                                                            text("输入与输出")
-                                                                .text_size(px(15.0))
-                                                                .font_weight(FontWeight::SEMIBOLD)
-                                                                .text_color(t.text_primary),
-                                                        )
-                                                        .child(
-                                                            text("输入视频")
-                                                                .text_size(px(12.0))
-                                                                .text_color(t.text_muted),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .bg(t.surface_subtle)
-                                                                .border_1()
-                                                                .border_color(t.border_input)
-                                                                .rounded_md()
-                                                                .px_3()
-                                                                .py_2()
-                                                                .child(
-                                                                    text(move || inputs.get())
-                                                                        .text_size(px(13.0))
-                                                                        .text_color(t.text_primary),
-                                                                ),
-                                                        )
-                                                        .child(
-                                                            text("输出目录")
-                                                                .text_size(px(12.0))
-                                                                .text_color(t.text_muted),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .bg(t.surface_subtle)
-                                                                .border_1()
-                                                                .border_color(t.border_input)
-                                                                .rounded_md()
-                                                                .px_3()
-                                                                .py_2()
-                                                                .child(
-                                                                    text(move || output.get())
-                                                                        .text_size(px(13.0))
-                                                                        .text_color(t.text_primary),
-                                                                ),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .pt_1()
-                                                                .flex_row()
-                                                                .gap_2()
-                                                                .child(
-                                                                    secondary("选择输入 MP4")
-                                                                        .flex_1()
-                                                                        .on_press(pick_files),
-                                                                )
-                                                                .child(
-                                                                    secondary("选择输出目录")
-                                                                        .flex_1()
-                                                                        .on_press(pick_folder),
-                                                                ),
-                                                        ),
-                                                )
-                                                .child(
-                                                    nsh_core::element::view()
-                                                        .h(px(1.0))
-                                                        .bg(t.border_main),
-                                                )
-                                                .child(
-                                                    nsh_core::element::view()
-                                                        .flex_col()
-                                                        .gap_2()
-                                                        .child(
-                                                            text("检测与剪辑规则")
-                                                                .text_size(px(15.0))
-                                                                .font_weight(FontWeight::SEMIBOLD)
-                                                                .text_color(t.text_primary),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .flex_row()
-                                                                .gap_2()
-                                                                .child(value_card("语言", language))
-                                                                .child(value_card(
-                                                                    "扫描模式",
-                                                                    scan_mode,
-                                                                )),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .flex_row()
-                                                                .gap_2()
-                                                                .child(value_card(
-                                                                    "前后剪辑秒数",
-                                                                    trim_seconds,
-                                                                ))
-                                                                .child(value_card(
-                                                                    "Trim 并行度",
-                                                                    trim_jobs,
-                                                                )),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .flex_row()
-                                                                .gap_2()
-                                                                .child(value_card(
-                                                                    "仅扫描",
-                                                                    scan_only,
-                                                                ))
-                                                                .child(value_card(
-                                                                    "递归",
-                                                                    recursive,
-                                                                )),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .flex_row()
-                                                                .gap_2()
-                                                                .child(value_card(
-                                                                    "合并输出",
-                                                                    merge,
-                                                                ))
-                                                                .child(value_card(
-                                                                    "覆盖",
-                                                                    overwrite,
-                                                                )),
-                                                        )
-                                                        .child(
-                                                            nsh_core::element::view()
-                                                                .pt_2()
-                                                                .flex_row()
-                                                                .gap_2()
-                                                                .child(
-                                                                    secondary("切换常用选项")
-                                                                        .flex_1()
-                                                                        .on_press(edit_options),
-                                                                )
-                                                                .child(
-                                                                    secondary("保存设置")
-                                                                        .on_press(save),
-                                                                )
-                                                                .child(
-                                                                    secondary("检查参数")
-                                                                        .on_press(validate_current),
-                                                                ),
-                                                        ),
-                                                ),
+                            view()
+                                .flex_row()
+                                .items_center()
+                                .gap_3()
+                                .child(
+                                    view()
+                                        .w(px(36.0))
+                                        .h(px(36.0))
+                                        .rounded_lg()
+                                        .bg(t.brand_gold)
+                                        .items_center()
+                                        .justify_center()
+                                        .child(
+                                            text("P")
+                                                .text_size(px(18.0))
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(t.brand_gold_text),
                                         ),
-                                    ),
-                            )
-                            .child(
-                                nsh_core::element::view()
-                                    .flex_1()
-                                    .flex_col()
-                                    .bg(t.canvas_bg)
-                                    .overflow_hidden()
-                                    .child(
-                                        nsh_core::element::view()
-                                            .bg(t.surface_main)
-                                            .border_b_1()
-                                            .border_color(t.border_main)
-                                            .px_6()
-                                            .py_4()
-                                            .flex_row()
-                                            .items_center()
-                                            .justify_between()
-                                            .child(
-                                                nsh_core::element::view()
-                                                    .flex_col()
-                                                    .gap_1()
-                                                    .child(
-                                                        text("任务控制")
-                                                            .text_size(px(16.0))
-                                                            .font_weight(FontWeight::SEMIBOLD)
-                                                            .text_color(t.text_primary),
-                                                    )
-                                                    .child(
-                                                        text(move || summary.get())
-                                                            .text_size(px(12.0))
-                                                            .text_color(t.text_muted),
-                                                    ),
-                                            )
-                                            .child(
-                                                nsh_core::element::view()
-                                                    .flex_row()
-                                                    .gap_2()
-                                                    .items_center()
-                                                    .child(
-                                                        button()
-                                                            .px_5()
-                                                            .py_2()
-                                                            .rounded_md()
-                                                            .bg(t.primary_bg)
-                                                            .text_size(px(13.0))
-                                                            .text_color(t.primary_text)
-                                                            .font_weight(FontWeight::SEMIBOLD)
-                                                            .items_center()
-                                                            .justify_center()
-                                                            .hover(move |s| s.bg(t.primary_hover))
-                                                            .cursor_pointer()
-                                                            .child(text("开始处理"))
-                                                            .on_press(start),
-                                                    )
-                                                    .child(secondary("取消任务").on_press(cancel))
-                                                    .child(secondary("刷新状态").on_press(refresh)),
-                                            ),
-                                    )
-                                    .child(
-                                        nsh_core::element::view()
-                                            .flex_1()
-                                            .flex_col()
-                                            .p_6()
-                                            .gap_4()
-                                            .overflow_hidden()
-                                            .child(
-                                                nsh_core::element::view()
-                                                    .flex_row()
-                                                    .gap_3()
-                                                    .child(metric(
-                                                        "当前阶段",
-                                                        phase,
-                                                        t.accent_text,
-                                                    ))
-                                                    .child(metric(
-                                                        "运行 ID",
-                                                        run_id,
-                                                        t.text_primary,
-                                                    ))
-                                                    .child(metric(
-                                                        "关闭状态",
-                                                        close_state,
-                                                        t.text_primary,
-                                                    )),
-                                            )
-                                            .child(
-                                                nsh_core::element::view()
-                                                    .flex_1()
-                                                    .flex_col()
-                                                    .bg(t.log_bg)
-                                                    .rounded_lg()
-                                                    .border_1()
-                                                    .border_color(t.log_border)
-                                                    .shadow_sm()
-                                                    .overflow_hidden()
-                                                    .child(
-                                                        nsh_core::element::view()
-                                                            .bg(t.log_header_bg)
-                                                            .border_b_1()
-                                                            .border_color(t.log_border)
-                                                            .px_4()
-                                                            .py_2()
-                                                            .flex_row()
-                                                            .justify_between()
-                                                            .items_center()
-                                                            .child(
-                                                                nsh_core::element::view()
-                                                                    .flex_row()
-                                                                    .items_center()
-                                                                    .gap_2()
-                                                                    .child(
-                                                                        text("●")
-                                                                            .text_size(px(10.0))
-                                                                            .text_color(t.log_dot),
-                                                                    )
-                                                                    .child(
-                                                                        text("运行日志")
-                                                                            .text_size(px(12.0))
-                                                                            .font_weight(
-                                                                                FontWeight::SEMIBOLD,
-                                                                            )
-                                                                            .text_color(
-                                                                                t.text_primary,
-                                                                            ),
-                                                                    ),
-                                                            )
-                                                            .child(
-                                                                text("等宽输出 · 可选中复制")
-                                                                    .text_size(px(11.0))
-                                                                    .text_color(t.log_muted),
-                                                            ),
-                                                    )
-                                                    .child(
-                                                        nsh_core::element::scroll()
-                                                            .flex_1()
-                                                            .p_4()
-                                                            .child(
-                                                                text(move || logs_text.get())
-                                                                    .font_family("ui-monospace")
-                                                                    .text_size(px(12.5))
-                                                                    .text_color(t.log_text)
-                                                                    .selectable(true),
-                                                            ),
-                                                    ),
-                                            ),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        nsh_core::element::view()
-                            .bg(t.footer_bg)
-                            .border_t_1()
-                            .border_color(t.border_main)
-                            .px_6()
-                            .py_2()
-                            .flex_row()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                text("PUBG Highlight Trim · Native UI (NSH)")
-                                    .text_size(px(11.0))
-                                    .text_color(t.footer_text),
-                            )
-                            .child(
-                                nsh_core::element::view()
-                                    .flex_row()
-                                    .gap_2()
-                                    .child(secondary("关闭窗口").on_press(request_close))
-                                    .child(
-                                        button()
-                                            .px_3()
-                                            .py_2()
-                                            .rounded_md()
-                                            .bg(t.danger_bg)
-                                            .border_1()
-                                            .border_color(t.danger_border)
-                                            .text_size(px(13.0))
-                                            .text_color(t.danger_text)
-                                            .items_center()
-                                            .justify_center()
-                                            .hover(move |s| s.bg(t.danger_bg_hover))
-                                            .cursor_pointer()
-                                            .child(text("确认停止并关闭"))
-                                            .on_press(confirm_close),
-                                    ),
-                            ),
-                    )
-            }),
-        )
+                                )
+                                .child(
+                                    view()
+                                        .flex_col()
+                                        .gap_1()
+                                        .child(
+                                            text("PUBG Highlight Trim")
+                                                .text_size(px(18.0))
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(t.topbar_text),
+                                        )
+                                        .child(
+                                            text("OCR 视频剪辑工作台")
+                                                .text_size(px(12.0))
+                                                .text_color(t.topbar_subtext),
+                                        ),
+                                ),
+                        )
+                        .child(
+                            view()
+                                .flex_row()
+                                .items_center()
+                                .gap_3()
+                                .child(
+                                    view()
+                                        .px_3()
+                                        .py_1()
+                                        .rounded_full()
+                                        .bg(t.status_pill_bg)
+                                        .border_1()
+                                        .border_color(t.status_pill_border)
+                                        .flex_row()
+                                        .gap_2()
+                                        .child(text("●").text_color(t.status_dot))
+                                        .child(
+                                            text(move || {
+                                                let view = status.get();
+                                                let message = status_message.get();
+                                                if view.running {
+                                                    "运行中".to_string()
+                                                } else if view.message.chars().count() > 12
+                                                    || [message.as_str(), view.message.as_str()]
+                                                        .iter()
+                                                        .any(|s| {
+                                                            s.contains("错误")
+                                                                || s.contains("失败")
+                                                                || s.contains("缺少")
+                                                                || s.to_ascii_lowercase()
+                                                                    .contains("error")
+                                                        })
+                                                {
+                                                    "错误".to_string()
+                                                } else {
+                                                    view.message
+                                                }
+                                            })
+                                            .text_size(px(12.0))
+                                            .text_color(t.status_pill_text),
+                                        ),
+                                )
+                                .child(
+                                    secondary(t, mode.toggle_label())
+                                        .on_press(move || toggle.set(toggle.get().toggle())),
+                                ),
+                        ),
+                )
+                .child(
+                    view()
+                        .flex_1()
+                        .flex_row()
+                        .overflow_hidden()
+                        .child(sidebar(p.clone(), t, expert.clone()))
+                        .child(workspace(p.clone(), t)),
+                )
+                .child(
+                    view()
+                        .bg(t.footer_bg)
+                        .border_t_1()
+                        .border_color(t.border_main)
+                        .px_6()
+                        .py_2()
+                        .flex_row()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            text("v0.4.1 · PUBG Highlight Trim · Native UI (NSH)")
+                                .text_size(px(11.0))
+                                .text_color(t.footer_text),
+                        )
+                        .child(
+                            view()
+                                .flex_row()
+                                .gap_2()
+                                .child(secondary(t, "关闭窗口").on_press(move || {
+                                    match close_decision(session().request_close()) {
+                                        CloseDecision::CloseNow => request_window.close(),
+                                        CloseDecision::RequireConfirmation => close_message
+                                            .set("任务仍在运行，请确认停止并关闭".into()),
+                                    }
+                                }))
+                                .child(
+                                    secondary(t, "确认停止并关闭")
+                                        .bg(t.danger_bg)
+                                        .border_color(t.danger_border)
+                                        .text_color(t.danger_text)
+                                        .hover(move |s| s.bg(t.danger_bg_hover))
+                                        .on_press(move || {
+                                            // An idle window needs no cancellation, even after a finished run.
+                                            if close_decision(session().request_close())
+                                                == CloseDecision::CloseNow
+                                            {
+                                                confirm_window.close();
+                                                return;
+                                            }
+                                            let result = confirm_p
+                                                .controller
+                                                .borrow()
+                                                .confirm_close(session());
+                                            confirm_p
+                                                .result(result, "正在停止并清理任务，完成后关闭");
+                                        }),
+                                ),
+                        ),
+                )
+        }))
+    }
+
+    fn icon_path() -> Option<PathBuf> {
+        let exe = std::env::current_exe().ok();
+        let mut candidates = Vec::new();
+        if let Some(parent) = exe.as_deref().and_then(|p| p.parent()) {
+            candidates.push(parent.join("icon.ico"));
+        }
+        candidates.push(PathBuf::from("ui/src-tauri/icons/icon.ico"));
+        candidates
+            .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src-tauri/icons/icon.ico"));
+        candidates
+            .into_iter()
+            .find_map(|path| path.canonicalize().ok())
     }
 
     pub fn run() -> std::process::ExitCode {
@@ -1012,7 +1194,8 @@ mod windows_app {
             AppSource::Rust(Root::of::<NativeWindow>()),
             AppOptions {
                 title: "PUBG Highlight Trim".into(),
-                size: (1180, 840),
+                size: (1280, 900),
+                icon: icon_path(),
                 ..Default::default()
             },
         )
