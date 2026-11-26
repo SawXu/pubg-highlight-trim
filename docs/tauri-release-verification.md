@@ -38,9 +38,9 @@ CI 的手动 release 支持可信输入下载及锁摘要，具体参数见 `.gi
 本次 Windows 开发宿主执行：
 
 - `npm --prefix ui ci`、`run typecheck`、`test`：通过，7 个工作流测试。
-- `cargo check --locked --manifest-path ui/src-tauri/Cargo.toml`：通过。新增 runtime probe 环境清理测试先红后绿，distribution 专项 3 项通过。
+- `cargo check --locked --manifest-path ui/src-tauri/Cargo.toml --features tauri-ui`：通过。新增 runtime probe 环境清理测试先红后绿，distribution 专项 3 项通过。
 - 离线实际 UI 许可证收集：274 个组件，原始声明和锁摘要完整生成。
-- `cargo test --locked --manifest-path ui/src-tauri/Cargo.toml`：14 项通过；固定真实视频测试因缺少样本按设计 ignored。
+- `cargo test --locked --manifest-path ui/src-tauri/Cargo.toml --features tauri-ui`：14 项通过；固定真实视频测试因缺少样本按设计 ignored。
 - `npm --prefix ui run tauri -- build --no-bundle -- --locked`：生产前端和 release 原生 EXE 构建通过，不依赖 Vite 开发服务器。
 - 将该 release EXE 复制到独立临时目录，写入 distribution 配置，调用真实原生 `--check-webview2-runtime`：System 在当前宿主已安装共享 runtime 时退出 0；Fixed 没有随包文件时退出 1，即便宿主有共享 runtime 也不回退；预检没有创建 `data`。
 - `cargo test --locked --manifest-path rust/Cargo.toml`：默认工作区全套 176 项通过，1 项 ignored。首次因当前目录没有 FFmpeg 失败，随后显式使用已有 FFmpeg 工具目录重跑通过。最终重跑发现既有 xtask 测试按 PID 命名临时目录撞上残留目录，隔离到全新 TEMP/TMP 后完整重跑通过，未为此修改无关 CLI 代码。未执行依赖模型/网络的 ignored 扩展验收；它们继续由原 Windows assurance 保证。

@@ -1,11 +1,9 @@
+pub use highlight_core::{
+    options, process, protocol, service, storage, ui_session, RunOptions, RunState, Shell,
+};
+#[cfg(feature = "tauri-ui")]
 pub mod distribution;
-pub mod options;
-pub use options::RunOptions;
-pub mod protocol;
-pub use protocol::RunState;
-pub mod process;
-pub mod service;
-pub mod storage;
-pub use service::Shell;
+#[cfg(feature = "tauri-ui")]
 mod ipc;
+#[cfg(feature = "tauri-ui")]
 pub use ipc::run;

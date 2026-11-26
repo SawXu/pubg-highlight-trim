@@ -62,7 +62,7 @@ $env:PUBG_UI_REAL_INPUTS = ConvertTo-Json -Compress -InputObject @(
     'D:\fixed-corpus\event.mp4', 'D:\fixed-corpus\no-event.mp4'
 )
 $env:PUBG_UI_REQUIRE_MEDIA = '1'
-cargo test --locked --manifest-path ui/src-tauri/Cargo.toml --test real_video -- --ignored --nocapture
+cargo test --locked --manifest-path ui/src-tauri/Cargo.toml --features tauri-ui --test real_video -- --ignored --nocapture
 ```
 
 The test does not ship private media. `PUBG_UI_REQUIRE_MEDIA` prevents an all-skipped

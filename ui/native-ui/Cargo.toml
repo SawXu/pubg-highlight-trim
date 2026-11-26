@@ -1,0 +1,23 @@
+[package]
+name = "pubg-highlight-trim-native-ui"
+version = "0.4.1"
+edition = "2021"
+default-run = "pubg-highlight-trim-native-ui"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+highlight_core = { package = "pubg-highlight-trim-core", path = "../core" }
+
+[target.'cfg(windows)'.dependencies]
+rfd = { version = "0.15", default-features = false, features = ["common-controls-v6"] }
+nsh-platform-windows = { version = "0.6.1", default-features = false }
+nsh-base = { version = "0.6.1", default-features = false }
+nsh-core = { version = "0.6.1", default-features = false }
+
+[lib]
+name = "native_ui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pubg-highlight-trim-native-ui"
+path = "src/main.rs"

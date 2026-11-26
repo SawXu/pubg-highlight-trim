@@ -7,19 +7,24 @@ default-run = "pubg-highlight-trim-ui"
 [lib]
 name = "highlight_shell"
 
+[features]
+default = []
+tauri-ui = ["dep:tauri", "dep:rfd", "dep:webview2-com", "dep:winreg", "dep:windows", "dep:tauri-build"]
+
 [dependencies]
+highlight_core = { package = "pubg-highlight-trim-core", path = "../core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
-tauri = { version = "2", features = ["config-toml"] }
-rfd = "0.15"
-webview2-com = "0.39"
-winreg = "0.56"
-windows = { version = "0.62", features = ["Win32_Foundation"] }
+tauri = { version = "2", features = ["config-toml"], optional = true }
+rfd = { version = "0.15", optional = true }
+webview2-com = { version = "0.39", optional = true }
+winreg = { version = "0.56", optional = true }
+windows = { version = "0.62", features = ["Win32_Foundation"], optional = true }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_LibraryLoader"] }
 
 [build-dependencies]
-tauri-build = { version = "2", features = ["config-toml"] }
+tauri-build = { version = "2", features = ["config-toml"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

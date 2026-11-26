@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#[cfg(feature = "tauri-ui")]
 fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+
     if args
         .first()
         .is_some_and(|a| a == "--check-webview2-runtime")
@@ -22,4 +24,10 @@ fn main() {
         return;
     }
     highlight_shell::run();
+}
+
+#[cfg(not(feature = "tauri-ui"))]
+fn main() {
+    eprintln!("Tauri UI is disabled; build ui/native-ui instead.");
+    std::process::exit(2);
 }

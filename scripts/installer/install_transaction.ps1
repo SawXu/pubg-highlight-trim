@@ -23,7 +23,7 @@ function Assert-Local([string]$Path) {
 function Assert-Tree([string]$p){if(Test-Path -LiteralPath $p){foreach($i in @(Get-Item -LiteralPath $p -Force)+@(Get-ChildItem -LiteralPath $p -Recurse -Force)){if($i.Attributes -band [IO.FileAttributes]::ReparsePoint){throw "Reparse point is not supported: $($i.FullName)"}}}}
 function Read-Manifest([string]$p){
  $m=Get-Content -LiteralPath $p -Raw|ConvertFrom-Json
- if($m.schema -ne 'pubg-highlight-trim/installer-ownership/v1' -or $m.variant -notin @('system','fixed')){throw 'Invalid ownership manifest.'}
+ if($m.schema -ne 'pubg-highlight-trim/installer-ownership/v1' -or $m.variant -ne 'native'){throw 'Invalid native UI ownership manifest.'}
  $seen=@{};foreach($f in $m.files){$s=[string]$f.path;if($f.owner -ne 'application' -or $f.action -ne 'replace-or-remove' -or !$s -or $s -match '[<>:"|?*\x00-\x1f]' -or $s -match '(^|[\\/])(\.|\.\.|data|\.installer)([\\/]|$)' -or [IO.Path]::IsPathRooted($s) -or $s -match '[. ]([\\/]|$)'){throw "Unsafe ownership path: $s"};if($s -match '(^|[\\/])(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])([.]|[\\/]|$)' -or $s -ieq 'Uninstall.exe'){throw "Reserved ownership path: $s"};$key=$s.Replace('/','\').ToLowerInvariant();if($seen.ContainsKey($key)){throw 'Duplicate ownership path.'};$seen[$key]=$true}
  if(!$seen.Count){throw 'Empty ownership manifest.'};return $m
 }
@@ -35,13 +35,14 @@ function Assert-ProtectedCodeDirectory([string]$path){
 }
 function Acl([string]$path,[string]$user,[switch]$Data,[switch]$Runtime){
  $a=New-Object Security.AccessControl.DirectorySecurity;$inherit='None'
- # Only a newly created empty data root may propagate ACLs to future files.
+ # The installed native UI runs elevated, so data follows the same
+ # administrator-only model as code; only a new data root propagates ACLs.
  if($Data){$inherit='ContainerInherit,ObjectInherit'}
  if(!(Get-Item -LiteralPath $path).PSIsContainer){$a=New-Object Security.AccessControl.FileSecurity;$inherit='None'}
  $a.SetAccessRuleProtection($true,$false);$a.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')))
  foreach($sid in @('S-1-5-18','S-1-5-32-544')){$a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'FullControl',$inherit,'None','Allow')))}
- $right='ReadAndExecute';if($Data){$right='Modify'}
- $a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($user)),$right,$inherit,'None','Allow')))
+ $right='ReadAndExecute';if($Data){$right='FullControl'}
+ if(!$Data){$a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($user)),$right,$inherit,'None','Allow')))
  if($Runtime){foreach($sid in @('S-1-15-2-1','S-1-15-2-2')){$a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'ReadAndExecute',$inherit,'None','Allow')))}}
  Set-Acl -LiteralPath $path -AclObject $a
 }
@@ -69,8 +70,8 @@ function Ensure-ProtectedDirectory([string]$Path,[switch]$SkipValidation){
  }
  if(Test-Path -LiteralPath $Path){
   $guards.Add([PhtDirectoryGuard]::PinForFileUpdates($Path))
-  # Data is intentionally user-writable; parent chains are only pinned. Code
-  # and control directories must already be administrator-owned/protected.
+  # Data and code are administrator-owned/protected; parent chains are only
+  # pinned and are never re-ACL'd.
   if(!$SkipValidation -and $Path -ine (Join-Path $Target 'data') -and !$Path.StartsWith((Join-Path $Target 'data')+'\',[StringComparison]::OrdinalIgnoreCase)){Assert-ProtectedCodeDirectory -path $Path}
  }else{
   $parent=Split-Path $Path -Parent
@@ -134,11 +135,12 @@ if($registered){
 if($Operation -eq 'Uninstall' -and !$old){throw 'No registered installation ownership manifest exists.'}
 $new=$null;if($Operation -eq 'Install'){
  $new=Read-Manifest (Join-Path $Layout 'installer-manifest.json');$d=Get-Content (Join-Path $Layout 'distribution.json') -Raw|ConvertFrom-Json
- if($d.schema -ne 'pubg-highlight-trim/distribution/v1' -or $d.variant -ne $new.variant -or $d.minimum_webview2_major -ne 120 -or $d.version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or $new.version -ne $d.version){throw 'Distribution metadata mismatch.'}
- if($new.variant -eq 'fixed'){foreach($name in @('msedgewebview2.exe','msedge.dll','icudtl.dat','resources.pak')){if(!(Test-Path -LiteralPath (Join-Path $Layout "WebView2Runtime\$name") -PathType Leaf)){throw "Fixed runtime missing: $name"}}}
+ if($d.schema -ne 'pubg-highlight-trim/distribution/v2' -or $d.artifact -ne 'native-ui' -or $d.variant -ne $new.variant -or $d.version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or $new.version -ne $d.version){throw 'Native UI distribution metadata mismatch.'}
+ if($false){
+ # Retained legacy WebView2 probe code is unreachable for the native UI.
  # The payload UI has a no-window, no-data native loader probe. Run it before
  # moving any old owned file; registry presence alone is insufficient.
- $probe=Join-Path $Layout 'pubg-highlight-trim-ui.exe'
+ $probe=Join-Path $Layout 'pubg-highlight-trim-native-ui.exe'
  if(!(Test-Path -LiteralPath $probe -PathType Leaf)){throw 'Runtime probe executable is missing.'}
   . (Join-Path $PSScriptRoot 'DesktopRuntimeProbe.ps1')
   # Both variants must inspect the intended desktop user's policy/runtime.
@@ -181,7 +183,8 @@ $new=$null;if($Operation -eq 'Install'){
    if($probeWorkspaceTrusted){[IO.Directory]::Delete($probeRoot,$false)}
   }
  if($probeExit -ne 0){throw "Compatible $($new.variant) WebView2 runtime is unavailable for the desktop user. Existing installation was not modified. For a missing system runtime, choose the Fixed installer."}
- if($old -and $old.variant -ne $new.variant){Add-Type -AssemblyName System.Windows.Forms;if([Windows.Forms.MessageBox]::Show("Switch from $($old.variant) to $($new.variant)? Settings are preserved.",'Confirm variant switch','YesNo','Warning') -ne 'Yes'){throw 'User cancelled variant switch.'}}
+ }
+ if($old -and $old.variant -ne $new.variant){throw 'A native UI installation is already registered with a different variant.'}
 }
 $all=@();if($old){$all+=Paths $old};if($new){$all+=Paths $new};$all=@($all|Select-Object -Unique)
 $control=@('.installer\installer-manifest.json','.installer\install_transaction.ps1','Uninstall.exe')
@@ -191,7 +194,7 @@ $newFiles=@();if($new){$newFiles=@(Paths $new)+$control}
 $oldFiles=@();if($old){$oldFiles=@(Paths $old)+$control}
 foreach($p in $newFiles){if((Test-Path -LiteralPath (Join-Path $Target $p)) -and $p -notin $oldFiles){throw "Refusing to overwrite an unowned file: $p"}}
 # Pin every preexisting owned directory before using its file paths. The data
-# directory is writable by design, so pin it without granting or repairing ACLs.
+# directory follows the same administrator-only ACL model as code.
 foreach($p in $all){
  $dir=Split-Path (Join-Path $Target $p) -Parent
  Ensure-ProtectedDirectory $dir
@@ -250,10 +253,10 @@ try{
    $dataAcl=Get-Acl -LiteralPath $data
    $owner=$dataAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value
    if($owner -ne 'S-1-5-32-544' -or !$dataAcl.AreAccessRulesProtected){throw 'Existing data directory has unexpected ownership or inherited permissions.'}
-   $allowed=@('S-1-5-18','S-1-5-32-544',$user)
+   $allowed=@('S-1-5-18','S-1-5-32-544')
    $rules=@($dataAcl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
    foreach($rule in $rules){if($rule.IdentityReference.Value -notin $allowed -or $rule.AccessControlType -ne 'Allow'){throw 'Existing data ACL contains unexpected principals or deny rules.'}}
-   foreach($sid in $allowed){if(!@($rules|Where-Object{$_.IdentityReference.Value -eq $sid -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Modify) -eq [Security.AccessControl.FileSystemRights]::Modify}).Count){throw 'Existing data ACL is missing a required principal or permission.'}}
+   foreach($sid in $allowed){if(!@($rules|Where-Object{$_.IdentityReference.Value -eq $sid -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq [Security.AccessControl.FileSystemRights]::FullControl}).Count){throw 'Existing data ACL is missing a required administrator principal or permission.'}}
   }
   New-Item -Path $registry -Force|Out-Null
   foreach($entry in @{DisplayName='PUBG Highlight Trim';InstallLocation=$Target;DisplayVersion=$d.version;UninstallString=('"'+(Join-Path $Target 'Uninstall.exe')+'"');Variant=$new.variant;TargetIdentity=$targetIdentity;OwnershipSha256=(Get-FileHash -LiteralPath (Join-Path $meta 'installer-manifest.json') -Algorithm SHA256).Hash}.GetEnumerator()){New-ItemProperty -Path $registry -Name $entry.Key -Value $entry.Value -PropertyType String -Force|Out-Null}
