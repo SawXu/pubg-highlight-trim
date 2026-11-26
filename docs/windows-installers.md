@@ -7,22 +7,13 @@
 ## 构建
 
 ```powershell
-# System
-powershell -ExecutionPolicy Bypass -File scripts/build_installers_windows.ps1 -Variant System
-
-# Fixed（必须提前解包、离线提供并校验 runtime）
-powershell -ExecutionPolicy Bypass -File scripts/build_installers_windows.ps1 `
-  -Variant Fixed -FixedRuntimePath C:\trusted\WebView2Runtime `
-  -FixedRuntimeSha256 <msedgewebview2.exe-SHA256> `
-  -FixedRuntimeLicenseManifest C:\trusted\fixed-runtime-license.json `
-  -FixedRuntimeLicenseManifestSha256 <许可证清单-SHA256>
+# Native 单一 artifact
+powershell -ExecutionPolicy Bypass -File scripts/build_installers_windows.ps1 -Variant Native
 ```
 
 需要 NSIS **3.11+** 的 `makensis.exe` 位于 PATH。版本默认读取 `ui/package.json.version`，可以用 `-Version 0.4.0` 指定纯数字 SemVer。签名接入点为 `-SignInstallerScript <验证并签名的脚本>`，脚本收到 `-OutputDirectory` 和 `-Variant`，失败会中止构建。未签名版本会显示未知发布者或 SmartScreen 警告；不要关闭安全软件绕过验证。
 
-两种变体均会离线收集 npm/Tauri Rust 传递依赖原始许可证及 hash；缺失即拒绝打包。Fixed 的独立许可证清单还须记录 Microsoft 原始条款、分发义务及完整 runtime 文件 hash，格式见 [许可证收集说明](../scripts/collect_ui_licenses.md)。许可证清单位于 runtime 目录之外。
-
-Fixed runtime 至少必须包含 `msedgewebview2.exe`、`msedge.dll`、`icudtl.dat` 和 `resources.pak`。脚本只校验本地输入，不联网下载或静默补装 WebView2。生成布局根部的 `distribution.json`（以及供安装器按文件所有权升级/卸载的 `installer-manifest.json`）。安装器引擎位于 `scripts/installer/`，缺失时构建会 fail-fast。
+Native artifact 使用 CLI 的完整 license inventory，并生成布局根部的 `distribution.json`（`pubg-highlight-trim/distribution/v2`、`artifact:native-ui`）及供安装器按文件所有权升级/卸载的 `installer-manifest.json`。不打包 WebView2 runtime，也不接受 runtime、license 或下载输入。安装器引擎位于 `scripts/installer/`，缺失时构建会 fail-fast。
 
 `build_ui_windows.ps1` 仍是开发布局入口：它只构建可运行目录，不声称自包含 WebView2，也不生成安装包。其 `-SkipCliBuild` 和 `-Configuration` 参数保持兼容。
 
@@ -30,7 +21,7 @@ Fixed runtime 至少必须包含 `msedgewebview2.exe`、`msedge.dll`、`icudtl.d
 
 安装器启动申请管理员权限（NSIS `RequestExecutionLevel admin`），始终展示目录选择页；升级必须选择现有注册目录。程序不从安装器启动：安装结束后关闭安装器，从开始菜单启动应用；应用同样按管理员权限运行，UAC 是预期行为。native UI 不需要共享或内置 WebView2。
 
-两种变体预检均使用目标普通桌面用户的 Explorer token，而不是提升管理员的 HKCU 或环境；预检无法安全识别或启动该用户时拒绝安装/切换，保留旧文件。异帐号 UAC 的实现已加入，但缺少 VM，尚未实测，不能宣称覆盖所有环境。
+Native 预检使用目标普通桌面用户的 Explorer token，而不是提升管理员的 HKCU 或环境；预检无法安全识别或启动该用户时拒绝安装/切换，保留旧文件。异帐号 UAC 的实现已加入，但缺少 VM，尚未实测，不能宣称覆盖所有环境。
 
 支持本地固定磁盘上的自选路径，包括用户拥有的 `D:\Games`、非用户目录、中文及空格路径。安装器不会因为父目录属于普通用户而拒绝，也不会修改安装目录外的父目录权限或回退到 C 盘。事务期间持有目录句柄防止路径被重命名或重解析替换，升级/卸载还会核对注册信息绑定的真实目录身份。
 
@@ -38,10 +29,8 @@ Fixed runtime 至少必须包含 `msedgewebview2.exe`、`msedge.dll`、`icudtl.d
 
 安装版设置和日志固定在 `<安装目录>/data`，不采用开发环境覆盖。代码、依赖和 data 均为管理员拥有并受管理员 ACL 保护；应用以管理员权限运行。业务输出、归档与 OCR 缓存继续使用 CLI 策略，不承诺系统临时文件或注册信息零系统盘写入。
 
-卸载保留全部 data，之后须人工检查再清理。此前只按设置/日志文件名删除的选项已移除：可写目录中的同名文件也可能是用户业务文件，不能仅凭名称证明归属。直接传旧 `-DeleteData` 参数会在任何修改前明确拒绝。不会递归删除安装根目录或系统共享 WebView2。**完整 UI 数据删除选项仍需改变数据所有权约定后才能安全实现，尚未满足。**
-
-内置 WebView2 的安全更新由项目随新版手动安装包交付，需维护者定期更新受信任 Fixed runtime 输入；本版没有应用内自动更新或运行时自动补装。
+卸载保留全部 data，之后须人工检查再清理。此前只按设置/日志文件名删除的选项已移除：可写目录中的同名文件也可能是用户业务文件，不能仅凭名称证明归属。直接传旧 `-DeleteData` 参数会在任何修改前明确拒绝。不会递归删除安装根目录或系统文件。**完整 UI 数据删除选项仍需改变数据所有权约定后才能安全实现，尚未满足。**
 
 ## 发布边界
 
-只支持 EXE 安装包；不支持 GUI ZIP。签名可通过顶层 `-SignInstallerScript` 接入，未签名候选明确提示未知发布者/SmartScreen，不默认声称已验收。双变体 CI、锁定 runtime 输入、SHA-256、证据和未实测项见 [tauri-release-verification.md](tauri-release-verification.md)。安装目录升级/卸载必须依据 ownership manifest 处理，不得递归删除整个安装目录；用户数据、日志和业务输出应保留。
+只支持 EXE 安装包；不支持 GUI ZIP。签名可通过顶层 `-SignInstallerScript` 接入，未签名候选明确提示未知发布者/SmartScreen，不默认声称已验收。Native CI、SHA-256、证据和未实测项见 [tauri-release-verification.md](tauri-release-verification.md)。安装目录升级/卸载必须依据 ownership manifest 处理，不得递归删除整个安装目录；用户数据、日志和业务输出应保留。

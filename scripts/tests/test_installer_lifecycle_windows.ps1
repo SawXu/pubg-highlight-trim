@@ -2,7 +2,7 @@
 param(
  [Parameter(Mandatory)][string]$Setup,
  [Parameter(Mandatory)][string]$Target,
- [Parameter(Mandatory)][ValidateSet('system','fixed')][string]$Variant,
+ [Parameter(Mandatory)][ValidateSet('native')][string]$Variant,
  [switch]$DisposableVm
 )
 $ErrorActionPreference='Stop'
@@ -40,8 +40,8 @@ try {
  if($process.ExitCode -ne 0){throw "Real setup returned $($process.ExitCode). Preserve details/screenshots; this run is not a pass."}
  [void](Read-Host 'After setup has fully completed, press Enter to inspect Windows state')
  $installed=Read-Installation
- if(!$installed -or $installed.Location -ine $Target -or $installed.Variant -ne $Variant){throw 'Real installer did not register the requested target/variant.'}
- foreach($name in @('pubg-highlight-trim-ui.exe','distribution.json','.installer\installer-manifest.json','Uninstall.exe')){
+ if(!$installed -or $installed.Location -ine $Target -or $installed.Variant -ne $Variant){throw 'Real Native installer did not register the requested target/variant.'}
+ foreach($name in @('pubg-highlight-trim-native-ui.exe','distribution.json','.installer\installer-manifest.json','Uninstall.exe')){
   if(!(Test-Path -LiteralPath (Join-Path $Target $name) -PathType Leaf)){throw "Missing installed file: $name"}
  }
  $data=Join-Path $Target 'data'
@@ -59,10 +59,10 @@ try {
  $uninstaller=Start-Process -FilePath (Join-Path $Target 'Uninstall.exe') -PassThru -Wait
  [void](Read-Host 'NSIS may relaunch from a temporary path. After the FINAL uninstall window closes, press Enter')
  if(Read-Installation){throw 'Registration remains after real uninstall.'}
- if(Test-Path -LiteralPath (Join-Path $Target 'pubg-highlight-trim-ui.exe')){throw 'Owned UI executable remains after uninstall.'}
+ if(Test-Path -LiteralPath (Join-Path $Target 'pubg-highlight-trim-native-ui.exe')){throw 'Owned UI executable remains after uninstall.'}
  $after=Get-DataSnapshot $data
  if($after.Count -ne $before.Count){throw 'Data file count changed during uninstall.'}
  foreach($relative in $before.Keys){if(!$after.ContainsKey($relative) -or $after[$relative] -ne $before[$relative]){throw "Business/UI data lost or changed: $relative"}}
  Write-Host 'PASS: real interactive installer/uninstaller registered and removed app; all data sentinels were byte-for-byte retained.'
- Write-Host 'Not covered by this run: rendering/offline runtime, upgrade/rollback, policy matrix, or automatic full cleanup (unsupported). Restore the VM snapshot; no test cleanup is attempted.'
+ Write-Host 'Not covered by this run: rendering, upgrade/rollback, or automatic full cleanup (unsupported). Restore the VM snapshot; no test cleanup is attempted.'
 } finally {$hive.Dispose()}
