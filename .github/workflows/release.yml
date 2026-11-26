@@ -2,19 +2,6 @@ name: release
 
 on:
   workflow_dispatch:
-    inputs:
-      fixed_runtime_run_id:
-        description: 'Same-repository trusted artifact workflow run ID (all three inputs required for installers)'
-        type: string
-        default: ''
-      fixed_runtime_artifact:
-        description: 'Artifact containing runtime.zip and runtime-lock.json'
-        type: string
-        default: ''
-      fixed_runtime_lock_sha256:
-        description: 'Independently reviewed runtime-lock.json SHA256; no default runtime is downloaded'
-        type: string
-        default: ''
   push:
     tags:
       - "v*"
@@ -30,40 +17,12 @@ jobs:
   ui-checks:
     uses: ./.github/workflows/ui-checks.yml
 
-  # No default Fixed runtime. Explicit reviewed artifact input only.
-  # Installers are workflow artifacts only: CI static checks do not prove VM acceptance.
-  # Existing tag-triggered independent CLI publication is unchanged.
   windows:
     needs: [assurance, ui-checks]
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Validate explicit runtime input tuple
-        id: runtime
-        shell: powershell
-        env:
-          RUN_ID: ${{ inputs.fixed_runtime_run_id }}
-          ARTIFACT: ${{ inputs.fixed_runtime_artifact }}
-          LOCK_HASH: ${{ inputs.fixed_runtime_lock_sha256 }}
-        run: |
-          $values = @($env:RUN_ID, $env:ARTIFACT, $env:LOCK_HASH)
-          $count = @($values | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
-          if ($count -notin @(0,3)) { throw 'Supply all three trusted runtime inputs or none.' }
-          if ($count -eq 3) {
-            if ($env:RUN_ID -notmatch '^[1-9][0-9]*$' -or $env:LOCK_HASH -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid runtime run ID or lock SHA256.' }
-            'enabled=true' | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-
-      - name: Retrieve explicitly selected trusted Fixed runtime input
-        if: steps.runtime.outputs.enabled == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.fixed_runtime_run_id }}
-          name: ${{ inputs.fixed_runtime_artifact }}
-          path: ${{ runner.temp }}/fixed-runtime-input
 
       - name: Enforce clean no-Python release host
         shell: powershell
@@ -89,11 +48,11 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
 
-      - name: Reject unsafe installer inputs without building or downloading
+      - name: Reject unsafe installer inputs without building
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\tests\test_installer_inputs.ps1
 
-      - name: Set up Node for locked UI build
+      - name: Set up Node for locked CLI build
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -108,76 +67,90 @@ jobs:
           'C:\Program Files (x86)\NSIS' | Out-File $env:GITHUB_PATH -Append -Encoding utf8
           'C:\Program Files\7-Zip' | Out-File $env:GITHUB_PATH -Append -Encoding utf8
 
-      - name: Release entry trust and static payload contract tests (fixtures, not VM acceptance)
+      - name: Release entry trust and static payload contract tests
         shell: powershell
         run: |
           $env:PATH += ';C:\Program Files\7-Zip'
-          if ('${{ steps.runtime.outputs.enabled }}' -eq 'true') {
-            ./scripts/tests/test_release_entry.ps1 -MakeNsis makensis
-          } else {
-            ./scripts/tests/test_release_entry.ps1
-          }
+          ./scripts/tests/test_release_entry.ps1 -MakeNsis makensis
 
-      - name: Build Windows CLI bundle and System installer (no trusted runtime input)
-        if: steps.runtime.outputs.enabled != 'true'
+      - name: Build Native release and CLI bundle
         shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File scripts\release_windows.ps1 -SystemOnly
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release_windows.ps1
 
-      - name: Build once and statically verify both installer products
-        if: steps.runtime.outputs.enabled == 'true'
-        shell: powershell
-        env:
-          LOCK_HASH: ${{ inputs.fixed_runtime_lock_sha256 }}
-        run: ./scripts/release_windows.ps1 -InputDirectory "$env:RUNNER_TEMP\fixed-runtime-input" -LockSha256 $env:LOCK_HASH
-
-      - name: Verify release artifacts contain no Python runtime names
+      - name: Package and verify the single Native release artifact
         shell: powershell
         run: |
+          $native = 'dist\pubg-highlight-trim-native-ui'
+          $cli = 'dist\pubg-highlight-trim-windows-x64.zip'
+          $installer = Get-ChildItem -LiteralPath 'dist\release' -Filter '*-native-setup.exe' -File
+          $manifest = 'build\installer-stage-native\installer-manifest.json'
+          $distribution = 'build\installer-stage-native\distribution.json'
+          foreach ($path in @($native, $cli, $manifest, $distribution)) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Missing Native release input: $path" }
+          }
+          if ($installer.Count -ne 1) { throw "Expected exactly one Native installer, found $($installer.Count)." }
+          if (-not (Test-Path -LiteralPath (Join-Path $native 'pubg-highlight-trim-native-ui.exe'))) { throw 'Native executable is missing.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $native 'cli\pubg-highlight-trim.exe'))) { throw 'CLI bundle is missing from the Native artifact.' }
+          $nativeZip = 'dist\pubg-highlight-trim-windows-x64-native.zip'
+          Compress-Archive -Path (Join-Path $native '*') -DestinationPath $nativeZip -Force
+          Copy-Item -LiteralPath $manifest, $distribution -Destination 'dist\release' -Force
+          $files = @($nativeZip, $cli, $installer.FullName, 'dist\release\installer-manifest.json', 'dist\release\distribution.json', 'dist\release\release-evidence.json')
+          foreach ($path in $files) { if (-not (Test-Path -LiteralPath $path)) { throw "Missing release product: $path" } }
+          $lines = foreach ($path in $files) {
+            $file = Get-Item -LiteralPath $path
+            "$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($file.Name)"
+          }
+          $lines | Set-Content -LiteralPath 'dist\release\RELEASE-SHA256SUMS.txt' -Encoding ASCII
+
+      - name: Verify Native and CLI archives contain no Python runtime names
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
           $forbidden = 'python|pyinstaller|paddle|paddlex|numpy|opencv'
-          foreach ($archive in @('dist\pubg-highlight-trim-windows-x64.zip')) {
-            if (-not (Test-Path -LiteralPath $archive)) { throw "Missing release archive: $archive" }
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
+          foreach ($archive in @('dist\pubg-highlight-trim-windows-x64-native.zip', 'dist\pubg-highlight-trim-windows-x64.zip')) {
             $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $archive))
             try {
               $hits = @($zip.Entries | Where-Object { $_.FullName -match $forbidden })
-              if ($hits.Count -gt 0) { throw "Forbidden Python/Paddle runtime names in $archive`: $($hits.FullName -join ', ')" }
+              if ($hits.Count -gt 0) { throw "Forbidden runtime names in $archive`: $($hits.FullName -join ', ')" }
             } finally { $zip.Dispose() }
           }
 
-      - name: Hash standalone CLI archive
-        shell: powershell
-        run: |
-          $hash = (Get-FileHash -LiteralPath 'dist\pubg-highlight-trim-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  pubg-highlight-trim-windows-x64.zip" | Set-Content -LiteralPath 'dist\CLI-SHA256SUMS.txt' -Encoding ASCII
-
-      - name: Upload artifact
+      - name: Upload the single Native release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pubg-highlight-trim-windows-x64
+          name: pubg-highlight-trim-windows-x64-native
           path: |
+            dist/pubg-highlight-trim-windows-x64-native.zip
             dist/pubg-highlight-trim-windows-x64.zip
-            dist/CLI-SHA256SUMS.txt
-
-      - name: Upload installer products and evidence (NOT_ACCEPTED)
-        uses: actions/upload-artifact@v4
-        with:
-          name: pubg-highlight-trim-windows-x64-installers-NOT-ACCEPTED
-          path: dist/release/*
+            dist/release/*-native-setup.exe
+            dist/release/installer-manifest.json
+            dist/release/distribution.json
+            dist/release/SHA256SUMS.txt
+            dist/release/RELEASE-SHA256SUMS.txt
+            dist/release/release-evidence.json
           if-no-files-found: error
 
-      - name: Record installer acceptance limitations
+      - name: Record Native release limitations
         shell: powershell
         run: |
-          '## GUI installers NOT ACCEPTED - workflow artifacts only' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          'Static extraction/hash checks do not prove installation, runtime or Windows 10/11 VM lifecycle acceptance. See release-evidence.json and docs/tauri-release-verification.md. No trusted runtime input builds the shared-WebView2 System installer only.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          '## Native Windows release artifact' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          'This artifact contains the Native executable, its CLI bundle, the Native installer, distribution and installer manifests, and SHA-256 checksums.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          'Static extraction and hash checks do not prove installation, runtime, or Windows 10/11 VM lifecycle acceptance; release-evidence.json records these limitations.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
-      - name: Publish CLI and System installer release (Fixed installer stays artifact-only)
+      - name: Publish Native release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          body: |
+            Native Windows x64 release. Includes the Native executable and CLI bundle archive, the Native installer, manifests, and SHA-256 checksums.
+
+            The Native UI has no browser runtime dependency. Static payload and hash checks are included; installation, runtime, and Windows 10/11 VM lifecycle acceptance remain documented in release-evidence.json.
           files: |
+            dist/pubg-highlight-trim-windows-x64-native.zip
             dist/pubg-highlight-trim-windows-x64.zip
-            dist/CLI-SHA256SUMS.txt
-            dist/release/*-setup.exe
+            dist/release/*-native-setup.exe
+            dist/release/installer-manifest.json
+            dist/release/distribution.json
             dist/release/SHA256SUMS.txt
+            dist/release/RELEASE-SHA256SUMS.txt
             dist/release/release-evidence.json
