@@ -288,6 +288,76 @@ pub fn close_action(status: &CloseStatus) -> CloseAction {
     }
 }
 
+/// Presentation state for the title-bar close prompt, independent of start warnings.
+/// Cleanup and task lifecycle remain owned by UiSession.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ClosePrompt {
+    #[default]
+    Hidden,
+    Confirming,
+    Waiting,
+    Failed(String),
+}
+
+impl ClosePrompt {
+    pub fn request(&mut self, request: CloseRequest) -> CloseAction {
+        if *self == Self::Waiting {
+            return CloseAction::Wait;
+        }
+        match close_decision(request) {
+            CloseDecision::CloseNow => CloseAction::Close,
+            CloseDecision::RequireConfirmation => {
+                // Repeated title-bar clicks must not discard a displayed error.
+                if *self == Self::Hidden {
+                    *self = Self::Confirming;
+                }
+                CloseAction::None
+            }
+        }
+    }
+
+    pub fn dismiss(&mut self) {
+        if *self != Self::Waiting {
+            *self = Self::Hidden;
+        }
+    }
+
+    pub fn confirm(
+        &mut self,
+        request: CloseRequest,
+        cleanup: impl FnOnce() -> Result<(), String>,
+    ) -> CloseAction {
+        if self.request(request) == CloseAction::Close {
+            // The task may have finished naturally while the prompt was open.
+            return CloseAction::Close;
+        }
+        if *self == Self::Waiting {
+            return CloseAction::Wait;
+        }
+        match cleanup() {
+            Ok(()) => {
+                *self = Self::Waiting;
+                CloseAction::Wait
+            }
+            Err(error) => {
+                *self = Self::Failed(error.clone());
+                CloseAction::ShowError(error)
+            }
+        }
+    }
+
+    pub fn poll(&mut self, status: &CloseStatus) -> CloseAction {
+        if *self != Self::Waiting {
+            return CloseAction::None;
+        }
+        let action = close_action(status);
+        if let CloseAction::ShowError(error) = &action {
+            *self = Self::Failed(error.clone());
+        }
+        action
+    }
+}
+
 /// The platform-independent part of the native slice. Tests can exercise this
 /// without creating a Win32 window or loading NSH.
 pub fn validate(session: &UiSession, options: &RunOptions) -> String {
@@ -501,6 +571,94 @@ mod tests {
             close_decision(CloseRequest::ConfirmationRequired),
             CloseDecision::RequireConfirmation
         );
+    }
+
+    #[test]
+    fn close_prompt_is_conditional_and_can_be_dismissed_without_cleanup() {
+        use super::{CloseAction, ClosePrompt};
+        let mut prompt = ClosePrompt::default();
+        assert_eq!(prompt, ClosePrompt::Hidden);
+        assert_eq!(prompt.request(CloseRequest::Allowed), CloseAction::Close);
+        assert_eq!(prompt, ClosePrompt::Hidden);
+        for _ in 0..2 {
+            assert_eq!(
+                prompt.request(CloseRequest::ConfirmationRequired),
+                CloseAction::None
+            );
+            assert_eq!(prompt, ClosePrompt::Confirming);
+        }
+        prompt.dismiss();
+        assert_eq!(prompt, ClosePrompt::Hidden);
+    }
+
+    #[test]
+    fn close_prompt_waits_for_cleanup_and_ignores_repeated_operations() {
+        use super::{CloseAction, ClosePrompt};
+        use highlight_core::ui_session::CloseStatus;
+        let mut prompt = ClosePrompt::Confirming;
+        let mut calls = 0;
+        assert_eq!(
+            prompt.confirm(CloseRequest::ConfirmationRequired, || {
+                calls += 1;
+                Ok(())
+            }),
+            CloseAction::Wait
+        );
+        assert_eq!(calls, 1);
+        assert_eq!(prompt, ClosePrompt::Waiting);
+        // Even if the task now looks idle, cleanup must finish before closing.
+        assert_eq!(prompt.request(CloseRequest::Allowed), CloseAction::Wait);
+        assert_eq!(
+            prompt.confirm(CloseRequest::Allowed, || panic!("duplicate cleanup")),
+            CloseAction::Wait
+        );
+        prompt.dismiss();
+        assert_eq!(prompt, ClosePrompt::Waiting);
+        assert_eq!(
+            prompt.poll(&CloseStatus::Waiting { run_id: None }),
+            CloseAction::Wait
+        );
+        assert_eq!(prompt.poll(&CloseStatus::Completed), CloseAction::Close);
+    }
+
+    #[test]
+    fn close_prompt_handles_natural_completion_and_cleanup_failures() {
+        use super::{CloseAction, ClosePrompt};
+        use highlight_core::ui_session::CloseStatus;
+        let mut prompt = ClosePrompt::Confirming;
+        assert_eq!(
+            prompt.confirm(CloseRequest::Allowed, || panic!(
+                "finished task needs no cancellation"
+            )),
+            CloseAction::Close
+        );
+        assert_eq!(
+            prompt.confirm(CloseRequest::ConfirmationRequired, || Err(
+                "cancel failed".into()
+            )),
+            CloseAction::ShowError("cancel failed".into())
+        );
+        assert_eq!(prompt, ClosePrompt::Failed("cancel failed".into()));
+        assert_eq!(
+            prompt.confirm(CloseRequest::ConfirmationRequired, || Ok(())),
+            CloseAction::Wait
+        );
+        assert_eq!(
+            prompt.poll(&CloseStatus::Failed("cleanup failed".into())),
+            CloseAction::ShowError("cleanup failed".into())
+        );
+        assert_eq!(prompt, ClosePrompt::Failed("cleanup failed".into()));
+        assert_eq!(
+            prompt.request(CloseRequest::ConfirmationRequired),
+            CloseAction::None
+        );
+        assert_eq!(prompt, ClosePrompt::Failed("cleanup failed".into()));
+        prompt.dismiss();
+        assert_eq!(
+            prompt.poll(&CloseStatus::Failed("old failure".into())),
+            CloseAction::None
+        );
+        assert_eq!(prompt, ClosePrompt::Hidden);
     }
 
     #[test]
