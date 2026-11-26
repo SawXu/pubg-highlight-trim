@@ -51,7 +51,7 @@ pub const TRIM_JOBS: &[Choice] = &[
         label: "2",
     },
 ];
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct RunOptions {
     pub input_paths: Vec<String>,
@@ -197,6 +197,11 @@ impl RunOptions {
         }
         Ok(a)
     }
+    pub fn preview(&self) -> Result<String, String> {
+        self.arguments()
+            .map(|args| preview("pubg-highlight-trim", &args))
+    }
+
     pub fn warnings(&self) -> Vec<String> {
         let mut w = vec![];
         if self.overwrite {
