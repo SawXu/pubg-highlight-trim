@@ -1,3 +1,4 @@
 fn main() {
-    tauri_build::build()
+    #[cfg(feature = "tauri-ui")]
+    tauri_build::build();
 }

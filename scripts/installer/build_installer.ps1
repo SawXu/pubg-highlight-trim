@@ -1,10 +1,10 @@
 ﻿[CmdletBinding()]
-param([Parameter(Mandatory)][string]$Layout,[Parameter(Mandatory)][string]$OutputDirectory,[Parameter(Mandatory)][ValidateSet('System','Fixed')][string]$Variant,[string]$MakeNsis='makensis')
+param([Parameter(Mandatory)][string]$Layout,[Parameter(Mandatory)][string]$OutputDirectory,[Parameter(Mandatory)][ValidateSet('Native')][string]$Variant,[string]$MakeNsis='makensis')
 $ErrorActionPreference='Stop'
 $Layout=(Resolve-Path -LiteralPath $Layout).Path
 if($Layout.StartsWith('\\')){throw 'Layout must be a local path.'}
 $d=Get-Content -LiteralPath (Join-Path $Layout 'distribution.json') -Raw|ConvertFrom-Json
-if($d.schema -ne 'pubg-highlight-trim/distribution/v1' -or $d.variant -ne $Variant.ToLowerInvariant()){throw 'distribution.json does not match requested variant.'}
+if($d.schema -ne 'pubg-highlight-trim/distribution/v2' -or $d.artifact -ne 'native-ui'){throw 'distribution.json does not match native UI artifact.'}
 $m=Get-Content -LiteralPath (Join-Path $Layout 'installer-manifest.json') -Raw|ConvertFrom-Json
 if($m.schema -ne 'pubg-highlight-trim/installer-ownership/v1' -or $m.variant -ne $Variant.ToLowerInvariant()){throw 'installer manifest does not match requested variant.'}
 if(!(Get-Command $MakeNsis -ErrorAction SilentlyContinue)){throw 'makensis is required to build the installer.'}
@@ -46,7 +46,7 @@ ShowUninstDetails nevershow
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "安装完成"
-!define MUI_FINISHPAGE_TEXT "PUBG Highlight Trim 已准备就绪。$\r$\n$\r$\n关闭安装器后，从开始菜单正常启动应用。请勿以管理员身份运行。$\r$\n$\r$\n界面设置、日志及浏览器数据位于安装目录下的 data 文件夹。视频输出和 OCR 缓存遵循处理引擎的目录设置。"
+!define MUI_FINISHPAGE_TEXT "PUBG Highlight Trim 已准备就绪。$\r$\n$\r$\n关闭安装器后，从开始菜单启动应用。应用按管理员权限运行，UAC 提示是预期行为。$\r$\n$\r$\n界面设置及日志位于安装目录下的 data 文件夹；安装目录及 data 由管理员保护。视频输出和 OCR 缓存遵循处理引擎的目录设置。"
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 !insertmacro MUI_PAGE_FINISH
 !define MUI_UNCONFIRMPAGE_TEXT_TOP "将删除应用及随包依赖。所有界面数据及非程序文件均会保留，不删除系统 WebView2。$\r$\n$\r$\n卸载后请人工检查 data 目录，仅删除你确认不再需要的文件。"
@@ -88,7 +88,7 @@ Section "Install"
 success:
   SetShellVarContext all
   CreateDirectory "$SMPROGRAMS\PUBG Highlight Trim"
-  CreateShortcut "$SMPROGRAMS\PUBG Highlight Trim\PUBG Highlight Trim.lnk" "$INSTDIR\pubg-highlight-trim-ui.exe" "" "$INSTDIR\pubg-highlight-trim-ui.exe" 0 SW_SHOWNORMAL
+  CreateShortcut "$SMPROGRAMS\PUBG Highlight Trim\PUBG Highlight Trim.lnk" "$INSTDIR\pubg-highlight-trim-native-ui.exe" "" "$INSTDIR\pubg-highlight-trim-native-ui.exe" 0 SW_SHOWNORMAL
 SectionEnd
 Section "Uninstall"
   InitPluginsDir
@@ -112,8 +112,7 @@ un_success:
   RMDir "$SMPROGRAMS\PUBG Highlight Trim"
 SectionEnd
 '@
-$variantLabel='系统 WebView2 版';$variantDescription='使用本机已有的 WebView2（120+）。不会下载或补装运行时；如果环境不确定，请选择内置版。'
-if($Variant -eq 'Fixed'){$variantLabel='内置 WebView2 版';$variantDescription='随包提供 WebView2，无需另装共享运行时。内置运行时缺失时不会回退系统版本。'}
+$variantLabel='Native Windows UI';$variantDescription='使用 NSH 原生 Windows UI；不依赖 Tauri 或 WebView2。'
 $template.Replace('__VARIANT_LABEL__',$variantLabel).Replace('__VARIANT_DESCRIPTION__',$variantDescription).Replace('__ICON__',(Escape-NsisString (Join-Path $PSScriptRoot '../../ui/src-tauri/icons/icon.ico'))).Replace('__WIZARD__',(Escape-NsisString (Join-Path $PSScriptRoot 'wizard.bmp'))).Replace('__OUT__',(Escape-NsisString $exe)).Replace('__LAYOUT__',(Escape-NsisString $Layout)).Replace('__ENGINE__',(Escape-NsisString $engine)).Replace('__GUARD__',(Escape-NsisString $guard)).Replace('__DESKTOP_PROBE__',(Escape-NsisString $desktopProbe))|Set-Content -LiteralPath $nsis -Encoding UTF8
 try{& $MakeNsis $nsis;if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $exe)){throw 'NSIS build failed.'}}finally{Remove-Item -LiteralPath $nsis -Force -ErrorAction SilentlyContinue}
 Write-Host "Built $exe"

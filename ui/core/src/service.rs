@@ -32,6 +32,10 @@ impl Shell {
     pub fn state(&self) -> RunState {
         self.inner.lock().unwrap().state.clone()
     }
+    pub fn load(&self) -> Result<RunOptions, String> {
+        self.storage.load()
+    }
+
     pub fn save(&self, options: &RunOptions) -> Result<(), String> {
         let i = self.inner.lock().unwrap();
         if i.state.running {

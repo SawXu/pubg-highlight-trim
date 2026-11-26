@@ -27,6 +27,19 @@ npm run tauri dev
 
 `tests/workflow.test.ts` 不挂载 DOM，不依赖私有 Vue 函数。覆盖权威 bootstrap、选项透传、危险操作确认/拒绝、校验失败重试、重复启动锁、选项快照、未知阶段与终态透传，以及原生操作委派。这些是公开 seam 合同测试，并不替代 `src-tauri/tests` 与仓库外部行为脚本的 Rust→CLI 集成测试。
 
+`src-tauri` 默认不启用 Tauri，以便复用不依赖桌面框架的 Rust shell 测试；旧 Tauri 入口必须显式启用 `tauri-ui`：
+
+```bash
+cargo check --manifest-path ui/src-tauri/Cargo.toml --no-default-features
+cargo test --manifest-path ui/src-tauri/Cargo.toml --features tauri-ui --lib --tests
+```
+
+`ui/native-ui` 是独立的原生 UI crate，不依赖 Tauri；可用以下命令检查其非开发依赖树：
+
+```bash
+cargo tree --manifest-path ui/native-ui/Cargo.toml --no-dev-dependencies | grep -Ei 'tauri|wry|webview2-com' || true
+```
+
 ### 任务控制区的浏览器验证
 
 ```powershell

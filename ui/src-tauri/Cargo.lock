@@ -2728,10 +2728,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pubg-highlight-trim-core"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "pubg-highlight-trim-ui"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "pubg-highlight-trim-core",
  "regex",
  "rfd",
  "serde",

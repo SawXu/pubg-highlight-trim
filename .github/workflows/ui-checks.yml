@@ -42,9 +42,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Chromium installation failed" }
           npm --prefix ui run test:e2e
           if ($LASTEXITCODE -ne 0) { throw "Task control browser checks failed" }
-      - name: Tauri Rust check
+      - name: Native UI dependency boundary (fail fast)
         shell: powershell
-        run: cargo check --locked --manifest-path ui/src-tauri/Cargo.toml
+        run: |
+          $tree = cargo tree --locked --manifest-path ui/native-ui/Cargo.toml 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "Native UI dependency tree failed: $tree" }
+          if ($tree -match '(?im)^\s*(?:[├└]──\s*)?(tauri|wry|webview2-com)(?:\s|$)') {
+            throw "Native UI must not depend on tauri, wry, or webview2-com: $($Matches[1])"
+          }
+      - name: Native UI Windows cargo check
+        shell: powershell
+        run: cargo check --locked --manifest-path ui/native-ui/Cargo.toml
+      - name: Native UI Windows cargo build
+        shell: powershell
+        run: cargo build --locked --manifest-path ui/native-ui/Cargo.toml --release
       - name: Public UI behavior contracts
         shell: powershell
         run: ./scripts/test_ui_behavior.ps1 -SkipInstall
