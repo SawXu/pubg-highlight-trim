@@ -35,6 +35,70 @@ fn tools() -> FfmpegTools {
     }
 }
 #[test]
+fn hdr_main10_clips_keep_hvc1_and_color_metadata_after_concat() {
+    let tools = tools();
+    let dir = std::env::temp_dir().join(format!("pubg-hdr-concat-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("source.mp4");
+    assert!(Command::new(&tools.ffmpeg).args([
+        "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=64x48:rate=10",
+        "-t", "1", "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error",
+        "-pix_fmt", "yuv420p10le", "-vf", "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=limited",
+        "-color_primaries", "bt2020", "-color_trc", "smpte2084",
+        "-colorspace", "bt2020nc", "-color_range", "tv",
+    ]).arg(&src).status().unwrap().success());
+    let one = dir.join("one.mp4");
+    let two = dir.join("two.mp4");
+    for out in [&one, &two] {
+        let codec = tools.trim_clip(&src, out, 0., 0.5).unwrap();
+        assert!(["hevc_nvenc", "libx265"].contains(&codec));
+    }
+    let merged = dir.join("merged.mp4");
+    tools
+        .concat_clips(&[one.clone(), two.clone()], &merged)
+        .unwrap();
+    for out in [&one, &two, &merged] {
+        let probe = Command::new(&tools.ffprobe).args([
+            "-v", "error", "-select_streams", "v:0", "-show_entries",
+            "stream=codec_name,codec_tag_string,profile,pix_fmt,color_primaries,color_transfer,color_space,color_range",
+            "-of", "json",
+        ]).arg(out).output().unwrap();
+        assert!(probe.status.success());
+        let info: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+        let video = &info["streams"][0];
+        for (key, expected) in [
+            ("codec_name", "hevc"),
+            ("codec_tag_string", "hvc1"),
+            ("profile", "Main 10"),
+            ("pix_fmt", "yuv420p10le"),
+            ("color_primaries", "bt2020"),
+            ("color_transfer", "smpte2084"),
+            ("color_space", "bt2020nc"),
+            ("color_range", "tv"),
+        ] {
+            assert_eq!(video[key], expected, "{out:?}: {info}");
+        }
+        let decode = Command::new(&tools.ffmpeg)
+            .args(["-v", "error", "-i"])
+            .arg(out)
+            .args(["-f", "null", "-"])
+            .output()
+            .unwrap();
+        assert!(
+            decode.status.success(),
+            "{}",
+            String::from_utf8_lossy(&decode.stderr)
+        );
+        assert!(
+            decode.stderr.is_empty(),
+            "{}",
+            String::from_utf8_lossy(&decode.stderr)
+        );
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn seek_outside_video_is_not_an_unreadable_video() {
     let tools = tools();
     let dir = std::env::temp_dir().join(format!("pubg-media-{}", std::process::id()));

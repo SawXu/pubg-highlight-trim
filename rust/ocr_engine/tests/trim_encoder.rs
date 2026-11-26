@@ -11,11 +11,16 @@ use std::{fs,io::Write};
 fn main() {
  let root=std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
  let args:Vec<String>=std::env::args().skip(1).collect();
+ if args.iter().any(|x|x=="-show_entries") {
+  print!("{}",fs::read_to_string(root.join("stream-info")).unwrap_or_else(|_|"pix_fmt=yuv420p\nbits_per_raw_sample=8\n".into()));
+  return;
+ }
  let probe=args.iter().any(|x|x=="lavfi");
- let nvenc=args.iter().any(|x|x=="h264_nvenc");
+ let nvenc=args.iter().any(|x|x=="h264_nvenc" || x=="hevc_nvenc");
  let label=if probe {"capability"} else if nvenc {"nvenc"} else {"software"};
  let mut log=fs::OpenOptions::new().append(true).create(true).open(root.join("calls")).unwrap();
  writeln!(log,"{}",label).unwrap();
+ fs::write(root.join(format!("{label}-args")),args.join("\n")).unwrap();
  if probe {
   fs::write(root.join("probe-path"), args.last().unwrap()).unwrap();
   assert!(args.iter().any(|x|x=="p4")); assert!(args.iter().any(|x|x=="vbr"));
@@ -24,7 +29,7 @@ fn main() {
  std::thread::sleep(std::time::Duration::from_millis(35));
  let mode=fs::read_to_string(root.join("mode")).unwrap();
  if mode==format!("hang-{label}") { std::thread::sleep(std::time::Duration::from_secs(120)); }
- if ((mode=="unavailable" || mode=="hang-software") && nvenc) || (mode=="production-failure" && nvenc && !probe) {
+ if ((mode=="unavailable" || mode=="hang-software") && nvenc) || (mode.ends_with("production-failure") && nvenc && !probe) {
   eprintln!("private C:/secret/source.mp4 driver error"); std::process::exit(1);
  }
  fs::write(args.last().unwrap(),b"encoded").unwrap();
@@ -47,6 +52,120 @@ fn main() {
             verbose: false,
         },
     )
+}
+
+#[test]
+fn sdr_clips_are_explicitly_h264_high_8_bit_on_gpu_and_software() {
+    for mode in ["sdr-available", "sdr-production-failure"] {
+        let (root, tools) = fixture(mode);
+        let codec = tools
+            .trim_clip(&root.join("source.mp4"), &root.join("out.mp4"), 0., 1.)
+            .unwrap();
+        assert_eq!(
+            codec,
+            if mode == "sdr-production-failure" {
+                "libx264"
+            } else {
+                "h264_nvenc"
+            }
+        );
+        for label in if mode == "sdr-production-failure" {
+            vec!["nvenc", "software"]
+        } else {
+            vec!["nvenc"]
+        } {
+            let args = fs::read_to_string(root.join(format!("{label}-args"))).unwrap();
+            assert!(args.contains("-pix_fmt\nyuv420p\n"), "{args}");
+            assert!(args.contains("-profile:v\nhigh\n"), "{args}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn hdr_or_10_bit_clips_preserve_color_using_hevc_main10_with_software_fallback() {
+    for (case, detection) in [
+        ("pq", "pix_fmt=yuv420p\ncolor_transfer=smpte2084\n"),
+        ("hlg", "pix_fmt=yuv420p\ncolor_transfer=arib-std-b67\n"),
+        ("pixel", "pix_fmt=yuv420p10le\n"),
+        ("bits", "pix_fmt=unknown\nbits_per_raw_sample=10\n"),
+    ] {
+        for fallback in [false, true] {
+            let mode = format!(
+                "hdr-{case}-{}",
+                if fallback {
+                    "production-failure"
+                } else {
+                    "available"
+                }
+            );
+            let (root, tools) = fixture(&mode);
+            fs::write(
+                root.join("stream-info"),
+                format!(
+                    "{detection}color_primaries=bt2020\ncolor_space=bt2020nc\ncolor_range=tv\n"
+                ),
+            )
+            .unwrap();
+            let mut run = TrimEncoder::new(&tools);
+            let codec = run
+                .trim_clip(&root.join("source.mp4"), &root.join("out.mp4"), 26., 8.5)
+                .unwrap();
+            assert_eq!(codec, if fallback { "libx265" } else { "hevc_nvenc" });
+            assert_eq!(
+                run.diagnostics().production_fallbacks,
+                usize::from(fallback)
+            );
+            for label in if fallback {
+                vec!["nvenc", "software"]
+            } else {
+                vec!["nvenc"]
+            } {
+                let args = fs::read_to_string(root.join(format!("{label}-args"))).unwrap();
+                for expected in [
+                    "-profile:v\nmain10\n",
+                    "-tag:v\nhvc1\n",
+                    "-color_primaries\nbt2020\n",
+                    "-colorspace\nbt2020nc\n",
+                    "-color_range\ntv\n",
+                ] {
+                    assert!(args.contains(expected), "missing {expected}: {args}");
+                }
+                if case == "pq" || case == "hlg" {
+                    assert!(
+                        args.contains(if case == "pq" {
+                            "-color_trc\nsmpte2084\n"
+                        } else {
+                            "-color_trc\narib-std-b67\n"
+                        }),
+                        "{args}"
+                    );
+                } else {
+                    assert!(
+                        !args.contains("-color_trc"),
+                        "do not invent absent metadata: {args}"
+                    );
+                }
+                assert!(
+                    args.contains(if label == "nvenc" {
+                        "-pix_fmt\np010le\n"
+                    } else {
+                        "-pix_fmt\nyuv420p10le\n"
+                    }),
+                    "{args}"
+                );
+                assert!(
+                    args.contains(if label == "nvenc" {
+                        "-preset\np4\n-rc\nvbr\n-cq\n22\n-b:v\n0\n"
+                    } else {
+                        "-preset\nveryfast\n-crf\n20\n"
+                    }),
+                    "{args}"
+                );
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 }
 
 #[test]
