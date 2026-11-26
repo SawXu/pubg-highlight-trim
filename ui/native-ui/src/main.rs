@@ -4,8 +4,8 @@
 mod windows_app {
     use highlight_core::{ui_session::UiSession, RunOptions};
     use native_ui::{
-        close_action, close_decision, open_session, CloseAction, CloseDecision, NativeController,
-        SessionView, StartPrompt, TargetMode,
+        open_session, CloseAction, ClosePrompt, NativeController, SessionView, StartPrompt,
+        TargetMode,
     };
     use nsh_base::{button, checkbox};
     use nsh_core::{
@@ -175,6 +175,7 @@ mod windows_app {
         preview: Signal<String>,
         validation: Signal<String>,
         pending_confirmation: Signal<Vec<String>>,
+        close_prompt: Signal<ClosePrompt>,
         message: Signal<String>,
     }
 
@@ -233,7 +234,24 @@ mod windows_app {
                 .set(result.map(|_| success.to_string()).unwrap_or_else(|e| e));
             self.sync_view();
         }
+        fn update_close(
+            &self,
+            update: impl FnOnce(&mut ClosePrompt) -> CloseAction,
+        ) -> CloseAction {
+            let mut prompt = self.close_prompt.get_untracked();
+            let action = update(&mut prompt);
+            if self.close_prompt.get_untracked() != prompt {
+                self.close_prompt.set(prompt);
+            }
+            if let CloseAction::ShowError(error) = &action {
+                self.message.set(format!("关闭失败：{error}"));
+            }
+            action
+        }
         fn start(&self, confirmed: bool) {
+            if self.close_prompt.get_untracked() == ClosePrompt::Waiting {
+                return;
+            }
             let result = {
                 let mut c = self.controller.borrow_mut();
                 if c.snapshot(session()).running {
@@ -682,6 +700,8 @@ mod windows_app {
         let message = p.message.clone();
         let start_p = p.clone();
         let start_locked = p.view.clone();
+        let start_close = p.close_prompt.clone();
+        let cancel_close = p.close_prompt.clone();
         let invalid = p.validation.clone();
         let pending = p.pending_confirmation.clone();
         let cancel_p = p.clone();
@@ -755,6 +775,7 @@ mod windows_app {
                                     .disabled_style(|s| s.opacity(0.45))
                                     .disabled(move || {
                                         start_locked.get().running
+                                            || start_close.get() == ClosePrompt::Waiting
                                             || !invalid.get().is_empty()
                                             || !pending.get().is_empty()
                                     })
@@ -766,6 +787,7 @@ mod windows_app {
                                     .disabled(move || {
                                         let s = cancel_state.get();
                                         !s.running || s.cancelling
+                                            || cancel_close.get() == ClosePrompt::Waiting
                                     })
                                     .on_press(move || {
                                         let result = cancel_p.controller.borrow().cancel(session());
@@ -823,7 +845,9 @@ mod windows_app {
                             .flex_row()
                             .gap_2()
                             .child(
-                                secondary(t, "确认开始处理").on_press(move || accept.start(true)),
+                                secondary(t, "确认开始处理")
+                                    .disabled(move || confirm_p.close_prompt.get() == ClosePrompt::Waiting)
+                                    .on_press(move || accept.start(true)),
                             )
                             .child(secondary(t, "取消").on_press(move || {
                                 reject.controller.borrow_mut().cancel_confirmation();
@@ -969,6 +993,7 @@ mod windows_app {
             preview: signal(String::new()),
             validation: signal(String::new()),
             pending_confirmation: signal(Vec::new()),
+            close_prompt: signal(ClosePrompt::Hidden),
             message: signal(message),
             controller: Rc::new(RefCell::new(controller)),
         };
@@ -979,22 +1004,23 @@ mod windows_app {
         let mut attrs = nsh_core::desktop::WindowAttributes::default();
         attrs.close_on_press = Some(false);
         close.set(attrs);
-        let close_message = p.message.clone();
+        let close_p = p.clone();
         let close_window = close.clone();
-        close.on_close_press(move |_| match close_decision(session().request_close()) {
-            CloseDecision::CloseNow => close_window.close(),
-            CloseDecision::RequireConfirmation => {
-                close_message.set("任务仍在运行，请确认停止并关闭".into())
+        close.on_close_press(move |_| {
+            if close_p.update_close(|prompt| prompt.request(session().request_close()))
+                == CloseAction::Close
+            {
+                close_window.close();
             }
         });
         let poll_p = p.clone();
         let poll_window = close.clone();
         set_interval(Duration::from_millis(500), move || {
             poll_p.sync_view();
-            match close_action(&session().close_status()) {
-                CloseAction::Close => poll_window.clone().close(),
-                CloseAction::ShowError(e) => poll_p.message.set(format!("关闭失败：{e}")),
-                CloseAction::None | CloseAction::Wait => {}
+            if poll_p.update_close(|prompt| prompt.poll(&session().close_status()))
+                == CloseAction::Close
+            {
+                poll_window.clone().close();
             }
         });
         view().flex_1().flex_col().child(dynamic(move || {
@@ -1003,10 +1029,10 @@ mod windows_app {
             let toggle = theme.clone();
             let status = p.view.clone();
             let status_message = p.message.clone();
-            let close_message = p.message.clone();
-            let request_window = close.clone();
+            let close_prompt = p.close_prompt.clone();
             let confirm_window = close.clone();
             let confirm_p = p.clone();
+            let continue_p = p.clone();
             view()
                 .flex_1()
                 .flex_col()
@@ -1106,6 +1132,66 @@ mod windows_app {
                                 ),
                         ),
                 )
+                .child(dynamic(move || {
+                    let prompt = close_prompt.get();
+                    if prompt == ClosePrompt::Hidden {
+                        return view().into_element();
+                    }
+                    let waiting = prompt == ClosePrompt::Waiting;
+                    let message = match prompt {
+                        ClosePrompt::Waiting => "正在停止并清理任务，完成后退出…".into(),
+                        ClosePrompt::Failed(error) => format!("关闭失败：{error}"),
+                        _ => "任务仍在运行或启动中，停止并退出？".into(),
+                    };
+                    let accept = confirm_p.clone();
+                    let reject = continue_p.clone();
+                    let window = confirm_window.clone();
+                    view()
+                        .m_4()
+                        .p_4()
+                        .bg(t.danger_bg)
+                        .border_1()
+                        .border_color(t.danger_border)
+                        .rounded_lg()
+                        .flex_col()
+                        .gap_2()
+                        .child(text(message).text_color(t.danger_text).text_size(px(13.0)))
+                        .child(
+                            view()
+                                .flex_row()
+                                .gap_2()
+                                .child(secondary(t, "继续运行").disabled(waiting).on_press(
+                                    move || {
+                                        reject.update_close(|prompt| {
+                                            prompt.dismiss();
+                                            CloseAction::None
+                                        });
+                                    },
+                                ))
+                                .child(
+                                    secondary(t, "停止并退出")
+                                        .bg(t.danger_bg)
+                                        .border_color(t.danger_border)
+                                        .text_color(t.danger_text)
+                                        .hover(move |s| s.bg(t.danger_bg_hover))
+                                        .disabled(waiting)
+                                        .on_press(move || {
+                                            let action = accept.update_close(|prompt| {
+                                                prompt.confirm(session().request_close(), || {
+                                                    accept
+                                                        .controller
+                                                        .borrow()
+                                                        .confirm_close(session())
+                                                })
+                                            });
+                                            if action == CloseAction::Close {
+                                                window.close();
+                                            }
+                                        }),
+                                ),
+                        )
+                        .into_element()
+                }))
                 .child(
                     view()
                         .flex_1()
@@ -1128,40 +1214,6 @@ mod windows_app {
                             text("v0.4.1 · PUBG Highlight Trim · Native UI (NSH)")
                                 .text_size(px(11.0))
                                 .text_color(t.footer_text),
-                        )
-                        .child(
-                            view()
-                                .flex_row()
-                                .gap_2()
-                                .child(secondary(t, "关闭窗口").on_press(move || {
-                                    match close_decision(session().request_close()) {
-                                        CloseDecision::CloseNow => request_window.close(),
-                                        CloseDecision::RequireConfirmation => close_message
-                                            .set("任务仍在运行，请确认停止并关闭".into()),
-                                    }
-                                }))
-                                .child(
-                                    secondary(t, "确认停止并关闭")
-                                        .bg(t.danger_bg)
-                                        .border_color(t.danger_border)
-                                        .text_color(t.danger_text)
-                                        .hover(move |s| s.bg(t.danger_bg_hover))
-                                        .on_press(move || {
-                                            // An idle window needs no cancellation, even after a finished run.
-                                            if close_decision(session().request_close())
-                                                == CloseDecision::CloseNow
-                                            {
-                                                confirm_window.close();
-                                                return;
-                                            }
-                                            let result = confirm_p
-                                                .controller
-                                                .borrow()
-                                                .confirm_close(session());
-                                            confirm_p
-                                                .result(result, "正在停止并清理任务，完成后关闭");
-                                        }),
-                                ),
                         ),
                 )
         }))
