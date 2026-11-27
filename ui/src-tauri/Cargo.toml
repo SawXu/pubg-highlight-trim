@@ -34,3 +34,7 @@ sha2 = "0.10"
 [[bin]]
 name = "controlled-cli"
 path = "tests/support/controlled_cli.rs"
+
+[[test]]
+name = "distribution"
+required-features = ["tauri-ui"]

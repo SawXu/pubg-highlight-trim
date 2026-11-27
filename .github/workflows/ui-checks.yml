@@ -45,7 +45,13 @@ jobs:
       - name: Native UI dependency boundary (fail fast)
         shell: powershell
         run: |
-          $tree = cargo tree --locked --manifest-path ui/native-ui/Cargo.toml 2>&1 | Out-String
+          $previousErrorAction = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          try {
+            $tree = cargo tree --locked --manifest-path ui/native-ui/Cargo.toml 2>&1 | Out-String
+          } finally {
+            $ErrorActionPreference = $previousErrorAction
+          }
           if ($LASTEXITCODE -ne 0) { throw "Native UI dependency tree failed: $tree" }
           if ($tree -match '(?im)^\s*(?:[├└]──\s*)?(tauri|wry|webview2-com)(?:\s|$)') {
             throw "Native UI must not depend on tauri, wry, or webview2-com: $($Matches[1])"
@@ -59,6 +65,12 @@ jobs:
       - name: Public UI behavior contracts
         shell: powershell
         run: ./scripts/test_ui_behavior.ps1 -SkipInstall
+      - name: Install NSIS compiler for installer engine contracts
+        shell: powershell
+        run: |
+          choco install nsis --version=3.11 -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS provisioning failed.' }
+          'C:\Program Files (x86)\NSIS' | Out-File $env:GITHUB_PATH -Append -Encoding utf8
       - name: Native installer packaging, ACL and engine contracts (not lifecycle acceptance)
         shell: powershell
         run: |
