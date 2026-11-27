@@ -57,6 +57,7 @@ fn media() -> &'static PathBuf {
                     println!("60"); return;
                 }
                 if a.iter().any(|v|v=="stream=width,height") { println!("16,16"); return; }
+                if a.iter().any(|v|v.starts_with("stream=pix_fmt")) { println!("pix_fmt=yuv420p"); return; }
                 if a.iter().any(|v|v=="rawvideo") {
                     assert!(std::env::var_os("FORBID_FRAME_DECODE").is_none(), "dedupe must not decode frames");
                     let i = a.iter().position(|v|v=="-ss").unwrap();
