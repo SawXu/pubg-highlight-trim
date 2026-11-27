@@ -42,7 +42,7 @@ function Acl([string]$path,[string]$user,[switch]$Data,[switch]$Runtime){
  $a.SetAccessRuleProtection($true,$false);$a.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')))
  foreach($sid in @('S-1-5-18','S-1-5-32-544')){$a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'FullControl',$inherit,'None','Allow')))}
  $right='ReadAndExecute';if($Data){$right='FullControl'}
- if(!$Data){$a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($user)),$right,$inherit,'None','Allow')))
+ if(!$Data){$a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($user)),$right,$inherit,'None','Allow')))}
  if($Runtime){foreach($sid in @('S-1-15-2-1','S-1-15-2-2')){$a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'ReadAndExecute',$inherit,'None','Allow')))}}
  Set-Acl -LiteralPath $path -AclObject $a
 }
