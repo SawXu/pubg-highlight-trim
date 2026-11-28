@@ -7,7 +7,7 @@ async function setup(page: Page, warnings: string[] = []) {
       ownKill: false, gameLanguage: "en", secondsBefore: 7, secondsAfter: 2,
       minimumEventSeconds: 0, molotovSecondsBefore: 12, scanMode: "fast",
       jobs: "auto", trimJobs: "auto", recursive: false, merge: true,
-      scanOnly: false, overwrite: false, brightnessGate: false, moveOriginals: false,
+      scanOnly: false, overwrite: false, brightnessGate: false, moveOriginals: false, preserveHdr: false,
     };
     const shell = {
       state: {

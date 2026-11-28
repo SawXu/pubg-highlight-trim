@@ -36,7 +36,7 @@ Windows 平台命令行工具，基于 OCR 事件对 PUBG 的 NVIDIA Highlight�
 2. 可选填“输出目录”；留空时由 CLI 根据输入自动创建本次运行的目录。
 3. 在“检测目标”中选择“全部”“自己倒地”或“我的击杀”；两个具体目标可以同时选择（此时分别生成两个集锦），并选择游戏语言（自动识别、简体中文、繁体中文、English）。
 4. 设置“扫描模式”（自动、快速、完整）和“剪辑范围”（事件前/后秒数）。
-5. 常用复选项包括“合并输出”“仅扫描”和“覆盖输出”。“仅扫描”只检测并写入记录，不生成视频；“覆盖输出”允许复用同名输出目录或合并文件。
+5. “保留 HDR”默认关闭（旧设置也默认关闭），默认将 PQ/HLG 转为 SDR BT.709 H.264 8bit，勾选后沿用 HEVC Main10 HDR 路径。常用复选项还包括“合并输出”“仅扫描”和“覆盖输出”。“仅扫描”只检测并写入记录，不生成视频；“覆盖输出”允许复用同名输出目录或合并文件。
 6. 展开“专家设置”可调整忽略开场事件秒数、燃烧瓶前置秒数、OCR 并行度（`auto` 或正整数）、独立的 Trim 并行度（`auto`、`1`、`2`）以及亮色描边文字预筛选。命令预览会显示 GUI 将要执行的 CLI 命令，便于复核配置。
 
 运行时右侧面板分别显示 Scan、Dedupe、Trim、Merge 阶段、已完成工作数/总数、worker 数和完成/跳过状态，以及已保留和已跳过计数与耗时。点击“显示日志”可查看 CLI 原始运行日志，必要时可清空记录。点击停止按钮会终止 CLI 及其子进程；窗口关闭时若任务仍在运行，也会先询问是否停止。
@@ -81,6 +81,8 @@ pubg-highlight-trim "." --scan-only --jobs 1  # 关闭 OCR 并行 worker
 pubg-highlight-trim "." --jobs 1 --trim-jobs 2 --profile  # 独立启用两个 Trim worker
 ```
 
+HDR PQ/HLG 默认在线性光空间进行色调映射，输出 SDR BT.709 H.264 8bit（100 nit 参考白，Mobius 映射）；使用 `--preserve-hdr` 保留原有 HEVC Main10 HDR 路径。10bit SDR 不会被误判为 HDR，仍沿用原有 Main10 行为。NVENC 编码失败仍回退软件编码；映射失败会报错，不会静默保留 HDR。自定义 FFmpeg 必须包含 `zscale`、`tonemap` 和 `sidedata` 滤镜。HDR 缺失色域/矩阵标签时按 BT.2020 处理。合并采用流复制，不兼容的视频编码、尺寸、像素格式或冲突色彩标签会被拒绝；此时请关闭合并或使用格式一致的源视频。
+
 运行 `pubg-highlight-trim --help` 查看全部选项。
 
 ### 命令行参数
@@ -100,6 +102,7 @@ pubg-highlight-trim "." --jobs 1 --trim-jobs 2 --profile  # 独立启用两个 T
 | `--dry-run` / `--scan-only` | 关 | 仅检测并写 CSV / 摘要，不生成 Trim 或 Merge 视频 |
 | `--merge [MERGED_MP4]` | 文件夹默认开 | 生成合并 mp4；可指定输出路径 |
 | `--no-merge` | 单文件默认关 | 不生成合并 mp4 |
+| `--preserve-hdr` | 关 | 保留 PQ/HLG 的 HEVC Main10 HDR 路径，不映射为 SDR BT.709 H.264 8bit |
 | `--split-merge-by-target` | 关 | `--target both` 时按被击杀/击杀分别生成合并视频；默认关闭以保持混合输出兼容 |
 | `-y`, `--overwrite` | 关 | 覆盖输出目录 / 合并文件，而非生成唯一名称 |
 | `--verbose` | 关 | 打印启动配置和第三方 OCR 诊断；默认输出会抑制依赖库噪声 |

@@ -436,6 +436,9 @@ onUnmounted(() => {
             />递归扫描子文件夹</label
           >
           <label
+            ><input v-model="options.preserveHdr" type="checkbox" />保留 HDR（默认转为 SDR BT.709）</label
+          >
+          <label
             ><input v-model="options.scanOnly" type="checkbox" />仅扫描</label
           >
           <label

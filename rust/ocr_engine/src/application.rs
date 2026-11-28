@@ -874,7 +874,8 @@ mod production {
             progress_phase_start("trim", trim_total_clips, trim_workers);
         }
         let mut trim_completed_clips: usize = 0;
-        let mut trim_encoder = crate::media::TrimEncoder::new(&tools);
+        let mut trim_encoder =
+            crate::media::TrimEncoder::new(&tools).with_preserve_hdr(c.preserve_hdr);
         if trim_workers > 0 {
             trim_encoder
                 .ensure_capability()

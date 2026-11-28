@@ -19,6 +19,7 @@ export interface RunOptions {
   overwrite: boolean;
   brightnessGate: boolean;
   moveOriginals: boolean;
+  preserveHdr: boolean;
 }
 export interface Choice {
   value: string;

@@ -220,6 +220,9 @@ pub struct Config {
     pub split_merge_by_target: bool,
     #[arg(short = 'y', long)]
     pub overwrite: bool,
+    /// Keep HDR PQ/HLG as HEVC Main10 instead of tone mapping to SDR BT.709.
+    #[arg(long)]
+    pub preserve_hdr: bool,
     #[arg(long)]
     pub move_originals: bool,
     #[arg(long)]

@@ -37,6 +37,7 @@ The controls map to these CLI settings:
 - **Scan mode**: Auto, Fast, or Full. Auto uses candidate hints when available; Full is the exhaustive choice when completeness matters.
 - **Clip range**: Seconds before and after the event (defaults 5 and 1).
 - **Merged output**: Create one merged MP4 in addition to individual clips. A single-file input defaults to no merge in the CLI; the GUI checkbox explicitly sends `--merge` or `--no-merge`.
+- **Preserve HDR**: Off by default (also for older saved settings). PQ/HLG clips are tone mapped to SDR BT.709 H.264 8-bit; enable this to keep the existing HEVC Main10 HDR path.
 - **Recursive scan**: Include MP4 files in subdirectories when a folder is selected.
 - **Scan only**: Detect events and write records without creating trimmed or merged videos.
 - **Overwrite output**: Reuse/clean the selected output paths instead of choosing unique names.
@@ -88,6 +89,8 @@ pubg-highlight-trim "." --scan-only --jobs 1  # disable parallel OCR workers
 pubg-highlight-trim "." --jobs 1 --trim-jobs 2 --profile  # independently opt into two Trim workers
 ```
 
+HDR PQ/HLG clips are tone mapped in linear light to SDR BT.709 H.264 8-bit by default (100-nit reference white, Mobius tone mapping). Use `--preserve-hdr` to retain the existing HEVC Main10 HDR path. 10-bit SDR is not classified as HDR and retains its existing Main10 behavior. NVENC encoding still falls back to software; tone-mapping failures fail the run rather than silently retaining HDR. Custom FFmpeg builds need `zscale`, `tonemap`, and `sidedata` filters. Untagged HDR gamut/matrix defaults to BT.2020. Merge uses stream copy and rejects incompatible video codecs, dimensions, pixel formats, or conflicting color metadata; disable merging or use matching sources in that case.
+
 Run `pubg-highlight-trim --help` to see all options.
 
 ### Command-line options
@@ -107,6 +110,7 @@ Run `pubg-highlight-trim --help` to see all options.
 | `--dry-run` / `--scan-only` | off | Detect and write CSV/summary without trimming or merging |
 | `--merge [MERGED_MP4]` | folder default | Create a merged mp4; optionally set the output path |
 | `--no-merge` | file default | Skip merged mp4 output |
+| `--preserve-hdr` | off | Keep PQ/HLG HDR as HEVC Main10 instead of tone mapping to SDR BT.709 H.264 8-bit |
 | `--split-merge-by-target` | off | With `--target both`, merge self-death and own-kill clips into separate videos; default remains the mixed output |
 | `-y`, `--overwrite` | off | Overwrite output dir/merged file instead of creating unique names |
 | `--verbose` | off | Print startup settings and third-party OCR diagnostics; default output suppresses library noise |

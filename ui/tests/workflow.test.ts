@@ -27,6 +27,7 @@ const options: RunOptions = {
   overwrite: true,
   brightnessGate: false,
   moveOriginals: true,
+  preserveHdr: false,
 };
 function harness(
   handlers: Record<
