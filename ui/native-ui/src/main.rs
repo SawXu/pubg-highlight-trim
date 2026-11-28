@@ -635,6 +635,7 @@ mod windows_app {
                     .child(view().flex_col().gap_1()
                         .child(check(p.clone(), t, "合并输出", false, |o| o.merge, |o, b| o.merge = b))
                         .child(check(p.clone(), t, "递归扫描子文件夹", false, |o| o.recursive, |o, b| o.recursive = b))
+                        .child(check(p.clone(), t, "保留 HDR · 默认转为 SDR BT.709", false, |o| o.preserve_hdr, |o, b| o.preserve_hdr = b))
                         .child(check(p.clone(), t, "仅扫描", false, |o| o.scan_only, |o, b| o.scan_only = b))
                         .child(check(p.clone(), t, "覆盖输出 · 会替换已有输出", true, |o| o.overwrite, |o, b| o.overwrite = b))
                         .child(check(p.clone(), t, "归档原片 · 会移走源文件", true, |o| o.move_originals, |o, b| o.move_originals = b)))
@@ -1225,9 +1226,9 @@ mod windows_app {
         if let Some(parent) = exe.as_deref().and_then(|p| p.parent()) {
             candidates.push(parent.join("icon.ico"));
         }
-        candidates.push(PathBuf::from("ui/src-tauri/icons/icon.ico"));
+        candidates.push(PathBuf::from("ui/native-ui/icons/icon.ico"));
         candidates
-            .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src-tauri/icons/icon.ico"));
+            .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("icons/icon.ico"));
         candidates
             .into_iter()
             .find_map(|path| path.canonicalize().ok())

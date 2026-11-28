@@ -1,4 +1,4 @@
-use highlight_shell::RunOptions;
+use pubg_highlight_trim_core::RunOptions;
 #[test]
 fn defaults_and_target_combinations_match_existing_workflow() {
     let mut o = RunOptions::default();

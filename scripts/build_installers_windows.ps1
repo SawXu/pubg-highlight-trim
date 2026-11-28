@@ -17,8 +17,9 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location -LiteralPath $repoRoot
 try {
     if (-not $PSBoundParameters.ContainsKey('Version')) {
-        $package = Get-Content -LiteralPath (Join-Path $repoRoot 'ui\package.json') -Raw | ConvertFrom-Json
-        $Version = [string]$package.version
+        $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'ui\native-ui\Cargo.toml') -Raw
+        if ($manifest -notmatch '(?m)^version\s*=\s*"([^"]+)"\s*$') { throw 'Native UI package version is missing.' }
+        $Version = $Matches[1]
     }
     # Numeric SemVer only: keep the installer/registry version unambiguous.
     if ($Version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
@@ -43,7 +44,7 @@ try {
     }
     $ui = Join-Path $repoRoot 'dist\pubg-highlight-trim-native-ui'
     $uiExe = Join-Path $ui 'pubg-highlight-trim-native-ui.exe'
-    if (-not (Test-Path -LiteralPath $uiExe -PathType Leaf)) { throw 'UI output is missing; build_ui_windows.ps1 must produce it.' }
+    if (-not (Test-Path -LiteralPath $uiExe -PathType Leaf)) { throw 'UI output is missing; build_native_ui_windows.ps1 must produce it.' }
     if (Test-Path -LiteralPath $layout) { Remove-Item -LiteralPath $layout -Recurse -Force }
     New-Item -ItemType Directory -Path $layout -Force | Out-Null
     Copy-Item -LiteralPath $uiExe -Destination $layout -Force

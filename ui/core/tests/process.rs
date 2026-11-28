@@ -1,4 +1,4 @@
-use highlight_shell::process::ControlledChild;
+use pubg_highlight_trim_core::process::ControlledChild;
 use std::{
     io::{BufRead, BufReader},
     path::Path,

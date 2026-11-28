@@ -15,6 +15,9 @@ fn main() {
   print!("{}",fs::read_to_string(root.join("stream-info")).unwrap_or_else(|_|"pix_fmt=yuv420p\nbits_per_raw_sample=8\n".into()));
   return;
  }
+ if fs::read_to_string(root.join("mode")).unwrap()=="tone-map-failure" && args.iter().any(|x|x=="-vf") {
+  eprintln!("No such filter: zscale"); std::process::exit(1);
+ }
  let probe=args.iter().any(|x|x=="lavfi");
  let nvenc=args.iter().any(|x|x=="h264_nvenc" || x=="hevc_nvenc");
  let label=if probe {"capability"} else if nvenc {"nvenc"} else {"software"};
@@ -55,6 +58,69 @@ fn main() {
 }
 
 #[test]
+fn hdr_defaults_to_real_tone_mapping_on_gpu_and_software_without_source_tags() {
+    for transfer in ["smpte2084", "arib-std-b67"] {
+        for fallback in [false, true] {
+            let mode = format!(
+                "map-{transfer}-{}",
+                if fallback {
+                    "production-failure"
+                } else {
+                    "available"
+                }
+            );
+            let (root, tools) = fixture(&mode);
+            fs::write(root.join("stream-info"), format!(
+                "pix_fmt=yuv420p10le\ncolor_transfer={transfer}\ncolor_primaries=bt2020\ncolor_space=bt2020nc\ncolor_range=tv\n"
+            )).unwrap();
+            let mut run = TrimEncoder::new(&tools);
+            let codec = run
+                .trim_clip(&root.join("source.mp4"), &root.join("out.mp4"), 0., 1.)
+                .unwrap();
+            assert_eq!(codec, if fallback { "libx264" } else { "h264_nvenc" });
+            for label in if fallback {
+                vec!["nvenc", "software"]
+            } else {
+                vec!["nvenc"]
+            } {
+                let args = fs::read_to_string(root.join(format!("{label}-args"))).unwrap();
+                for expected in [
+                    "t=linear:npl=100,format=gbrpf32le",
+                    "tonemap=tonemap=mobius",
+                    "sidedata=mode=delete",
+                    "-pix_fmt\nyuv420p\n",
+                    "-color_trc\nbt709\n",
+                    "-color_primaries\nbt709\n",
+                    "-colorspace\nbt709\n",
+                    "-map_metadata\n-1\n",
+                ] {
+                    assert!(args.contains(expected), "{args}");
+                }
+                assert!(!args.contains("-color_trc\nsmpte2084"));
+                assert!(!args.contains("-color_trc\narib-std-b67"));
+                assert!(!args.contains("-color_primaries\nbt2020"));
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+#[test]
+fn tone_map_failure_is_fatal_not_a_preserve_hdr_fallback() {
+    let (root, tools) = fixture("tone-map-failure");
+    fs::write(root.join("stream-info"), "color_transfer=smpte2084\n").unwrap();
+    let error = TrimEncoder::new(&tools)
+        .trim_clip(&root.join("source.mp4"), &root.join("out.mp4"), 0., 1.)
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("No such filter: zscale"),
+        "{error}"
+    );
+    assert!(!root.join("out.mp4").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn sdr_clips_are_explicitly_h264_high_8_bit_on_gpu_and_software() {
     for mode in ["sdr-available", "sdr-production-failure"] {
         let (root, tools) = fixture(mode);
@@ -77,13 +143,14 @@ fn sdr_clips_are_explicitly_h264_high_8_bit_on_gpu_and_software() {
             let args = fs::read_to_string(root.join(format!("{label}-args"))).unwrap();
             assert!(args.contains("-pix_fmt\nyuv420p\n"), "{args}");
             assert!(args.contains("-profile:v\nhigh\n"), "{args}");
+            assert!(!args.contains("-vf"), "SDR must not be tone mapped: {args}");
         }
         fs::remove_dir_all(root).unwrap();
     }
 }
 
 #[test]
-fn hdr_or_10_bit_clips_preserve_color_using_hevc_main10_with_software_fallback() {
+fn explicit_hdr_preservation_and_10_bit_sdr_use_main10_with_software_fallback() {
     for (case, detection) in [
         ("pq", "pix_fmt=yuv420p\ncolor_transfer=smpte2084\n"),
         ("hlg", "pix_fmt=yuv420p\ncolor_transfer=arib-std-b67\n"),
@@ -107,7 +174,8 @@ fn hdr_or_10_bit_clips_preserve_color_using_hevc_main10_with_software_fallback()
                 ),
             )
             .unwrap();
-            let mut run = TrimEncoder::new(&tools);
+            // 10-bit SDR stays on the old Main10 path even without the opt-in.
+            let mut run = TrimEncoder::new(&tools).with_preserve_hdr(matches!(case, "pq" | "hlg"));
             let codec = run
                 .trim_clip(&root.join("source.mp4"), &root.join("out.mp4"), 26., 8.5)
                 .unwrap();
@@ -141,6 +209,7 @@ fn hdr_or_10_bit_clips_preserve_color_using_hevc_main10_with_software_fallback()
                         "{args}"
                     );
                 } else {
+                    assert!(!args.contains("-vf"), "10-bit SDR must not be tone mapped: {args}");
                     assert!(
                         !args.contains("-color_trc"),
                         "do not invent absent metadata: {args}"

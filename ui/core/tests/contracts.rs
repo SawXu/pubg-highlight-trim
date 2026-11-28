@@ -1,4 +1,4 @@
-use highlight_shell::{RunOptions, RunState};
+use pubg_highlight_trim_core::{RunOptions, RunState};
 #[test]
 fn independent_ocr_trim_jobs_and_all_switches_reach_cli() {
     let d = tempfile::tempdir().unwrap();

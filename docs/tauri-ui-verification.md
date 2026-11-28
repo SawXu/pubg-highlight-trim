@@ -1,5 +1,7 @@
 # Tauri UI migration verification (#103)
 
+> Historical evidence only. The Vue/Tauri sources and commands below have been retired; they are not current build or acceptance instructions. See [native UI tests](../ui/README.md) and [Windows installers](windows-installers.md).
+
 ## Scope
 
 The desktop implementation is now Tauri 2 + Vue 3 + TypeScript. The WPF application

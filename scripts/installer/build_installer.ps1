@@ -113,6 +113,6 @@ un_success:
 SectionEnd
 '@
 $variantLabel='Native Windows UI';$variantDescription='使用 NSH 原生 Windows UI；不依赖 Tauri 或 WebView2。'
-$template.Replace('__VARIANT_LABEL__',$variantLabel).Replace('__VARIANT_DESCRIPTION__',$variantDescription).Replace('__ICON__',(Escape-NsisString (Join-Path $PSScriptRoot '../../ui/src-tauri/icons/icon.ico'))).Replace('__WIZARD__',(Escape-NsisString (Join-Path $PSScriptRoot 'wizard.bmp'))).Replace('__OUT__',(Escape-NsisString $exe)).Replace('__LAYOUT__',(Escape-NsisString $Layout)).Replace('__ENGINE__',(Escape-NsisString $engine)).Replace('__GUARD__',(Escape-NsisString $guard)).Replace('__DESKTOP_PROBE__',(Escape-NsisString $desktopProbe))|Set-Content -LiteralPath $nsis -Encoding UTF8
+$template.Replace('__VARIANT_LABEL__',$variantLabel).Replace('__VARIANT_DESCRIPTION__',$variantDescription).Replace('__ICON__',(Escape-NsisString (Join-Path $PSScriptRoot '../../ui/native-ui/icons/icon.ico'))).Replace('__WIZARD__',(Escape-NsisString (Join-Path $PSScriptRoot 'wizard.bmp'))).Replace('__OUT__',(Escape-NsisString $exe)).Replace('__LAYOUT__',(Escape-NsisString $Layout)).Replace('__ENGINE__',(Escape-NsisString $engine)).Replace('__GUARD__',(Escape-NsisString $guard)).Replace('__DESKTOP_PROBE__',(Escape-NsisString $desktopProbe))|Set-Content -LiteralPath $nsis -Encoding UTF8
 try{& $MakeNsis $nsis;if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $exe)){throw 'NSIS build failed.'}}finally{Remove-Item -LiteralPath $nsis -Force -ErrorAction SilentlyContinue}
 Write-Host "Built $exe"

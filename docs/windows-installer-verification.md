@@ -1,5 +1,7 @@
 # Windows 安装生命周期验收（issue #104）
 
+> 历史 System/Fixed 验收矩阵，仍未执行；下文旧变体命令不适用于当前 Native 产品，也不应继续执行。当前构建入口和 Native 未验收边界见 [Windows 安装包](windows-installers.md)。保留本记录不代表旧发布入口仍存在。
+
 本文件描述**真实安装包**在 Windows disposable VM 中的验收流程。#105 用户明确本次没有 VM，允许先交付双运行时构建支持；本矩阵仍保留为未执行，不作为本次已通过结果，详见 [发布验证状态](tauri-release-verification.md)。它不是 mock 测试，也不能以构建成功或静态脚本测试代替。当前仓库没有宣称以下矩阵已通过；每个阶段必须由执行者填写证据目录和结果。
 
 ## 安全边界

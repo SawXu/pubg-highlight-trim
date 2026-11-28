@@ -1,4 +1,4 @@
-use highlight_shell::RunState;
+use pubg_highlight_trim_core::RunState;
 #[test]
 fn streams_legacy_unknown_and_terminal_semantics() {
     let mut s = RunState::default();

@@ -1,4 +1,4 @@
-name: Tauri UI checks
+name: Native UI checks
 
 on:
   workflow_call:
@@ -17,43 +17,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
-      - name: Install locked frontend dependencies
-        shell: powershell
-        run: npm --prefix ui ci
-      - name: Frontend typecheck and production build
-        shell: powershell
-        run: |
-          npm --prefix ui run typecheck
-          if ($LASTEXITCODE -ne 0) { throw "Frontend typecheck failed" }
-          npm --prefix ui run build
-          if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
-      - name: Task control browser interactions and responsive layout
-        shell: powershell
-        run: |
-          npm --prefix ui exec -- playwright install chromium
-          if ($LASTEXITCODE -ne 0) { throw "Chromium installation failed" }
-          npm --prefix ui run test:e2e
-          if ($LASTEXITCODE -ne 0) { throw "Task control browser checks failed" }
       - name: Native UI dependency boundary (fail fast)
         shell: powershell
         run: |
           $previousErrorAction = $ErrorActionPreference
           $ErrorActionPreference = 'Continue'
           try {
-            $tree = cargo tree --locked --manifest-path ui/native-ui/Cargo.toml 2>&1 | Out-String
+            $tree = cargo tree --locked --manifest-path ui/native-ui/Cargo.toml --prefix none 2>&1 | Out-String
           } finally {
             $ErrorActionPreference = $previousErrorAction
           }
           if ($LASTEXITCODE -ne 0) { throw "Native UI dependency tree failed: $tree" }
-          if ($tree -match '(?im)^\s*(?:[├└]──\s*)?(tauri|wry|webview2-com)(?:\s|$)') {
+          if ($tree -match '(?im)^(tauri|wry|webview2-com)\s') {
             throw "Native UI must not depend on tauri, wry, or webview2-com: $($Matches[1])"
           }
       - name: Native UI Windows cargo check
@@ -64,7 +42,7 @@ jobs:
         run: cargo build --locked --manifest-path ui/native-ui/Cargo.toml --release
       - name: Public UI behavior contracts
         shell: powershell
-        run: ./scripts/test_ui_behavior.ps1 -SkipInstall
+        run: ./scripts/test_ui_behavior.ps1
       - name: Install NSIS compiler for installer engine contracts
         shell: powershell
         run: |
@@ -83,11 +61,9 @@ jobs:
         shell: powershell
         run: |
           $env:PATH += ';C:\Program Files\7-Zip'
-          node --test scripts/tests/collect_ui_licenses.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'UI license contracts failed.' }
           ./scripts/tests/test_ui_license_release.ps1
           ./scripts/tests/test_release_entry.ps1
       - name: Acceptance scope
         shell: powershell
         run: |
-          "Tauri frontend and shell contract checks are not an interactive Windows GUI or final distribution acceptance. Real video UI-to-CLI parity, desktop cancellation/close behavior, clean-host runtime and installer verification require separate evidence." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Shared core and native UI contract checks are not an interactive Windows GUI or final distribution acceptance. Real video UI-to-CLI parity, desktop cancellation/close behavior, clean-host runtime and installer verification require separate evidence." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

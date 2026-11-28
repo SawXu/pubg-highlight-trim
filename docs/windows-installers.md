@@ -1,6 +1,6 @@
 # Windows 安装包构建
 
-**当前为待真实安装生命周期验收的实现，不是已通过 #104 全部验收的正式发行版。** 验收矩阵见 [windows-installer-verification.md](windows-installer-verification.md)，安全与已知限制见 [安装器实现说明](../scripts/installer/README.md)。
+**当前为待真实安装生命周期验收的实现，不是已通过 #104 全部验收的正式发行版。** 旧 System/Fixed 未执行矩阵仅作为[历史记录](windows-installer-verification.md)保留，不是当前指南。Native 生命周期测试入口为 `scripts/tests/test_installer_lifecycle_windows.ps1`，只能在明确授权的 disposable VM 中执行；安全与已知限制见 [安装器实现说明](../scripts/installer/README.md)。
 
 项目构建入口提供单一的 Windows native NSH 安装包。它不使用 Tauri、Wry 或 WebView2，安装包是唯一 GUI 发布入口，不生成或发布免安装 GUI ZIP。
 
@@ -11,11 +11,11 @@
 powershell -ExecutionPolicy Bypass -File scripts/build_installers_windows.ps1 -Variant Native
 ```
 
-需要 NSIS **3.11+** 的 `makensis.exe` 位于 PATH。版本默认读取 `ui/package.json.version`，可以用 `-Version 0.4.0` 指定纯数字 SemVer。签名接入点为 `-SignInstallerScript <验证并签名的脚本>`，脚本收到 `-OutputDirectory` 和 `-Variant`，失败会中止构建。未签名版本会显示未知发布者或 SmartScreen 警告；不要关闭安全软件绕过验证。
+需要 NSIS **3.11+** 的 `makensis.exe` 位于 PATH。版本默认读取 `ui/native-ui/Cargo.toml` 的 package version，可以用 `-Version 0.4.0` 指定纯数字 SemVer。签名接入点为 `-SignInstallerScript <验证并签名的脚本>`，脚本收到 `-OutputDirectory` 和 `-Variant`，失败会中止构建。未签名版本会显示未知发布者或 SmartScreen 警告；不要关闭安全软件绕过验证。
 
 Native artifact 使用 CLI 的完整 license inventory，并生成布局根部的 `distribution.json`（`pubg-highlight-trim/distribution/v2`、`artifact:native-ui`）及供安装器按文件所有权升级/卸载的 `installer-manifest.json`。不打包 WebView2 runtime，也不接受 runtime、license 或下载输入。安装器引擎位于 `scripts/installer/`，缺失时构建会 fail-fast。
 
-`build_ui_windows.ps1` 仍是开发布局入口：它只构建可运行目录，不声称自包含 WebView2，也不生成安装包。其 `-SkipCliBuild` 和 `-Configuration` 参数保持兼容。
+`build_native_ui_windows.ps1` 是唯一 UI 开发布局入口：它只构建原生可运行目录，不生成安装包；支持 `-SkipCliBuild` 和 `-Configuration`。
 
 ## 安装与数据
 
@@ -33,4 +33,4 @@ Native 预检使用目标普通桌面用户的 Explorer token，而不是提升�
 
 ## 发布边界
 
-只支持 EXE 安装包；不支持 GUI ZIP。签名可通过顶层 `-SignInstallerScript` 接入，未签名候选明确提示未知发布者/SmartScreen，不默认声称已验收。Native CI、SHA-256、证据和未实测项见 [tauri-release-verification.md](tauri-release-verification.md)。安装目录升级/卸载必须依据 ownership manifest 处理，不得递归删除整个安装目录；用户数据、日志和业务输出应保留。
+只支持 EXE 安装包；不支持 GUI ZIP。签名可通过顶层 `-SignInstallerScript` 接入，未签名候选明确提示未知发布者/SmartScreen，不默认声称已验收。Native CI 运行共享 core/native 测试及原生 release build；发布生成 SHA-256 和 `release-evidence.json`，未实测生命周期项目仍标记为未验收。测试命令见 [UI 文档](../ui/README.md)。安装目录升级/卸载必须依据 ownership manifest 处理，不得递归删除整个安装目录；用户数据、日志和业务输出应保留。

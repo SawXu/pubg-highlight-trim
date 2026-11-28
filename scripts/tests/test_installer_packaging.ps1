@@ -9,11 +9,11 @@ function Write-Fixture([string]$Path, [string]$Value) {
 try {
     $fakeRepo = Join-Path $temp 'repo with spaces'; $scripts = Join-Path $fakeRepo 'scripts'
     New-Item -ItemType Directory -Path $scripts -Force | Out-Null
-    Copy-Item (Join-Path $repoRoot 'scripts\build_installers_windows.ps1'),(Join-Path $repoRoot 'scripts\collect_ui_licenses.mjs') -Destination $scripts
+    Copy-Item (Join-Path $repoRoot 'scripts\build_installers_windows.ps1') -Destination $scripts
     $cli = Join-Path $fakeRepo 'dist\pubg-highlight-trim'
     foreach ($name in @('pubg-highlight-trim.exe','ocr_engine.exe','vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll','msvcp140_1.dll','ocr_models\model.onnx','ocr_models\pp_ocrv6_medium.json','_internal\vendor\ffmpeg\ffmpeg.exe','_internal\vendor\ffmpeg\ffprobe.exe','licenses\inventory.json')) { Write-Fixture (Join-Path $cli $name) "fixture:$name" }
     Write-Fixture (Join-Path $fakeRepo 'dist\pubg-highlight-trim-native-ui\pubg-highlight-trim-native-ui.exe') 'fixture:native-ui'
-    Write-Fixture (Join-Path $fakeRepo 'ui\package.json') '{"version":"1.2.3"}'
+    Write-Fixture (Join-Path $fakeRepo 'ui\native-ui\Cargo.toml') "[package]`nversion = `"1.2.3`"`n"
     foreach ($name in @('README.md','README_zh.md','LICENSE','THIRD_PARTY_NOTICES.md')) { Write-Fixture (Join-Path $fakeRepo $name) "fixture:$name" }
     $engine = Join-Path $temp 'observe-engine.ps1'
     Write-Fixture $engine @'

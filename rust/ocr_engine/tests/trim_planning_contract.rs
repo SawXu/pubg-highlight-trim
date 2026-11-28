@@ -57,7 +57,12 @@ fn media() -> &'static PathBuf {
                     println!("60"); return;
                 }
                 if a.iter().any(|v|v=="stream=width,height") { println!("16,16"); return; }
-                if a.iter().any(|v|v.starts_with("stream=pix_fmt")) { println!("pix_fmt=yuv420p"); return; }
+                if a.iter().any(|v|v.starts_with("stream=pix_fmt")) {
+                    if std::env::var_os("HDR_SOURCE").is_some() {
+                        println!("pix_fmt=yuv420p10le\ncolor_transfer=smpte2084\ncolor_primaries=bt2020\ncolor_space=bt2020nc");
+                    } else { println!("pix_fmt=yuv420p"); }
+                    return;
+                }
                 if a.iter().any(|v|v=="rawvideo") {
                     assert!(std::env::var_os("FORBID_FRAME_DECODE").is_none(), "dedupe must not decode frames");
                     let i = a.iter().position(|v|v=="-ss").unwrap();
@@ -665,6 +670,23 @@ fn output_mutation_during_source_diagnostics_prevents_every_encode() {
     assert!(!f.root.join("encode.log").exists());
     assert!(f.root.join("a.mp4").exists());
     assert!(f.root.join("b.mp4").exists());
+}
+
+#[test]
+fn cli_hdr_policy_reaches_serial_and_parallel_trim_workers() {
+    for jobs in ["1", "2"] {
+        for preserve in [false, true] {
+            let mut args = vec!["--no-merge", "--trim-jobs", jobs];
+            if preserve { args.push("--preserve-hdr"); }
+            let f = Fixture::new(&args);
+            let out = f.command().env("HDR_SOURCE", "1").output().unwrap();
+            assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+            let encodes = fs::read_to_string(f.root.join("encode.log")).unwrap();
+            assert!(encodes.contains(if preserve { "hevc_nvenc" } else { "h264_nvenc" }), "{encodes}");
+            assert_eq!(encodes.contains("tonemap="), !preserve, "{encodes}");
+            assert!(encodes.contains(if preserve { "-color_trc| smpte2084" } else { "-color_trc| bt709" }), "{encodes}");
+        }
+    }
 }
 
 #[test]

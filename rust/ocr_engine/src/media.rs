@@ -255,8 +255,31 @@ fn safe_token(token: &str) -> Option<String> {
 
 #[derive(Default)]
 struct SourceVideoFormat {
-    hdr_or_10_bit: bool,
+    hdr_transfer: Option<String>,
+    ten_bit: bool,
     color_options: Vec<String>,
+    stream_options: Vec<(String, String)>,
+}
+impl SourceVideoFormat {
+    fn tone_map_filter(&self) -> String {
+        let color = |flag: &str, fallback: &str| {
+            self.color_options
+                .chunks_exact(2)
+                .find(|pair| pair[0] == flag)
+                .map(|pair| pair[1].as_str())
+                .unwrap_or(fallback)
+                .to_owned()
+        };
+        // HDR without gamut/matrix tags is conventionally BT.2020, not BT.709.
+        // tonemap requires linear-light floating point; changing tags alone is not conversion.
+        format!(
+            "zscale=pin={}:tin={}:min={}:rin={}:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:desat=2,zscale=t=bt709:m=bt709:r=limited,format=yuv420p,sidedata=mode=delete",
+            color("-color_primaries", "bt2020"),
+            self.hdr_transfer.as_deref().unwrap(),
+            color("-colorspace", "bt2020nc"),
+            color("-color_range", "limited"),
+        )
+    }
 }
 
 const NVENC_OPTIONS: &[&str] = &["-preset", "p4", "-rc", "vbr", "-cq", "22", "-b:v", "0"];
@@ -274,11 +297,13 @@ pub struct EncoderDiagnostics {
 pub struct TrimEncoder {
     tools: FfmpegTools,
     diagnostics: EncoderDiagnostics,
+    preserve_hdr: bool,
 }
 impl TrimEncoder {
     pub fn new(tools: &FfmpegTools) -> Self {
         Self {
             tools: tools.clone(),
+            preserve_hdr: false,
             diagnostics: EncoderDiagnostics {
                 capability: "not_probed",
                 probe_seconds: 0.0,
@@ -286,6 +311,11 @@ impl TrimEncoder {
                 production_fallbacks: 0,
             },
         }
+    }
+    /// Opt in to the existing HDR Main10 output path. SDR behavior is unchanged.
+    pub fn with_preserve_hdr(mut self, preserve: bool) -> Self {
+        self.preserve_hdr = preserve;
+        self
     }
     #[cfg(feature = "onnx")]
     pub(crate) fn record_parallel_codec(&mut self, codec: &str) {
@@ -360,9 +390,9 @@ impl TrimEncoder {
     ) -> Result<&'static str, MediaError> {
         self.ensure_capability()?;
         let nvenc = self.diagnostics.capability == "available";
-        let codec = self
-            .tools
-            .trim_clip_with_encoder(src, out, start, length, nvenc)?;
+        let codec =
+            self.tools
+                .trim_clip_with_encoder(src, out, start, length, nvenc, self.preserve_hdr)?;
         if nvenc && matches!(codec, "libx264" | "libx265") {
             self.diagnostics.production_fallbacks += 1;
             self.diagnostics.fallback_reason = Some("production_nvenc_failed");
@@ -514,7 +544,7 @@ impl FfmpegTools {
             Command::new(&self.ffprobe)
                 .args([
                     "-v", "error", "-select_streams", "v:0", "-show_entries",
-                    "stream=pix_fmt,bits_per_raw_sample,color_primaries,color_transfer,color_space,color_range",
+                    "stream=pix_fmt,bits_per_raw_sample,color_primaries,color_transfer,color_space,color_range,codec_name,width,height",
                     "-of", "default=noprint_wrappers=1",
                 ])
                 .arg(path),
@@ -526,12 +556,19 @@ impl FfmpegTools {
             let Some((key, value)) = line.split_once('=') else {
                 continue;
             };
-            format.hdr_or_10_bit |= match key {
+            format.ten_bit |= match key {
                 "pix_fmt" => value.contains("10"),
                 "bits_per_raw_sample" => value.parse::<u32>().ok() == Some(10),
-                "color_transfer" => matches!(value, "smpte2084" | "arib-std-b67"),
                 _ => false,
             };
+            if key == "color_transfer" && matches!(value, "smpte2084" | "arib-std-b67") {
+                format.hdr_transfer = Some(value.to_owned());
+            }
+            if matches!(key, "codec_name" | "width" | "height" | "pix_fmt") {
+                format
+                    .stream_options
+                    .push((key.to_owned(), value.to_owned()));
+            }
             let flag = match key {
                 "color_primaries" => "-color_primaries",
                 "color_transfer" => "-color_trc",
@@ -555,7 +592,7 @@ impl FfmpegTools {
         start: f64,
         length: f64,
     ) -> Result<&'static str, MediaError> {
-        self.trim_clip_with_encoder(src, out, start, length, true)
+        self.trim_clip_with_encoder(src, out, start, length, true, false)
     }
     fn trim_clip_with_encoder(
         &self,
@@ -564,6 +601,7 @@ impl FfmpegTools {
         start: f64,
         length: f64,
         nvenc: bool,
+        preserve_hdr: bool,
     ) -> Result<&'static str, MediaError> {
         if !start.is_finite() || start < 0.0 || !length.is_finite() || length <= 0.0 {
             return Err(MediaError::InvalidInput("invalid trim window".into()));
@@ -571,7 +609,24 @@ impl FfmpegTools {
         ensure_distinct(src, out)?;
         create_parent(out)?;
         let format = self.source_video_format(src)?;
-        let codecs = if format.hdr_or_10_bit {
+        let tone_map = format.hdr_transfer.is_some() && !preserve_hdr;
+        let main10 = !tone_map && (format.ten_bit || format.hdr_transfer.is_some());
+        let filter = tone_map.then(|| format.tone_map_filter());
+        let color_options = if tone_map {
+            vec![
+                "-color_primaries".into(),
+                "bt709".into(),
+                "-color_trc".into(),
+                "bt709".into(),
+                "-colorspace".into(),
+                "bt709".into(),
+                "-color_range".into(),
+                "tv".into(),
+            ]
+        } else {
+            format.color_options.clone()
+        };
+        let codecs = if main10 {
             ["hevc_nvenc", "libx265"]
         } else {
             ["h264_nvenc", "libx264"]
@@ -585,7 +640,7 @@ impl FfmpegTools {
             } else {
                 vec!["-preset", "veryfast", "-crf", "20"]
             };
-            if format.hdr_or_10_bit {
+            if main10 {
                 options.extend([
                     "-profile:v",
                     "main10",
@@ -596,6 +651,9 @@ impl FfmpegTools {
                 ]);
             } else {
                 options.extend(["-profile:v", "high", "-pix_fmt", "yuv420p"]);
+            }
+            if let Some(filter) = &filter {
+                options.extend(["-vf", filter.as_str(), "-map_metadata", "-1"]);
             }
             let result = checked(
                 Command::new(&self.ffmpeg)
@@ -620,7 +678,7 @@ impl FfmpegTools {
                         codec,
                     ])
                     .args(options)
-                    .args(&format.color_options)
+                    .args(&color_options)
                     .args(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"])
                     .arg(out),
                 Duration::from_secs(3600),
@@ -648,6 +706,36 @@ impl FfmpegTools {
         }
         for clip in clips {
             ensure_distinct(clip, final_path)?;
+        }
+        // Concat stream-copy cannot reconcile different codecs, bit depths or HDR
+        // transfer functions. Fail before writing a misleading mixed-color output.
+        let mut first = self.source_video_format(&clips[0])?;
+        for clip in &clips[1..] {
+            let next = self.source_video_format(clip)?;
+            let conflicting_color = first.color_options.chunks_exact(2).any(|pair| {
+                next.color_options
+                    .chunks_exact(2)
+                    .any(|other| pair[0] == other[0] && pair[1] != other[1])
+            });
+            if first.stream_options != next.stream_options
+                || first.hdr_transfer != next.hdr_transfer
+                || conflicting_color
+            {
+                return Err(MediaError::InvalidInput(
+                    "Cannot merge incompatible video formats (codec, dimensions, bit depth or color). Disable merge or use matching sources; HDR is converted to SDR by default.".into(),
+                ));
+            }
+            // Unknown SDR tags are compatible with known tags, but retain the
+            // known values so a later clip cannot introduce a conflicting gamut.
+            for pair in next.color_options.chunks_exact(2) {
+                if !first
+                    .color_options
+                    .chunks_exact(2)
+                    .any(|known| known[0] == pair[0])
+                {
+                    first.color_options.extend_from_slice(pair);
+                }
+            }
         }
         create_parent(final_path)?;
         let list_path = final_path.with_extension("concat.txt");

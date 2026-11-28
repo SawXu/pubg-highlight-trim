@@ -35,6 +35,181 @@ fn tools() -> FfmpegTools {
     }
 }
 #[test]
+fn pq_and_hlg_tone_map_pixels_and_remove_hdr_metadata_with_compatible_sdr_merge() {
+    let tools = tools();
+    let dir = std::env::temp_dir().join(format!("pubg-tone-map-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut mapped = vec![];
+    let mut hdr = vec![];
+    for transfer in ["smpte2084", "arib-std-b67"] {
+        let src = dir.join(format!("{transfer}.mp4"));
+        let output = Command::new(&tools.ffmpeg).args([
+            "-v", "error", "-y", "-f", "lavfi", "-i",
+            "nullsrc=s=256x64:r=10,format=yuv420p10le,geq=lum='64+876*X/255':cb=512:cr=512",
+            "-vf", &format!("setparams=color_primaries=bt2020:color_trc={transfer}:colorspace=bt2020nc:range=limited"),
+            "-t", "0.5", "-c:v", "libx265", "-preset", "ultrafast", "-x265-params",
+            "log-level=error:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400",
+            "-color_primaries", "bt2020", "-color_trc", transfer, "-colorspace", "bt2020nc", "-color_range", "tv",
+        ]).arg(&src).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let source_probe = Command::new(&tools.ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_frames",
+                "-of",
+                "json",
+            ])
+            .arg(&src)
+            .output()
+            .unwrap();
+        assert!(source_probe.status.success());
+        let source_info: serde_json::Value = serde_json::from_slice(&source_probe.stdout).unwrap();
+        assert_eq!(source_info["streams"][0]["color_transfer"], transfer);
+        assert!(source_info.to_string().contains("Mastering display"));
+        assert!(source_info.to_string().contains("Content light"));
+        let out = dir.join(format!("{transfer}-sdr.mp4"));
+        let codec = tools.trim_clip(&src, &out, 0., 0.5).unwrap();
+        assert!(["h264_nvenc", "libx264"].contains(&codec));
+        let info = Command::new(&tools.ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_streams",
+                "-show_frames",
+                "-of",
+                "json",
+            ])
+            .arg(&out)
+            .output()
+            .unwrap();
+        assert!(info.status.success());
+        let info: serde_json::Value = serde_json::from_slice(&info.stdout).unwrap();
+        for (key, expected) in [
+            ("codec_name", "h264"),
+            ("pix_fmt", "yuv420p"),
+            ("color_transfer", "bt709"),
+            ("color_primaries", "bt709"),
+            ("color_space", "bt709"),
+            ("color_range", "tv"),
+        ] {
+            assert_eq!(info["streams"][0][key], expected, "{info}");
+        }
+        let json = info.to_string();
+        for forbidden in [
+            "smpte2084",
+            "arib-std-b67",
+            "bt2020",
+            "Mastering display",
+            "Content light",
+        ] {
+            assert!(!json.contains(forbidden), "HDR metadata leaked: {json}");
+        }
+        let pixels = |path: &std::path::Path| {
+            let result = Command::new(&tools.ffmpeg)
+                .args(["-v", "error", "-i"])
+                .arg(path)
+                .args(["-frames:v", "1", "-pix_fmt", "gray", "-f", "rawvideo", "-"])
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert_eq!(result.stdout.len(), 256 * 64);
+            result.stdout
+        };
+        let source_pixels = pixels(&src);
+        let sdr_pixels = pixels(&out);
+        let row = &sdr_pixels[32 * 256..33 * 256];
+        assert!(
+            row[0] < 10 && row[255] > 240,
+            "black/white endpoints: {} {}",
+            row[0],
+            row[255]
+        );
+        // A tag-only conversion would keep this encoded ramp essentially unchanged.
+        let mean_difference = source_pixels
+            .iter()
+            .zip(&sdr_pixels)
+            .map(|(a, b)| (*a as f64 - *b as f64).abs())
+            .sum::<f64>()
+            / sdr_pixels.len() as f64;
+        assert!(
+            mean_difference > 10.,
+            "not a real tone map: {mean_difference}"
+        );
+        for x in (16..256).step_by(16) {
+            assert!(
+                row[x] as i16 >= row[x - 16] as i16 - 3,
+                "non-monotonic luminance: {row:?}"
+            );
+        }
+        let preserved = dir.join(format!("{transfer}-preserved.mp4"));
+        pubg_ocr_engine::media::TrimEncoder::new(&tools)
+            .with_preserve_hdr(true)
+            .trim_clip(&src, &preserved, 0., 0.5)
+            .unwrap();
+        let invalid_merge = dir.join("invalid.mp4");
+        assert!(tools
+            .concat_clips(&[out.clone(), preserved.clone()], &invalid_merge)
+            .is_err());
+        hdr.push(preserved);
+        assert!(!invalid_merge.exists());
+        mapped.push(out);
+    }
+    // Even matching HEVC Main10 clips cannot stream-copy PQ and HLG together.
+    assert!(tools
+        .concat_clips(&hdr, &dir.join("mixed-hdr.mp4"))
+        .is_err());
+    // A normal SDR source remains compatible with both normalized HDR variants.
+    let sdr_src = dir.join("sdr.mp4");
+    assert!(Command::new(&tools.ffmpeg)
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=gray:s=256x64:r=10",
+            "-t",
+            "0.5",
+            "-c:v",
+            "libx264"
+        ])
+        .arg(&sdr_src)
+        .status()
+        .unwrap()
+        .success());
+    let sdr = dir.join("sdr-trim.mp4");
+    tools.trim_clip(&sdr_src, &sdr, 0., 0.5).unwrap();
+    mapped.push(sdr);
+    let merged = dir.join("merged.mp4");
+    tools.concat_clips(&mapped, &merged).unwrap();
+    let decode = Command::new(&tools.ffmpeg)
+        .args(["-v", "error", "-i"])
+        .arg(&merged)
+        .args(["-f", "null", "-"])
+        .output()
+        .unwrap();
+    assert!(
+        decode.status.success() && decode.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&decode.stderr)
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn hdr_main10_clips_keep_hvc1_and_color_metadata_after_concat() {
     let tools = tools();
     let dir = std::env::temp_dir().join(format!("pubg-hdr-concat-{}", std::process::id()));
@@ -50,7 +225,10 @@ fn hdr_main10_clips_keep_hvc1_and_color_metadata_after_concat() {
     let one = dir.join("one.mp4");
     let two = dir.join("two.mp4");
     for out in [&one, &two] {
-        let codec = tools.trim_clip(&src, out, 0., 0.5).unwrap();
+        let codec = pubg_ocr_engine::media::TrimEncoder::new(&tools)
+            .with_preserve_hdr(true)
+            .trim_clip(&src, out, 0., 0.5)
+            .unwrap();
         assert!(["hevc_nvenc", "libx265"].contains(&codec));
     }
     let merged = dir.join("merged.mp4");
@@ -95,6 +273,33 @@ fn hdr_main10_clips_keep_hvc1_and_color_metadata_after_concat() {
             String::from_utf8_lossy(&decode.stderr)
         );
     }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn ten_bit_sdr_retains_main10_without_tone_mapping() {
+    let tools = tools();
+    let dir = std::env::temp_dir().join(format!("pubg-ten-bit-sdr-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("source.mp4");
+    assert!(Command::new(&tools.ffmpeg).args([
+        "-v", "error", "-y", "-f", "lavfi", "-i", "color=gray:s=64x48:r=10", "-t", "0.5",
+        "-vf", "format=yuv420p10le,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=limited",
+        "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error"
+    ]).arg(&source).status().unwrap().success());
+    let out = dir.join("out.mp4");
+    let codec = tools.trim_clip(&source, &out, 0., 0.5).unwrap();
+    assert!(["hevc_nvenc", "libx265"].contains(&codec));
+    let probe = Command::new(&tools.ffprobe)
+        .args(["-v", "error", "-show_streams", "-of", "json"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(probe.status.success());
+    let info: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+    assert_eq!(info["streams"][0]["profile"], "Main 10");
+    assert_eq!(info["streams"][0]["pix_fmt"], "yuv420p10le");
+    assert_eq!(info["streams"][0]["color_transfer"], "bt709");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

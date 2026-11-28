@@ -1,4 +1,4 @@
-use highlight_shell::{
+use pubg_highlight_trim_core::{
     storage::{RuntimeLayout, Storage},
     RunOptions, Shell,
 };

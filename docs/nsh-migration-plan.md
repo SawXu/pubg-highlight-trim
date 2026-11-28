@@ -1,5 +1,7 @@
 # NSH 迁移计划
 
+> 历史计划：下文旁路、回退及旧运行时入口描述保留用于追溯，不再是当前操作指南；Vue/Tauri 源码和发布入口已删除。当前实现见 [UI 文档](../ui/README.md)，最终目标与验收要求以 [迁移规格](nsh-migration-spec.md) 为准。
+
 > 本文是实施计划，不是实现承诺；本轮只记录计划，不创建 ADR、Issue 或测试。
 > 依据：`docs/nsh-migration-assessment.md`、`docs/agents/domain.md` 及相关安装/发布路径的只读核对。
 

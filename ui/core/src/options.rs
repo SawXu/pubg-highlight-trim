@@ -72,6 +72,7 @@ pub struct RunOptions {
     pub overwrite: bool,
     pub brightness_gate: bool,
     pub move_originals: bool,
+    pub preserve_hdr: bool,
 }
 impl Default for RunOptions {
     fn default() -> Self {
@@ -94,6 +95,7 @@ impl Default for RunOptions {
             overwrite: false,
             brightness_gate: true,
             move_originals: false,
+            preserve_hdr: false,
         }
     }
 }
@@ -190,6 +192,7 @@ impl RunOptions {
             (self.overwrite, "--overwrite"),
             (!self.brightness_gate, "--no-brightness-gate"),
             (self.move_originals, "--move-originals"),
+            (self.preserve_hdr, "--preserve-hdr"),
         ] {
             if yes {
                 a.push(flag.into())

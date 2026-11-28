@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('pht-ui-notices-'+[guid]::NewGuid().ToString('N'))
 try {
-    foreach ($dir in @('scripts','ui','dist\pubg-highlight-trim\licenses','dist\pubg-highlight-trim-native-ui')) {
+    foreach ($dir in @('scripts','ui\native-ui','dist\pubg-highlight-trim\licenses','dist\pubg-highlight-trim-native-ui')) {
         New-Item -ItemType Directory -Path (Join-Path $temp $dir) -Force | Out-Null
     }
     Copy-Item (Join-Path $root 'scripts\build_installers_windows.ps1') (Join-Path $temp 'scripts')
@@ -14,7 +14,7 @@ try {
         [IO.File]::WriteAllText((Join-Path $temp "dist\pubg-highlight-trim\$name"), "fixture:$name")
     }
     [IO.File]::WriteAllText((Join-Path $temp 'dist\pubg-highlight-trim-native-ui\pubg-highlight-trim-native-ui.exe'), 'fixture:native-ui')
-    [IO.File]::WriteAllText((Join-Path $temp 'ui\package.json'), '{"version":"1.0.0"}')
+    [IO.File]::WriteAllText((Join-Path $temp 'ui\native-ui\Cargo.toml'), "[package]`nversion = `"1.0.0`"`n")
 
     $engine = Join-Path $temp 'engine.ps1'
     @'
