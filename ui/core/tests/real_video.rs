@@ -1,6 +1,6 @@
 //! Opt-in media acceptance through the same public Shell used by the UI.
 //! Inputs are immutable copies of a fixed corpus; this test never archives them.
-use highlight_shell::{
+use pubg_highlight_trim_core::{
     storage::{RuntimeLayout, Storage},
     RunOptions, Shell,
 };
@@ -146,7 +146,7 @@ fn media(root: &Path, ffmpeg: &Path, ffprobe: &Path) -> BTreeMap<PathBuf, (Value
 }
 
 #[test]
-#[ignore = "requires fixed real videos and a complete current-source Windows CLI bundle; see docs/tauri-ui-verification.md"]
+#[ignore = "requires fixed real videos and a complete current-source Windows CLI bundle; see ui/README.md"]
 fn real_video_shell_matches_direct_cli_decisions_records_and_decoded_media() {
     let inputs: Vec<String> = serde_json::from_str(
         &std::env::var("PUBG_UI_REAL_INPUTS").expect("JSON array of absolute MP4 paths"),

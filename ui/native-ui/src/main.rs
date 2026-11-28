@@ -1226,9 +1226,9 @@ mod windows_app {
         if let Some(parent) = exe.as_deref().and_then(|p| p.parent()) {
             candidates.push(parent.join("icon.ico"));
         }
-        candidates.push(PathBuf::from("ui/src-tauri/icons/icon.ico"));
+        candidates.push(PathBuf::from("ui/native-ui/icons/icon.ico"));
         candidates
-            .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src-tauri/icons/icon.ico"));
+            .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("icons/icon.ico"));
         candidates
             .into_iter()
             .find_map(|path| path.canonicalize().ok())

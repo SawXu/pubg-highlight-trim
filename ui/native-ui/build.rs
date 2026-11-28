@@ -34,13 +34,13 @@ fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    println!("cargo:rerun-if-changed=../src-tauri/icons/icon.ico");
+    println!("cargo:rerun-if-changed=icons/icon.ico");
     let Some(rc) = find_rc() else {
         println!("cargo:warning=rc.exe not found; Windows icon resource was not embedded");
         return;
     };
     let icon = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap())
-        .join("../src-tauri/icons/icon.ico")
+        .join("icons/icon.ico")
         .canonicalize()
         .expect("resolve application icon");
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());

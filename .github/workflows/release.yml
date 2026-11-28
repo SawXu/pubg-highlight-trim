@@ -52,13 +52,6 @@ jobs:
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\tests\test_installer_inputs.ps1
 
-      - name: Set up Node for locked CLI build
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
       - name: Install NSIS compiler for product builds
         shell: powershell
         run: |

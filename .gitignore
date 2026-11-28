@@ -12,16 +12,10 @@ rust/target/
 venv/
 build/
 dist/
-ui/node_modules/
-ui/test-results/
-ui/playwright-report/
-ui/dist/
-ui/src-tauri/target/
-ui/src-tauri/gen/
-# Writable development UI data (settings, logs, WebView2 and cache).
+ui/core/target/
+ui/native-ui/target/
+# Writable development UI data (settings and logs).
 ui/data/
-ui/src-tauri/data/
-*.tsbuildinfo
 *.spec
 *.log
 

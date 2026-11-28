@@ -23,7 +23,7 @@ fn main() {
             use std::io::{BufRead, BufReader};
             let exe = std::env::current_exe().unwrap();
             let mut c =
-                highlight_shell::process::ControlledChild::spawn(&exe, &["--tree".into()], None)
+                pubg_highlight_trim_core::process::ControlledChild::spawn(&exe, &["--tree".into()], None)
                     .unwrap();
             let mut line = String::new();
             BufReader::new(c.child.stdout.take().unwrap())
@@ -49,7 +49,7 @@ fn main() {
                 assert!(!job.is_null());
                 assert_ne!(AssignProcessToJobObject(job, GetCurrentProcess()), 0);
                 let exe = std::env::current_exe().unwrap();
-                match highlight_shell::process::ControlledChild::spawn(
+                match pubg_highlight_trim_core::process::ControlledChild::spawn(
                     &exe,
                     &["--tree".into()],
                     None,

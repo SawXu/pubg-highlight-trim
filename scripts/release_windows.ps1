@@ -8,9 +8,11 @@ Push-Location -LiteralPath $repoRoot
 try {
     if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { throw 'NSIS 3.11+ is required.' }
     if (-not (Get-Command 7z -ErrorAction SilentlyContinue)) { throw '7-Zip is required for non-executing product audit.' }
-    $version = [string](Get-Content -LiteralPath 'ui\package.json' -Raw | ConvertFrom-Json).version
+    $manifest = Get-Content -LiteralPath 'ui\native-ui\Cargo.toml' -Raw
+    if ($manifest -notmatch '(?m)^version\s*=\s*"([^"]+)"\s*$') { throw 'Native UI package version is missing.' }
+    $version = $Matches[1]
     if ($version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Release requires numeric semantic version.' }
-    # Build once, then reuse exactly the same CLI/UI bytes in both installers.
+    # Build once, then reuse exactly the same CLI/UI bytes in the Native installer.
     # build_windows retains pinned models/FFmpeg, license, manifest and smoke gates.
     & powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\build_windows.ps1" -SkipInstall
     if ($LASTEXITCODE -ne 0) { throw 'Release CLI build/assurance failed.' }

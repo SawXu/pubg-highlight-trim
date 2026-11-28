@@ -1,5 +1,7 @@
 # Tauri 双安装包发布与验证（#105）
 
+> 历史记录：Vue/Tauri、System/Fixed 及其脚本已移除。下文命令仅记录当时的验证，不是当前可执行指南；当前入口见 [Windows 原生安装包](windows-installers.md) 和 [UI 文档](../ui/README.md)。
+
 ## 当前约定和状态
 
 用户已确认发布入口→成品、真实安装器→Windows、UI/Rust 壳→CLI 三个测试边界；并明确没有 Windows 10/11 disposable VM、可信 Fixed runtime 或固定视频样本，本次不要求完成原票的完整 VM 验收矩阵，只要求支持系统与随包 WebView2。不能因此声称干净主机、离线渲染或完整安装生命周期已经通过。

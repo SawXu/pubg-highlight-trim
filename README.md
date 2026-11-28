@@ -4,7 +4,7 @@ English | [简体中文](README_zh.md)
 
 Windows-only CLI for trimming PUBG NVIDIA Highlight clips around key OCR events.
 
-The repository provides a native NSH Windows desktop UI for Windows 10/11 x64. It launches the unchanged Rust CLI as a separate process and has no Tauri/WebView2 dependency. The native executable plus its CLI directory is the single UI artifact. The legacy Tauri sources remain available for development comparison only and are not the release build entry point.
+The repository provides a native NSH Windows desktop UI for Windows 10/11 x64. It launches the unchanged Rust CLI as a separate process and has no Tauri/WebView2 dependency. The native executable plus its CLI directory is the single UI artifact. The legacy Vue/Tauri implementation and its build entry points have been removed.
 
 Default behavior detects both your knocks/eliminations and enemies knocking/eliminating you, keeps 5 seconds before and 1 second after the detected event, skips events in the first 2 seconds, and keeps 10 seconds before molotov/fire-bomb eliminations.
 
@@ -215,7 +215,7 @@ During source development the resolver checks, in order:
 
 ### Prerequisites
 
-Use Windows 10/11 x64 with Rust stable MSVC, Visual Studio C++ Build Tools / Windows SDK, Node.js 22 LTS (npm), PowerShell, and Microsoft Edge WebView2 Runtime already installed. Network access is needed to restore dependencies and explicitly provision FFmpeg and pinned OCR models. No .NET SDK, Python virtual environment or pip is used.
+Use Windows 10/11 x64 with Rust stable MSVC, Visual Studio C++ Build Tools / Windows SDK, and PowerShell. No Node.js or WebView2 runtime is required. Network access is needed to restore dependencies and explicitly provision FFmpeg and pinned OCR models. No .NET SDK, Python virtual environment or pip is used.
 
 ### Tests and checks
 
@@ -224,35 +224,26 @@ From the repository root:
 ```powershell
 cargo test --locked --manifest-path rust/Cargo.toml --workspace --features highlight-cli
 cargo test --locked --manifest-path rust/Cargo.toml --features cli,directml
-npm --prefix ui ci
-npm --prefix ui run typecheck
-npm --prefix ui run build
-cargo check --locked --manifest-path ui/src-tauri/Cargo.toml --features tauri-ui
-powershell -ExecutionPolicy Bypass -File scripts/test_ui_behavior.ps1 -SkipInstall
+cargo check --locked --manifest-path ui/native-ui/Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts/test_ui_behavior.ps1
 # Explicit real-model gate; requires a verified model directory
 $env:PUBG_OCR_MODEL_DIR="<model-directory>"
 cargo test --locked --manifest-path rust/Cargo.toml --features cli --test end_to_end -- --ignored --nocapture
 ```
 
-The public UI behavior test entrypoint runs frontend and Rust shell contracts, replacing the previous desktop-framework-specific automation. These checks do not certify the visible UI → shell → real CLI workflow, real-video summary/CSV/media parity, interactive close/cancellation, or a final clean-host distribution. Those require separate Windows acceptance evidence; passing isolated contracts is not equivalent to passing an end-to-end desktop test. See [the Tauri UI verification record](docs/tauri-ui-verification.md) for completed checks and remaining gaps. Existing CLI model, media, provider/fallback, fault, cancellation, supply-chain and release gates remain unchanged.
+The public UI behavior test entrypoint runs shared core and native UI Rust tests, including CLI/process-tree and HDR option contracts. These checks do not certify the visible UI → shell → real CLI workflow, real-video summary/CSV/media parity, interactive close/cancellation, or a final clean-host distribution. Those require separate Windows acceptance evidence; passing isolated contracts is not equivalent to passing an end-to-end desktop test. See [native UI development and verification](ui/README.md) for test commands and acceptance limits. Existing CLI model, media, provider/fallback, fault, cancellation, supply-chain and release gates remain unchanged.
 
 ### Build and run the Windows development application
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
-powershell -ExecutionPolicy Bypass -File scripts/build_ui_windows.ps1 -SkipCliBuild
-.\dist\pubg-highlight-trim-ui\pubg-highlight-trim-ui.exe
+powershell -ExecutionPolicy Bypass -File scripts/build_native_ui_windows.ps1 -SkipCliBuild
+.\dist\pubg-highlight-trim-native-ui\pubg-highlight-trim-native-ui.exe
 ```
 
 The native UI script builds `ui/native-ui/Cargo.toml` with `cargo --locked` and copies the complete CLI bundle to `dist\pubg-highlight-trim-native-ui\cli`. Do not move only the executable. This is a development layout, **not** a self-contained runtime package, installer or release ZIP. The native UI has no WebView2 prerequisite. Use the separate [installer build entry point](docs/windows-installers.md) for installation/upgrade/uninstall. Clean-host runtime and lifecycle acceptance must be recorded separately from this development build.
 
-For hot-reload development, first run `build_ui_windows.ps1 -SkipCliBuild` to prepare the trusted side-by-side layout, then:
-
-```powershell
-cd ui
-npm ci
-npm run tauri -- dev
-```
+For debug development, use `build_native_ui_windows.ps1 -SkipCliBuild -Configuration Debug` and run the resulting native layout.
 
 Model download/hash/dictionary verification, inference smoke, manifest, archive audit and size tools remain Rust `xtask` commands; see `cargo run --manifest-path rust/Cargo.toml --bin xtask -- --help`. Runtime execution never downloads models.
 
